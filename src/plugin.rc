@@ -110,11 +110,12 @@ BEGIN
     EDITTEXT IDC_UPDATE_STATUS, 10, 104, 330, 36, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
     LTEXT "Installation opens AIMP's package installer. Finish installation and restart when AIMP asks.", -1, 10, 146, 330, 20
     PUSHBUTTON "Download and install", IDC_UPDATE_INSTALL, 10, 177, 130, 17
+    PUSHBUTTON "Open package folder", IDC_UPDATE_FOLDER, 146, 177, 120, 17
     DEFPUSHBUTTON "Close", IDOK, 274, 177, 66, 17
 END
 1 VERSIONINFO
- FILEVERSION 0,10,0,0
- PRODUCTVERSION 0,10,0,0
+ FILEVERSION 0,10,1,0
+ PRODUCTVERSION 0,10,1,0
  FILEOS VOS_NT_WINDOWS32
  FILETYPE VFT_DLL
 BEGIN
@@ -123,7 +124,7 @@ BEGIN
   BLOCK "040904b0"
   BEGIN
    VALUE "FileDescription", "IgnorantShuffle weighted shuffle for AIMP"
-   VALUE "FileVersion", "0.10.0"
+   VALUE "FileVersion", "0.10.1"
    VALUE "ProductName", "IgnorantShuffle"
   END
  END

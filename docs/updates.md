@@ -23,6 +23,10 @@ Closing the Updates dialog during a download cancels it. Checks and downloads ru
 
 Verified packages are kept under `<AIMP profile>\IgnorantShuffle\Updates`.
 
+The Updates dialog stays open after requesting installation. **Open installer again** retries using the saved package, with its size and SHA256 checked again. If AIMP shows no prompt, click **Open package folder**, then choose that `.aimppack` in **AIMP Preferences > Plugins > Install**. A successful launch request does not confirm that installation finished.
+
+Versions 0.9.0 and 0.10.0 can download successfully without opening AIMP's installer. Install 0.10.1 manually once using the Plugins page or replace the DLL while AIMP is closed to receive the updater fix.
+
 ## Release source
 
 The default source is [khivus/IgnorantShuffle Releases](https://github.com/khivus/IgnorantShuffle/releases/latest).

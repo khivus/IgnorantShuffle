@@ -24,15 +24,15 @@ For direct CMake builds, set `IGNORANT_SHUFFLE_UPDATE_REPOSITORY`. A saved nonem
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\package-release.ps1
 ```
 
-For version 0.10.0 it produces:
+For version 0.10.1 it produces:
 
 | File in `dist/` | Purpose |
 | --- | --- |
-| `IgnorantShuffle-v0.10.0.aimppack` | AIMP installer package with both architectures and the MIT license. |
+| `IgnorantShuffle-v0.10.1.aimppack` | AIMP installer package with both architectures and the MIT license. |
 | `aimp_ignorant_shuffle-x64.dll` | Separate DLL for 64-bit AIMP. |
 | `aimp_ignorant_shuffle-x86.dll` | Separate DLL for 32-bit AIMP. |
 | `SHA256SUMS.txt` | Checksums for the package and both DLLs. |
-| `IgnorantShuffle-v0.10.0.aimppack.sha256` | Package-only checksum. |
+| `IgnorantShuffle-v0.10.1.aimppack.sha256` | Package-only checksum. |
 
 Packaging verifies both DLL versions and every archived file against its source. It creates local artifacts only. Use `-OutputDirectory <folder>` to choose a different output location.
 

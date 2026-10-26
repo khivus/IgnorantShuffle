@@ -197,6 +197,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     std::wstring preferences_error_;
     MonitorWindow monitor_;
     ignorant::UpdateClient updater_;
+    ignorant::UpdateLauncher update_launcher_;
     std::string update_repository_ = ignorant::default_update_repository;
     bool auto_updates_ = true, install_requested_ = false;
     ULONGLONG next_update_check_ = GetTickCount64() + 10000;
@@ -623,18 +624,21 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (state.message != last_update_status_) {
             last_update_status_ = state.message; log_.write("updates.state", state.message);
         }
-        if (install_requested_ && state.phase == ignorant::UpdatePhase::Ready) {
+        if (install_requested_ && (state.phase == ignorant::UpdatePhase::Ready || state.phase == ignorant::UpdatePhase::HandedOff)) {
             install_requested_ = false;
-            if (update_dialog_) EndDialog(update_dialog_, IDOK);
             try {
+                if (!state.release) throw std::runtime_error("No verified release is ready to install.");
+                ignorant::verify_update_package(state.package, *state.release);
                 HWND host = nullptr;
                 if (messages_) messages_->Send(AIMP_MSG_PROPERTY_HWND, AIMP_MPH_MAINFORM, &host);
-                ignorant::install_update_package(host, state.package);
-                updater_.handed_off(); log_.write("updates.install", "Package sent to AIMP's installer");
+                const auto command = ignorant::install_update_package(host, state.package, update_launcher_);
+                updater_.handed_off();
+                log_.write("updates.install.request", "executable=" + command.executable.u8string() + " package=" + state.package.u8string());
             } catch (const std::exception& error) {
                 updater_.install_error(error.what()); log_.write("updates.install.error", error.what());
-                MessageBoxA(monitor_.handle(), error.what(), "IgnorantShuffle update", MB_OK | MB_ICONERROR);
+                MessageBoxA(update_dialog_ ? update_dialog_ : monitor_.handle(), error.what(), "IgnorantShuffle update", MB_OK | MB_ICONERROR);
             }
+            state = updater_.state();
         }
         if (state.phase == ignorant::UpdatePhase::Error) install_requested_ = false;
         if (update_dialog_) {
@@ -646,7 +650,11 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             EnableWindow(GetDlgItem(update_dialog_, IDC_UPDATE_SAVE), !state.busy());
             EnableWindow(GetDlgItem(update_dialog_, IDC_UPDATE_REPOSITORY), !state.busy());
             EnableWindow(GetDlgItem(update_dialog_, IDC_UPDATE_CHECK), !state.busy() && !update_repository_.empty());
-            EnableWindow(GetDlgItem(update_dialog_, IDC_UPDATE_INSTALL), !state.busy() && state.release && state.release->installable() && state.phase != ignorant::UpdatePhase::HandedOff);
+            EnableWindow(GetDlgItem(update_dialog_, IDC_UPDATE_INSTALL), !state.busy() && state.release && state.release->installable());
+            const auto install_label = state.phase == ignorant::UpdatePhase::HandedOff || state.phase == ignorant::UpdatePhase::Ready ? L"Open installer again" : L"Download and install";
+            wchar_t previous_label[64]{}; GetDlgItemTextW(update_dialog_, IDC_UPDATE_INSTALL, previous_label, 64);
+            if (std::wstring(previous_label) != install_label) SetDlgItemTextW(update_dialog_, IDC_UPDATE_INSTALL, install_label);
+            EnableWindow(GetDlgItem(update_dialog_, IDC_UPDATE_FOLDER), !state.package.empty());
             EnableWindow(GetDlgItem(update_dialog_, IDC_UPDATE_RELEASE), state.release.has_value());
         }
     }
@@ -675,7 +683,13 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                     self->save_preferences(); self->check_updates();
                 } else if (id == IDC_UPDATE_CHECK) self->check_updates();
                 else if (id == IDC_UPDATE_INSTALL) {
-                    if (!self->weights_file_.empty()) self->install_requested_ = self->updater_.download(self->weights_file_.parent_path() / L"Updates");
+                    const auto state = self->updater_.state();
+                    if (state.phase == ignorant::UpdatePhase::Ready || state.phase == ignorant::UpdatePhase::HandedOff) self->install_requested_ = true;
+                    else if (!self->weights_file_.empty()) self->install_requested_ = self->updater_.download(self->weights_file_.parent_path() / L"Updates");
+                } else if (id == IDC_UPDATE_FOLDER) {
+                    const auto state = self->updater_.state();
+                    if (!state.package.empty() && reinterpret_cast<INT_PTR>(ShellExecuteW(window, L"open", state.package.parent_path().c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32)
+                        throw std::runtime_error("Could not open the saved package folder.");
                 } else if (id == IDC_UPDATE_RELEASE) {
                     const auto state = self->updater_.state();
                     if (state.release && reinterpret_cast<INT_PTR>(ShellExecuteW(window, L"open", from_utf8(state.release->page_url).c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32)
@@ -1421,7 +1435,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         return FALSE;
     }
 public:
-    explicit Plugin(ignorant::UpdateTransport transport = {}) : updater_(ignorant::build_version, std::move(transport)) {}
+    explicit Plugin(ignorant::UpdateTransport transport = {}, ignorant::UpdateLauncher launcher = {})
+        : updater_(ignorant::build_version, std::move(transport)), update_launcher_(std::move(launcher)) {}
     HRESULT WINAPI QueryInterface(REFIID iid, void** object) override {
         if (!object) return E_POINTER;
         *object = nullptr;
@@ -1441,7 +1456,7 @@ public:
     }
     TChar* WINAPI InfoGet(int index) override {
         switch (index) {
-        case AIMP_PLUGIN_INFO_NAME: return const_cast<TChar*>(L"IgnorantShuffle 0.10.0");
+        case AIMP_PLUGIN_INFO_NAME: return const_cast<TChar*>(L"IgnorantShuffle 0.10.1");
         case AIMP_PLUGIN_INFO_AUTHOR: return const_cast<TChar*>(L"IgnorantShuffle contributors");
         case AIMP_PLUGIN_INFO_SHORT_DESCRIPTION: return const_cast<TChar*>(L"Weighted shuffle: 0 excludes a track; larger weights play more often.");
         case AIMP_PLUGIN_INFO_FULL_DESCRIPTION: return const_cast<TChar*>(L"Uses AIMP's Shuffle switch. Configure weights from 0 to 10, optional track cooldown, or finite weighted playlists that follow AIMP's end-of-playlist action. Imported weights may exceed 10. Default weight: 5.");

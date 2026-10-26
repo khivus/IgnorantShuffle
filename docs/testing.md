@@ -39,7 +39,7 @@ Core tests exercise weighted selection without replacement over 10,000 complete 
 
 ### Updater
 
-Automated checks cover release parsing, version ordering, placeholder behavior, auto-check timing and opt-out persistence, verified/corrupt downloads, background cancellation, actual WinHTTP requests against localhost, and Unicode file-drop handoff to a fixture window. The actual GitHub update and AIMP installer/restart flow require live verification.
+Automated checks cover release parsing, version ordering, placeholder behavior, auto-check timing and opt-out persistence, verified/corrupt downloads, background cancellation, and actual WinHTTP requests against localhost. Installer tests launch a local GUI helper through ShellExecute and verify the exact package argument with spaces and Unicode. Dialog tests cover installation requests, visible retry controls, reuse of the saved package, and preventing repeated launches on timer ticks. Saved packages are checked again before installation, including rejection after tampering. The actual GitHub update and AIMP installer/restart flow require live verification.
 
 ## Live AIMP verification
 

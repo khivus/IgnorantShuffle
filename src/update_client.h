@@ -17,6 +17,7 @@ struct UpdateState {
 };
 using UpdateTransport = std::function<HttpReply(const std::string&, std::size_t, const std::atomic<bool>&, const DownloadProgress&)>;
 std::string update_sha256(const std::vector<unsigned char>& data);
+void verify_update_package(const std::filesystem::path& path, const ReleaseUpdate& release);
 class UpdateClient {
     mutable std::mutex mutex_;
     UpdateState state_;

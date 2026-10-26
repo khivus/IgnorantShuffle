@@ -25,6 +25,15 @@ std::string update_sha256(const std::vector<unsigned char>& data) {
 UpdateClient::UpdateClient(std::string installed, UpdateTransport transport) : installed_(std::move(installed)), transport_(std::move(transport)) {
     if (!transport_) transport_ = [](const auto& url, auto limit, const auto& canceled, const auto& progress) { return update_http_get(url, limit, canceled, progress); };
 }
+void verify_update_package(const std::filesystem::path& path, const ReleaseUpdate& release) {
+    if (!release.installable() || release.size > maximum_update_size || !std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) != release.size)
+        throw std::runtime_error("Saved update package is missing or its size changed. Download it again.");
+    std::vector<unsigned char> bytes(static_cast<std::size_t>(release.size));
+    std::ifstream input(path, std::ios::binary);
+    input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (!input || input.peek() != std::char_traits<char>::eof() || update_sha256(bytes) != release.sha256)
+        throw std::runtime_error("Saved update package failed SHA256 verification. Installation was blocked; download it again.");
+}
 UpdateState UpdateClient::state() const { std::lock_guard<std::mutex> lock(mutex_); return state_; }
 void UpdateClient::stop() { canceled_.store(true); if (worker_.joinable()) worker_.join(); }
 void UpdateClient::failure(const std::string& message) {
@@ -99,7 +108,7 @@ bool UpdateClient::download(const std::filesystem::path& cache) {
 }
 void UpdateClient::handed_off() {
     std::lock_guard<std::mutex> lock(mutex_); state_.phase = UpdatePhase::HandedOff;
-    state_.message = "Package sent to AIMP. Finish installation and restart when AIMP asks.";
+    state_.message = "Asked AIMP to open the installer. Finish its prompt and restart if asked. If no prompt appears, use AIMP Preferences > Plugins > Install with the saved package.";
 }
 void UpdateClient::install_error(const std::string& error) { std::lock_guard<std::mutex> lock(mutex_); state_.phase = UpdatePhase::Error; state_.message = error; }
 }

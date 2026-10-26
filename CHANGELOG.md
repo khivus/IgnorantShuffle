@@ -2,6 +2,10 @@
 
 Version history for IgnorantShuffle, newest first.
 
+## 0.10.1
+
+Fixes **Download and install** silently doing nothing after a successful download. The plugin now opens the verified package through the running AIMP executable instead of posting a file-drop message that AIMP could ignore. The Updates dialog stays open with **Open installer again**, **Open package folder**, and manual installation instructions. Retrying reuses the saved package and verifies its size and SHA256 again. Logs distinguish an installation request from confirmed installation.
+
 ## 0.10.0
 
 Adds **Play playlist once**, disabled by default. Finite mode chooses a weighted order without repeating a positive-weight filename within a pass; higher weights are more likely to play earlier and zero stays excluded. After a pass it follows AIMP's end-of-playlist setting: stop, repeat with a fresh weighted pass, or move through loaded playlists. The panel shows played/remaining counts, and cooldown is paused while finite mode is active. Playback starts commit progress; lookahead, rerolls, and duplicate preparation callbacks do not. Deep lookahead retains its projected order beyond the bounded playback-history cache.

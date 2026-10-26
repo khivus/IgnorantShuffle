@@ -1308,6 +1308,45 @@ struct PluginChecks {
         restored.load_preferences(); check(restored.update_repository_ == "example/shuffle", "Configured source survives restart.");
         DestroyWindow(window); plugin.Finalize(); std::filesystem::remove(plugin.preferences_file_);
     }
+    static void update_install_checks() {
+        Messages messages;
+        const auto host = CreateWindowW(L"STATIC", L"", 0, 0, 0, 0, 0, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+        check(host != nullptr, "Create update host."); messages.main_window = host;
+        const std::vector<unsigned char> bytes{'P','K',3,4,1,2,3,4};
+        std::atomic<int> downloads{0}; int launches = 0;
+        Plugin plugin([&](const auto& url, auto, const auto&, const auto&) {
+            if (url.find("api.github.com") == std::string::npos) { ++downloads; return ignorant::HttpReply{200, bytes}; }
+            const std::string json = "{\"tag_name\":\"v99.0.0\",\"assets\":[{\"name\":\"IgnorantShuffle-v99.0.0.aimppack\",\"state\":\"uploaded\",\"size\":8,\"digest\":\"sha256:" + ignorant::update_sha256(bytes) + "\",\"browser_download_url\":\"https://github.com/example/shuffle/releases/download/v99.0.0/IgnorantShuffle-v99.0.0.aimppack\"}]}";
+            return ignorant::HttpReply{200, {json.begin(), json.end()}};
+        }, [&](HWND owner, const ignorant::UpdateInstallCommand& command) {
+            check(owner == host && !command.arguments.empty(), "Installer receives host and package."); ++launches;
+        });
+        plugin.messages_ = query<IAIMPServiceMessageDispatcher>(&messages, IID_IAIMPServiceMessageDispatcher);
+        plugin.auto_updates_ = false; plugin.update_repository_ = "example/shuffle";
+        const auto folder = std::filesystem::current_path() / L"update-install-ui-fixture";
+        plugin.weights_file_ = folder / L"weights.tsv";
+        module = GetModuleHandleW(nullptr);
+        const auto window = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_UPDATES), nullptr, Plugin::updates_procedure, reinterpret_cast<LPARAM>(&plugin));
+        check(window != nullptr, "Create installation dialog.");
+        auto finish = [&] {
+            const auto deadline = GetTickCount64() + 3000;
+            while (plugin.updater_.state().busy() && GetTickCount64() < deadline) Sleep(5);
+            check(!plugin.updater_.state().busy(), "Installation worker finishes."); plugin.update_tick();
+        };
+        plugin.check_updates(); finish();
+        SendMessageW(window, WM_COMMAND, IDC_UPDATE_INSTALL, 0); finish();
+        const auto package = plugin.updater_.state().package;
+        check(launches == 1 && downloads == 1 && plugin.updater_.state().phase == ignorant::UpdatePhase::HandedOff, "Download button requests installation once.");
+        check(IsWindow(window) && plugin.update_dialog_ == window && IsWindowEnabled(GetDlgItem(window, IDC_UPDATE_INSTALL)) && IsWindowEnabled(GetDlgItem(window, IDC_UPDATE_FOLDER)), "Dialog remains available with retry and package folder.");
+        wchar_t label[64]{}; GetDlgItemTextW(window, IDC_UPDATE_INSTALL, label, 64);
+        check(std::wstring(label) == L"Open installer again", "Retry is clearly labeled.");
+        SendMessageW(window, WM_COMMAND, IDC_UPDATE_INSTALL, 0); plugin.update_tick();
+        check(launches == 2 && downloads == 1 && plugin.updater_.state().package == package, "Retry reuses the verified package without downloading or automatic repeat launches.");
+        ShowWindow(window, SW_SHOWNOACTIVATE); capture_preview(window, L"update-installer-ready.bmp");
+        DestroyWindow(window); plugin.Finalize(); DestroyWindow(host);
+        std::filesystem::remove(package); std::filesystem::remove(package.parent_path());
+        std::filesystem::remove(folder / L"Updates"); std::filesystem::remove(folder);
+    }
     static void finite_checks() {
         Manager manager;
         Messages messages; messages.shuffle = TRUE;
@@ -1509,6 +1548,7 @@ struct PluginChecks {
         panel_window_checks(manager, messages);
         repaint_checks();
         update_settings_checks();
+        update_install_checks();
         finite_checks();
         cooldown_checks(manager, messages);
         cursor_and_duplicate_checks(manager, messages);

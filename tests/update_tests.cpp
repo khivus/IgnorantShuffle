@@ -66,6 +66,9 @@ void worker_checks() {
     std::ifstream input(ready.package, std::ios::binary);
     const std::vector<unsigned char> saved{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()}; input.close();
     check(saved == package, "Saved package matches downloaded bytes.");
+    verify_update_package(ready.package, *ready.release);
+    { std::ofstream changed(ready.package, std::ios::binary); changed << "PK\x03\x04xxxx"; }
+    rejects([&] { verify_update_package(ready.package, *ready.release); }, "Changed cached package must not be installed on retry.");
     client.handed_off(); check(client.state().phase == UpdatePhase::HandedOff, "Installation handoff state.");
     std::filesystem::remove(ready.package); std::filesystem::remove(ready.package.parent_path()); std::filesystem::remove(cache);
     for (int scenario = 0; scenario < 3; ++scenario) {
@@ -127,28 +130,38 @@ void http_checks() {
       rejects([&] { update_http_get(server.url(), 100, canceled, {}, true); }, "HTTP cancellation."); stop.join(); }
     WSACleanup();
 }
-std::wstring dropped;
-LRESULT CALLBACK receiver(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
-    if (message == WM_DROPFILES) {
-        const auto drop = reinterpret_cast<HDROP>(wparam); wchar_t name[32768]{};
-        DragQueryFileW(drop, 0, name, 32768); dropped = name; DragFinish(drop); return 0;
-    }
-    return DefWindowProcW(window, message, wparam, lparam);
-}
-void install_checks() {
-    const auto package = std::filesystem::current_path() / L"installer-fixture.aimppack";
+void install_checks(const std::filesystem::path& probe) {
+    const auto package = std::filesystem::current_path() / L"installer fixture \u041C\u0443\u0437\u044B\u043A\u0430.aimppack";
     { std::ofstream file(package); file << "fixture"; }
-    WNDCLASSW type{}; type.lpfnWndProc = receiver; type.hInstance = GetModuleHandleW(nullptr); type.lpszClassName = L"IgnorantUpdateFixture";
-    check(RegisterClassW(&type) != 0, "Register installer receiver fixture.");
-    const auto window = CreateWindowW(type.lpszClassName, L"", 0, 0, 0, 0, 0, nullptr, nullptr, type.hInstance, nullptr);
+    const auto window = CreateWindowW(L"STATIC", L"", 0, 0, 0, 0, 0, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    check(window != nullptr, "Create installer host fixture.");
     rejects([&] { install_update_package(nullptr, package); }, "Missing host must not install.");
-    install_update_package(window, package);
-    MSG message{}; while (PeekMessageW(&message, window, 0, 0, PM_REMOVE)) DispatchMessageW(&message);
-    check(dropped == package.wstring(), "Native installer receives an owned Unicode file-drop package.");
-    DestroyWindow(window); UnregisterClassW(type.lpszClassName, type.hInstance); std::filesystem::remove(package);
+    int launches = 0;
+    install_update_package(window, package, [&](HWND owner, const UpdateInstallCommand& command) {
+        wchar_t executable[32768]{}; GetModuleFileNameW(nullptr, executable, 32768);
+        check(owner == window && command.executable == executable, "Installer must use the running host executable.");
+        check(command.arguments == L"\"" + package.wstring() + L"\"" && command.directory == command.executable.parent_path(), "Quoted package and host working directory.");
+        ++launches;
+    });
+    check(launches == 1, "Exactly one installer launch per request.");
+    rejects([&] { install_update_package(window, package, [](HWND, const UpdateInstallCommand&) { throw std::runtime_error("Launch failed"); }); }, "Launch errors must propagate.");
+    rejects([&] { update_install_command(probe, L"relative.aimppack"); }, "Relative packages rejected.");
+    const std::filesystem::path receipt(package.wstring() + L".args");
+    std::filesystem::remove(receipt);
+    launch_update_installer(window, update_install_command(probe, package));
+    std::string received;
+    const auto deadline = GetTickCount64() + 5000;
+    do {
+        std::ifstream input(receipt, std::ios::binary);
+        received.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        if (received == package.u8string()) break;
+        Sleep(10);
+    } while (GetTickCount64() < deadline);
+    check(received == package.u8string(), "ShellExecute must deliver the exact Unicode path with spaces to a real helper process.");
+    DestroyWindow(window); std::filesystem::remove(receipt); std::filesystem::remove(package);
 }
 }
-int main() {
-    try { model_checks(); worker_checks(); http_checks(); install_checks(); std::cout << "Release parsing, verified downloads, cancellation, real HTTP and installer handoff passed.\n"; return 0; }
+int main(int argc, char** argv) {
+    try { check(argc == 2, "Expected installer probe path."); model_checks(); worker_checks(); http_checks(); install_checks(std::filesystem::absolute(argv[1])); std::cout << "Release parsing, verified downloads, cancellation, real HTTP and installer process launch passed.\n"; return 0; }
     catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }
