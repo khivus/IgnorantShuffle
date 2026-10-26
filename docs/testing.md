@@ -33,6 +33,10 @@ The transition regression replays 128 cursor/prefetch/preparation/duplicate-sele
 
 Quick-control tests exercise the real button row, highlight updates, immediate persistence, imported weights, weight 0, changing/paused/stopped tracks, and editing while the plugin is off. Reroll tests verify replacement, zero exclusions, the single-eligible-track case, unchanged current playback, one host notification, and stable cached results after queue rebuild. The transition trace also rerolls periodically to check that abandoned lookahead cannot replace the new plan.
 
+### Finite playlists
+
+Core tests exercise weighted selection without replacement over 10,000 complete passes, including zero exclusions, duplicate filenames, and higher weights appearing earlier. Adapter tests cover finite completion, fresh repeated passes, next-playlist order and empty-list skipping, end-setting changes, rerolls, tokenless and duplicate selections, manual Previous, weight edits, single-track repeats, and a speculative pass longer than the 256-node occurrence history. The cursor-transition trace also runs with finite mode and cooldown configured, checking that each pass remains unique. UI tests cover the default-off checkbox, persistence, paused cooldown controls, progress readouts, and four-checkbox wrapping.
+
 ### Updater
 
 Automated checks cover release parsing, version ordering, placeholder behavior, auto-check timing and opt-out persistence, verified/corrupt downloads, background cancellation, actual WinHTTP requests against localhost, and Unicode file-drop handoff to a fixture window. The actual GitHub update and AIMP installer/restart flow require live verification.

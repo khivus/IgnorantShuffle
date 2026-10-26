@@ -8,6 +8,7 @@ struct MonitorState {
     bool enabled = true;
     bool pinned = true;
     bool attached = false;
+    bool finite = false;
     bool can_set_weight = false;
     int selected_weight = -1;
     bool can_reroll = false;
@@ -45,7 +46,7 @@ public:
     std::function<void(int)> on_weight;
     std::function<void(int)> on_cooldown;
     std::function<void(const std::string&)> on_error;
-    std::function<void(bool)> on_enabled, on_pinned, on_attached;
+    std::function<void(bool)> on_enabled, on_pinned, on_attached, on_finite;
     HWND handle() const { return window_; }
     bool create(HINSTANCE instance);
     void show(bool activate = false);

@@ -1,14 +1,12 @@
-# IgnorantShuffle v0.9.0
+# IgnorantShuffle v0.10.0
 
-First public release of weighted smart shuffle for **AIMP 5.40 on Windows**.
+Adds optional finite weighted playlists for **AIMP 5.40 on Windows**.
 
-- Assign weights with one-click **0–10** buttons, or use custom weights above 10 and fractional values. Weight **0** excludes a track from weighted selection.
-- Add a track cooldown to reduce repeats. Short playlists show a warning and continue with weighted shuffle without cooldown.
-- See current weights, the pending choice, probabilities, excluded tracks, and cooldown counts. Reroll the next choice without interrupting playback.
-- Use a compact, resizable panel with scrolling, always-on-top mode, optional attachment beside AIMP, and a plugin on/off switch.
-- Edit multiple tracks together and import/export weights. Optional shared files keep global, folder-local, and AIMP-playlist weights with your music.
-- Check GitHub for updates automatically or manually, then download a verified package and open AIMP's installer from the plugin.
-- Includes playback/lookahead fixes and the fix for leftover panel text and borders when changing tracks with Shuffle off.
+- Enable **Play playlist once** in the panel. It is disabled by default and saved across restarts.
+- Higher weights are more likely to play earlier; each positive-weight filename plays once per pass. Weight 0 stays excluded, and custom weights above 10 and fractions remain supported.
+- At completion, follow AIMP's end-of-playlist setting: stop, repeat with a fresh weighted pass, or move to the next eligible loaded playlist.
+- See **Already played / Remaining** counts and the completion action. Cooldown is paused in finite mode and restored when it is turned off.
+- Lookahead, rerolls, and duplicate preparation notifications do not consume tracks. Deep lookahead retains the full projected pass beyond the bounded playback-history cache.
 
 ## Downloads
 
@@ -16,11 +14,11 @@ Choose the architecture of **AIMP**, which may differ from Windows. The installe
 
 | Download | Use |
 | --- | --- |
-| [AIMP one-click installer (.aimppack)](https://github.com/khivus/IgnorantShuffle/releases/download/v0.9.0/IgnorantShuffle-v0.9.0.aimppack) | Recommended. Open with AIMP or drop onto AIMP's main window, finish installation, and restart if asked. Includes x64 and x86. |
-| [DLL for AIMP x64](https://github.com/khivus/IgnorantShuffle/releases/download/v0.9.0/aimp_ignorant_shuffle-x64.dll) | Manual installation for 64-bit AIMP. |
-| [DLL for AIMP x86](https://github.com/khivus/IgnorantShuffle/releases/download/v0.9.0/aimp_ignorant_shuffle-x86.dll) | Manual installation for 32-bit AIMP. |
-| [SHA256 checksums](https://github.com/khivus/IgnorantShuffle/releases/download/v0.9.0/SHA256SUMS.txt) | Verify the installer package or either DLL. |
-| [Source code](https://github.com/khivus/IgnorantShuffle/archive/refs/tags/v0.9.0.zip) | Build from source; obtain the official AIMP SDK separately. |
+| [AIMP one-click installer (.aimppack)](https://github.com/khivus/IgnorantShuffle/releases/download/v0.10.0/IgnorantShuffle-v0.10.0.aimppack) | Recommended. Open with AIMP or drop onto AIMP's main window, finish installation, and restart if asked. Includes x64 and x86. |
+| [DLL for AIMP x64](https://github.com/khivus/IgnorantShuffle/releases/download/v0.10.0/aimp_ignorant_shuffle-x64.dll) | Manual installation for 64-bit AIMP. |
+| [DLL for AIMP x86](https://github.com/khivus/IgnorantShuffle/releases/download/v0.10.0/aimp_ignorant_shuffle-x86.dll) | Manual installation for 32-bit AIMP. |
+| [SHA256 checksums](https://github.com/khivus/IgnorantShuffle/releases/download/v0.10.0/SHA256SUMS.txt) | Verify the installer package or either DLL. |
+| [Source code](https://github.com/khivus/IgnorantShuffle/archive/refs/tags/v0.10.0.zip) | Build from source; obtain the official AIMP SDK separately. |
 
 For a manual DLL install, close AIMP, rename the downloaded DLL to **aimp_ignorant_shuffle.dll**, and place it in **AIMP\Plugins\aimp_ignorant_shuffle\**. Start AIMP, enable the plugin, and turn on AIMP's Shuffle switch to use weighted selection. Existing users can replace the previous DLL while AIMP is closed; saved weights stay in the profile or configured music folder.
 

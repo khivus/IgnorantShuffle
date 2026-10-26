@@ -80,6 +80,7 @@ public:
 class Manager final : public FakeUnknown<IAIMPServicePlaylistManager> {
 public:
     IAIMPPlaylist* active = nullptr;
+    std::vector<IAIMPPlaylist*> loaded;
     Manager() : FakeUnknown(IID_IAIMPServicePlaylistManager) {}
     STUB(CreatePlaylist, (IAIMPString*, BOOL, IAIMPPlaylist**))
     STUB(CreatePlaylistFromFile, (IAIMPString*, BOOL, IAIMPPlaylist**))
@@ -89,19 +90,25 @@ public:
     }
     STUB(SetActivePlaylist, (IAIMPPlaylist*))
     STUB(GetPlayingPlaylist, (IAIMPPlaylist**))
-    STUB(GetLoadedPlaylist, (int, IAIMPPlaylist**))
+    HRESULT WINAPI GetLoadedPlaylist(int index, IAIMPPlaylist** output) override {
+        if (index < 0 || static_cast<std::size_t>(index) >= loaded.size()) { *output = nullptr; return E_INVALIDARG; }
+        return loaded[index]->QueryInterface(IID_IAIMPPlaylist, reinterpret_cast<void**>(output));
+    }
     STUB(GetLoadedPlaylistByName, (IAIMPString*, IAIMPPlaylist**))
-    int WINAPI GetLoadedPlaylistCount() override { return 0; }
+    int WINAPI GetLoadedPlaylistCount() override { return static_cast<int>(loaded.size()); }
     STUB(GetLoadedPlaylistByID, (IAIMPString*, IAIMPPlaylist**))
 };
 class Messages final : public FakeUnknown<IAIMPServiceMessageDispatcher> {
 public:
     BOOL shuffle = FALSE;
+    int end_action = 2;
+    bool end_action_supported = true;
     HWND main_window = nullptr;
     Ref<IAIMPMessageHook> observer;
     Messages() : FakeUnknown(IID_IAIMPServiceMessageDispatcher) {}
     HRESULT WINAPI Send(LongWord message, int operation, void* value) override {
         if (message == AIMP_MSG_PROPERTY_HWND && operation == AIMP_MPH_MAINFORM) { *static_cast<HWND*>(value) = main_window; return S_OK; }
+        if (message == AIMP_MSG_PROPERTY_ACTION_ON_END_OF_PLAYLIST && operation == AIMP_MSG_PROPVALUE_GET && end_action_supported) { *static_cast<int*>(value) = end_action; return S_OK; }
         if (message != AIMP_MSG_PROPERTY_SHUFFLE || operation != AIMP_MSG_PROPVALUE_GET) return E_NOTIMPL;
         *static_cast<BOOL*>(value) = shuffle; return S_OK;
     }
@@ -870,7 +877,7 @@ struct PluginChecks {
         plugin.Finalize();
         std::filesystem::remove(plugin.weights_file_);
     }
-    static void transition_trace_checks(Manager& manager, Messages& messages, int cooldown = 0) {
+    static void transition_trace_checks(Manager& manager, Messages& messages, int cooldown = 0, bool finite = false) {
         Track first(L"trace-first.flac"), second(L"trace-second.flac"), third(L"trace-third.flac");
         EmptyPlaylist playlist;
         playlist.items = {&first, &second, &third};
@@ -887,10 +894,15 @@ struct PluginChecks {
         plugin.weights_.set("trace-first.flac", 10); plugin.weights_.set("trace-second.flac", 3); plugin.weights_.set("trace-third.flac", 10);
         plugin.random_.seed(260325);
         plugin.cooldown_ = cooldown;
+        plugin.finite_ = finite;
+        const auto saved_end_action = messages.end_action;
+        if (finite) messages.end_action = 1;
         QueueOutput manual;
         plugin.OnSelect(&first, &manual);
         HRESULT result = E_NOTIMPL;
         plugin.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+        std::map<std::shared_ptr<FinitePass>, std::set<std::string>> finite_heard;
+        if (finite) finite_heard[plugin.active_pass_].insert("trace-first.flac");
         int repeats = 0;
         for (int transition = 0; transition < 128; ++transition) {
             int cursor = -1;
@@ -900,7 +912,7 @@ struct PluginChecks {
             plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_CURSOR, &next);
             auto item = query<IAIMPPlaylistItem>(next.item.get(), IID_IAIMPPlaylistItem);
             check(static_cast<bool>(item), "Transition trace must have an eligible next track.");
-            if (cooldown) {
+            if (cooldown && !finite) {
                 const auto recent = plugin.projected_recent(plugin.audible_);
                 const auto begin = recent.size() > static_cast<std::size_t>(cooldown) ? recent.size() - cooldown : 0;
                 for (std::size_t i = begin; i < recent.size(); ++i)
@@ -911,13 +923,13 @@ struct PluginChecks {
                 plugin.reroll_next();
                 plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_CURSOR, &next);
                 item = query<IAIMPPlaylistItem>(next.item.get(), IID_IAIMPPlaylistItem);
-                check(item && (cooldown == 2 || !same_object(item.get(), old_choice.get())), "Reroll changes the choice when another cooldown-eligible track exists.");
+                check(item && (finite || cooldown == 2 || !same_object(item.get(), old_choice.get())), "Reroll changes the choice when another cooldown-eligible track exists.");
             }
             const auto shown_before = plugin.monitor_state();
             check(shown_before.next_track == Plugin::track_label(item.get()) && shown_before.decision.find(L"Weight:") != std::wstring::npos,
                 "Every pre-transition display must match the cursor-based next track.");
             plugin.GetNext(item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &lookahead);
-            if (cooldown) {
+            if (cooldown && !finite) {
                 auto future = query<IAIMPPlaylistItem>(lookahead.item.get(), IID_IAIMPPlaylistItem);
                 check(future && !same_object(future.get(), item.get()), "Lookahead must include the not-yet-started source in cooldown.");
                 if (cooldown == 2) check(!same_object(future.get(), player.current), "Two-track cooldown must include both confirmed and pending predecessors.");
@@ -947,6 +959,7 @@ struct PluginChecks {
                 check(plugin.playing_ == chosen_context, "Missing-token duplicate must be idempotent.");
             }
             plugin.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+            if (finite) check(finite_heard[plugin.active_pass_].insert(track_key(item.get())).second, "Finite cursor/prefetch transitions never repeat a filename within one pass.");
             check(plugin.recent_tracks_.size() == static_cast<std::size_t>(transition + 2), "Only one actual stream start counts per double-selection transition; probes and rerolls never count.");
             player.current = item.get();
             player.current->GetValueAsInt32(AIMP_PLAYLISTITEM_PROPID_PLAYBACKQUEUEINDEX, &cursor);
@@ -956,8 +969,9 @@ struct PluginChecks {
             check(shown_after.next_track == Plugin::track_label(query<IAIMPPlaylistItem>(probe.item.get(), IID_IAIMPPlaylistItem).get()) && shown_after.decision.find(L"Weight:") != std::wstring::npos,
                 "After every stream start, next weight and displayed choice must match AIMP's actual cursor request.");
         }
-        check(cooldown ? repeats == 0 : repeats > 0, "Cooldown suppresses repeats; default trace still exercises legitimate weighted repeats.");
+        check(finite || (cooldown ? repeats == 0 : repeats > 0), "Cooldown suppresses repeats; default trace still exercises legitimate weighted repeats.");
         plugin.Finalize();
+        messages.end_action = saved_end_action;
         std::cout << "Replayed 128 cursor/prefetch/double-selection/stream-start transitions, cooldown=" << cooldown << ", repeats=" << repeats << ".\n";
     }
     static void cursor_and_duplicate_checks(Manager& manager, Messages& messages) {
@@ -1147,7 +1161,7 @@ struct PluginChecks {
         {
             std::ifstream input(profile / L"IgnorantShuffle" / L"plugin.log", std::ios::binary);
             const std::string contents{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-            check(contents.find("plugin.start version=0.9.0") != std::string::npos && contents.find("plugin.stop") != std::string::npos,
+            check(contents.find("plugin.start version=" + std::string(ignorant::build_version)) != std::string::npos && contents.find("plugin.stop") != std::string::npos,
                 "Plugin lifecycle must produce and flush diagnostic logs.");
         }
         std::filesystem::remove(profile / L"IgnorantShuffle" / L"preferences.ini");
@@ -1294,6 +1308,190 @@ struct PluginChecks {
         restored.load_preferences(); check(restored.update_repository_ == "example/shuffle", "Configured source survives restart.");
         DestroyWindow(window); plugin.Finalize(); std::filesystem::remove(plugin.preferences_file_);
     }
+    static void finite_checks() {
+        Manager manager;
+        Messages messages; messages.shuffle = TRUE;
+        Track first(L"finite-A.flac"), second(L"finite-B.flac"), third(L"finite-C.flac"), duplicate(L"finite-B.flac"), zero(L"finite-zero.flac");
+        EmptyPlaylist playlist; playlist.items = {&first, &second, &third, &duplicate, &zero};
+        for (int i = 0; i < playlist.GetItemCount(); ++i) {
+            auto* item = static_cast<Track*>(playlist.items[i]); item->owner = &playlist; item->index = i;
+        }
+        manager.active = &playlist; manager.loaded = {&playlist};
+        PlaybackQueue queue;
+        Player player;
+        auto setup = [&](Plugin& plugin) {
+            plugin.playlists_ = query<IAIMPServicePlaylistManager>(&manager, IID_IAIMPServicePlaylistManager);
+            plugin.messages_ = query<IAIMPServiceMessageDispatcher>(&messages, IID_IAIMPServiceMessageDispatcher);
+            plugin.queue_ = query<IAIMPServicePlaybackQueue2>(&queue, IID_IAIMPServicePlaybackQueue2);
+            plugin.player_ = query<IAIMPServicePlayer>(&player, IID_IAIMPServicePlayer);
+            plugin.finite_ = true; plugin.cooldown_ = 10000;
+            plugin.weights_.set("finite-A.flac", 100); plugin.weights_.set("finite-B.flac", 10);
+            plugin.weights_.set("finite-C.flac", 1); plugin.weights_.set("finite-zero.flac", 0);
+        };
+        HRESULT result = E_NOTIMPL;
+        Plugin stop; setup(stop);
+        QueueOutput output;
+        check(stop.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == TRUE && output.item, "Finite pass starts with a positive weighted track.");
+        std::set<std::string> heard;
+        for (int i = 0; i < 3; ++i) {
+            auto item = query<IAIMPPlaylistItem>(output.item.get(), IID_IAIMPPlaylistItem);
+            check(item && heard.insert(track_key(item.get())).second && !same_object(item.get(), &zero), "Finite pass visits each positive filename once, including duplicate entries.");
+            player.current = item.get();
+            if (i == 1) output.custom = {}; // tokenless transition recovery
+            stop.OnSelect(item.get(), &output);
+            const auto played_before = stop.playing_->pass->played.size();
+            stop.OnSelect(item.get(), &output);
+            QueueOutput next, repeated;
+            check(stop.GetNext(item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &next) == TRUE, "Finite lookahead stays handled.");
+            check(stop.playing_->pass->played.size() == played_before, "Preparation, duplicate OnSelect and lookahead do not commit listening history.");
+            const auto random = stop.random_;
+            stop.GetNext(item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &repeated);
+            check(stop.random_ == random && (next.item ? same_object(next.item.get(), repeated.item.get()) : !repeated.item), "Finite repeated probes remain stable, including an empty end.");
+            stop.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+            check(stop.active_pass_->played.size() == static_cast<std::size_t>(i + 1), "Only committed starts advance the finite pass.");
+            if (i == 2) {
+                check(!next.item && !next.custom && stop.monitor_state().next_track.find(L"Playlist complete") != std::wstring::npos, "AIMP stop-at-end produces a handled null queue and completion message.");
+                check(stop.monitor_state().decision.find(L"Already played: 3 / 3 | Remaining: 0") != std::wstring::npos, "Finite progress is visible.");
+            }
+            output.item = next.item; output.custom = next.custom;
+        }
+        // End settings may change after a stop decision was prefetched.
+        messages.end_action = 1;
+        stop.CoreMessage(AIMP_MSG_EVENT_PROPERTY_VALUE, AIMP_MSG_PROPERTY_ACTION_ON_END_OF_PLAYLIST, nullptr, &result);
+        stop.GetNext(player.current, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
+        auto next_pass = occurrence_from(&output);
+        check(next_pass && next_pass->pass != stop.active_pass_ && next_pass->pass->played.empty(), "AIMP repeat starts a fresh speculative pass without resetting the current one.");
+        const auto repeat_random = stop.random_;
+        QueueOutput same_boundary;
+        stop.GetNext(player.current, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &same_boundary);
+        check(stop.random_ == repeat_random && same_object(output.item.get(), same_boundary.item.get()), "Repeat boundary is cached without extra draws.");
+        const auto original_next = output.item;
+        stop.reroll_next();
+        stop.GetNext(player.current, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
+        check(output.item && !same_object(output.item.get(), original_next.get()), "Reroll at a repeat boundary replaces the next pass's first choice.");
+        heard.clear();
+        for (int i = 0; i < 30; ++i) {
+            if (i % 3 == 0) heard.clear();
+            auto item = query<IAIMPPlaylistItem>(output.item.get(), IID_IAIMPPlaylistItem);
+            check(item && heard.insert(track_key(item.get())).second, "Each repeated pass remains finite and contains no duplicate filename.");
+            player.current = item.get(); stop.OnSelect(item.get(), &output);
+            stop.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+            QueueOutput upcoming, future;
+            stop.GetNext(item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &upcoming);
+            stop.GetNext(upcoming.item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &future);
+            check(future.item && !same_object(future.item.get(), &zero), "Multi-track lookahead across a repeat boundary excludes zero.");
+            output.item = upcoming.item; output.custom = upcoming.custom;
+        }
+        player.state = AIMP_PLAYER_STATE_STOPPED;
+        stop.CoreMessage(AIMP_MSG_EVENT_PLAYER_STATE, 0, nullptr, &result);
+        check(!stop.active_pass_ && !stop.playing_, "Stopping clears the finite pass for a fresh start.");
+        stop.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output);
+        check(static_cast<bool>(output.item), "Restart after stop has a fresh weighted order.");
+        stop.Finalize(); player.state = AIMP_PLAYER_STATE_PLAYING;
+
+        // Next playlist follows loaded order, skips empty/excluded lists, and wraps.
+        Track target_first(L"finite-target-A.flac"), target_second(L"finite-target-B.flac");
+        EmptyPlaylist empty, excluded, target;
+        Track only_zero(L"finite-target-zero.flac"); only_zero.owner = &excluded; excluded.items = {&only_zero};
+        target_first.owner = target_second.owner = &target; target_second.index = 1; target.items = {&target_first, &target_second};
+        manager.loaded = {&target, &playlist, &empty, &excluded};
+        messages.end_action = 0;
+        Plugin move; setup(move); move.weights_.set("finite-target-zero.flac", 0);
+        QueueOutput manual;
+        player.current = &first; move.OnSelect(&first, &manual); move.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+        move.active_pass_->played = {"finite-A.flac", "finite-B.flac", "finite-C.flac"};
+        move.GetNext(&first, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
+        auto moved = occurrence_from(&output);
+        check(moved && same_object(moved->playlist.get(), &target) && move.active_pass_ != moved->pass, "Next-playlist action skips excluded lists, wraps, and does not commit a speculative switch.");
+        player.current = moved->item.get(); move.OnSelect(moved->item.get(), &output); move.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+        check(move.active_pass_ == moved->pass && move.active_pass_->played.size() == 1, "Actual next-playlist playback commits its new finite pass.");
+        move.GetNext(moved->item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
+        check(output.item && !same_object(output.item.get(), moved->item.get()), "The destination playlist uses weighted selection without repeats.");
+        move.Finalize();
+        for (const auto action : {0, 1, 2}) {
+            Plugin none; setup(none); messages.end_action = action;
+            none.weights_.set("finite-A.flac", 0); none.weights_.set("finite-B.flac", 0); none.weights_.set("finite-C.flac", 0);
+            manager.loaded = {&playlist};
+            none.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output);
+            check(!output.item && !output.custom, "An all-zero finite playlist never loops or delegates to unweighted shuffle.");
+            none.Finalize();
+        }
+        Plugin missing; setup(missing); messages.end_action_supported = false;
+        player.current = &first; missing.OnSelect(&first, &manual); missing.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+        missing.active_pass_->played = {"finite-A.flac", "finite-B.flac", "finite-C.flac"};
+        missing.GetNext(&first, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
+        check(!output.item, "Unavailable host end settings safely stop."); missing.Finalize(); messages.end_action_supported = true;
+
+        Plugin edits; setup(edits); messages.end_action = 2; player.current = &first;
+        edits.OnSelect(&first, &manual); edits.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+        edits.GetNext(&first, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
+        edits.weights_.set("finite-A.flac", 100000); edits.weights_.set("finite-C.flac", 0); edits.changed();
+        edits.GetNext(&first, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
+        check(track_key(query<IAIMPPlaylistItem>(output.item.get(), IID_IAIMPPlaylistItem).get()) == "finite-B.flac", "Weight edits preserve finite progress and remove new zero exclusions.");
+        auto edited_next = query<IAIMPPlaylistItem>(output.item.get(), IID_IAIMPPlaylistItem);
+        player.current = edited_next.get(); edits.OnSelect(edited_next.get(), &output); edits.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+        edits.weights_.set("finite-zero.flac", 25); edits.changed();
+        edits.GetNext(edited_next.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
+        check(same_object(output.item.get(), &zero), "A newly positive unplayed track can join the remaining pass.");
+        QueueOutput previous;
+        edits.GetPrev(edited_next.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &previous);
+        check(same_object(previous.item.get(), &first), "Finite mode retains explicit Previous navigation.");
+        player.current = &first; edits.OnSelect(&first, &previous); edits.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+        check(edits.active_pass_->played.size() == 2, "Previous playback does not duplicate the finite completion count.");
+        edits.Finalize();
+
+        Plugin single; setup(single); messages.end_action = 1;
+        single.weights_.set("finite-B.flac", 0); single.weights_.set("finite-C.flac", 0);
+        player.current = &first; single.OnSelect(&first, &manual); single.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+        for (int repeat = 0; repeat < 8; ++repeat) {
+            const auto old_pass = single.active_pass_;
+            single.GetNext(&first, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
+            check(same_object(output.item.get(), &first) && occurrence_from(&output)->pass != old_pass, "Single-positive repeat is a fresh one-track pass.");
+            single.OnSelect(&first, &output); single.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+        }
+        single.Finalize();
+
+        // Deep lookahead must outlive the bounded 256-node playback history.
+        Plugin deep; setup(deep); messages.end_action = 2;
+        EmptyPlaylist large; std::vector<std::unique_ptr<Track>> tracks;
+        for (int i = 0; i < 320; ++i) {
+            auto item = std::make_unique<Track>(L"finite-long-" + std::to_wstring(i) + L".flac");
+            item->owner = &large; item->index = i; large.items.push_back(item.get()); tracks.push_back(std::move(item));
+        }
+        deep.GetNext(&large, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output); heard.clear();
+        for (int i = 0; i < 320; ++i) {
+            auto item = query<IAIMPPlaylistItem>(output.item.get(), IID_IAIMPPlaylistItem);
+            check(item && heard.insert(track_key(item.get())).second, "Deep speculative finite pass never repeats after history eviction.");
+            deep.GetNext(item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
+        }
+        check(!output.item && !deep.active_pass_, "Long speculative pass ends without committing tracks."); deep.Finalize();
+
+        Plugin settings; setup(settings); settings.finite_ = false; player.current = &first;
+        settings.preferences_file_ = std::filesystem::current_path() / L"finite-prefs.ini";
+        module = GetModuleHandleW(nullptr); settings.open_monitor();
+        settings.OnSelect(&first, &manual); settings.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+        const auto panel = settings.monitor_.handle();
+        check(IsDlgButtonChecked(panel, IDC_FINITE_PLAYLIST) == BST_UNCHECKED, "Finite mode is disabled by default.");
+        CheckDlgButton(panel, IDC_FINITE_PLAYLIST, BST_CHECKED);
+        SendMessageW(panel, WM_COMMAND, MAKEWPARAM(IDC_FINITE_PLAYLIST, BN_CLICKED), 0);
+        check(settings.finite_ && !IsWindowEnabled(GetDlgItem(panel, IDC_COOLDOWN)), "Finite checkbox applies immediately and pauses cooldown controls.");
+        settings.GetNext(&first, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output); settings.update_monitor();
+        Plugin restored; restored.preferences_file_ = settings.preferences_file_; restored.load_preferences();
+        check(restored.finite_ && restored.cooldown_ == 10000, "Finite preference survives restart and preserves the saved cooldown.");
+        settings.monitor_.restore_size(1, 400);
+        RECT narrow_client{}; GetClientRect(panel, &narrow_client);
+        RECT prior{};
+        for (const int id : {IDC_ENABLED, IDC_PINNED, IDC_ATTACHED, IDC_FINITE_PLAYLIST}) {
+            RECT box{}; GetWindowRect(GetDlgItem(panel, id), &box); MapWindowPoints(nullptr, panel, reinterpret_cast<POINT*>(&box), 2);
+            check(box.left >= 0 && box.right <= narrow_client.right && (prior.right == 0 || box.top >= prior.bottom || box.left >= prior.right), "All four checkbox labels reflow without clipping or overlap.");
+            prior = box;
+        }
+        settings.monitor_.restore_size(540, 680); capture_preview(panel, L"monitor-finite.bmp");
+        CheckDlgButton(panel, IDC_FINITE_PLAYLIST, BST_UNCHECKED);
+        SendMessageW(panel, WM_COMMAND, MAKEWPARAM(IDC_FINITE_PLAYLIST, BN_CLICKED), 0);
+        check(!settings.finite_ && IsWindowEnabled(GetDlgItem(panel, IDC_COOLDOWN)), "Turning finite mode off restores cooldown controls.");
+        settings.Finalize(); std::filesystem::remove(settings.preferences_file_);
+    }
     static void run() {
         Manager manager;
         Messages messages;
@@ -1311,11 +1509,13 @@ struct PluginChecks {
         panel_window_checks(manager, messages);
         repaint_checks();
         update_settings_checks();
+        finite_checks();
         cooldown_checks(manager, messages);
         cursor_and_duplicate_checks(manager, messages);
         transition_trace_checks(manager, messages);
         transition_trace_checks(manager, messages, 1);
         transition_trace_checks(manager, messages, 2);
+        transition_trace_checks(manager, messages, 2, true);
         prefetched_display_checks(manager, messages);
         repeat_checks(manager, messages);
         output.SetValueAsObject(AIMP_PLAYBACKQUEUEITEM_PROPID_PLAYLISTITEM, &playlist);

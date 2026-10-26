@@ -106,6 +106,23 @@ CooldownPool cooldown_pool(const std::vector<std::string>& tracks, const std::ve
         if (weights[i] == 0 || !blocked.count(tracks[i])) result.indices.push_back(i);
     return result;
 }
+FinitePool finite_pool(const std::vector<std::string>& tracks, const std::vector<double>& weights,
+    const std::vector<std::string>& played) {
+    if (tracks.size() != weights.size()) throw std::invalid_argument("Track and weight counts differ.");
+    const std::set<std::string> used(played.begin(), played.end());
+    std::set<std::string> seen;
+    FinitePool result;
+    for (std::size_t i = 0; i < tracks.size(); ++i) {
+        if (!std::isfinite(weights[i]) || weights[i] < 0) throw std::invalid_argument("Invalid candidate weight.");
+        if (!seen.insert(tracks[i]).second) continue;
+        if (weights[i] > 0) {
+            ++result.positive;
+            if (used.count(tracks[i])) { ++result.played; continue; }
+        }
+        result.indices.push_back(i);
+    }
+    return result;
+}
 Selection choose_details(const std::vector<double>& weights, double unit) {
     if (!std::isfinite(unit) || unit < 0 || unit >= 1) throw std::invalid_argument("Draw must be in [0, 1).");
     Selection result;

@@ -80,6 +80,10 @@ void MonitorWindow::update(const MonitorState& state) {
     if (IsDlgButtonChecked(window_, IDC_PINNED) != pinned) CheckDlgButton(window_, IDC_PINNED, pinned);
     const UINT attached = state.attached ? BST_CHECKED : BST_UNCHECKED;
     if (IsDlgButtonChecked(window_, IDC_ATTACHED) != attached) CheckDlgButton(window_, IDC_ATTACHED, attached);
+    const UINT finite = state.finite ? BST_CHECKED : BST_UNCHECKED;
+    if (IsDlgButtonChecked(window_, IDC_FINITE_PLAYLIST) != finite) CheckDlgButton(window_, IDC_FINITE_PLAYLIST, finite);
+    for (const int id : {IDC_COOLDOWN, IDC_APPLY_COOLDOWN, IDC_COOLDOWN_LABEL, IDC_COOLDOWN_OFF})
+        if ((IsWindowEnabled(GetDlgItem(window_, id)) != FALSE) == state.finite) EnableWindow(GetDlgItem(window_, id), !state.finite);
     const bool topmost = (GetWindowLongPtrW(window_, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
     if (topmost != state.pinned)
         SetWindowPos(window_, state.pinned ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -185,7 +189,7 @@ void MonitorWindow::layout() {
         int y = y_units(window_, 4), x = margin;
         const auto gap = x_units(window_, 3), box_height = y_units(window_, 12);
         // Pack complete labels in order, wrapping the next checkbox as needed.
-        for (const int id : {IDC_ENABLED, IDC_PINNED, IDC_ATTACHED}) {
+        for (const int id : {IDC_ENABLED, IDC_PINNED, IDC_ATTACHED, IDC_FINITE_PLAYLIST}) {
             const auto size = label_width(id) + x_units(window_, 14);
             if (x != margin && x + size > margin + width) { x = margin; y += box_height + y_units(window_, 2); }
             place(id, x, y, size, box_height);
@@ -485,6 +489,7 @@ INT_PTR CALLBACK MonitorWindow::procedure(HWND window, UINT message, WPARAM wpar
             if (id == IDC_ENABLED && self->on_enabled) self->on_enabled(IsDlgButtonChecked(window, id) == BST_CHECKED);
             else if (id == IDC_PINNED && self->on_pinned) self->on_pinned(IsDlgButtonChecked(window, id) == BST_CHECKED);
             else if (id == IDC_ATTACHED && self->on_attached) self->on_attached(IsDlgButtonChecked(window, id) == BST_CHECKED);
+            else if (id == IDC_FINITE_PLAYLIST && self->on_finite) self->on_finite(IsDlgButtonChecked(window, id) == BST_CHECKED);
             else if (id == IDC_EDIT_WEIGHTS && self->on_weights) self->on_weights();
             else if (id == IDC_REROLL_NEXT && self->on_reroll) self->on_reroll();
             else if (id >= IDC_QUICK_WEIGHT_0 && id <= IDC_QUICK_WEIGHT_10 && self->on_weight) self->on_weight(id - IDC_QUICK_WEIGHT_0);

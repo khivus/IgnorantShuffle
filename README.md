@@ -8,6 +8,7 @@ Weighted smart shuffle for **AIMP 5.40 on Windows**. Give each track a weight to
 
 - One-click weights **0–10**, plus custom and imported values above 10 or fractional values. **0 excludes a track** from weighted selection.
 - Track cooldown with a visible fallback when the playlist is too short.
+- Optional finite playlists: higher weights tend to play earlier, each positive-weight filename plays once per pass, then AIMP's end-of-playlist setting applies.
 - Current/next track details, selection probabilities, and a **Reroll next** button.
 - A compact, resizable panel with scrolling, always-on-top mode, and optional attachment beside AIMP.
 - Bulk weight editing, import/export, and optional portable global, folder-local, and AIMP-playlist weights.

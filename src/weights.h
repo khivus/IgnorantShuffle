@@ -43,6 +43,14 @@ struct CooldownPool {
     std::size_t blocked = 0;
     bool fallback = false;
 };
+struct FinitePool {
+    std::vector<std::size_t> indices;
+    std::size_t positive = 0, played = 0;
+};
+// One candidate per filename. Played positives are removed, while zero entries
+// remain so the selection report can distinguish exclusions from completion.
+FinitePool finite_pool(const std::vector<std::string>& tracks, const std::vector<double>& weights,
+    const std::vector<std::string>& played);
 // N requires N other playback positions between repeats. Duplicate entries
 // share their filename's cooldown; zero weights always stay excluded.
 CooldownPool cooldown_pool(const std::vector<std::string>& tracks, const std::vector<double>& weights,

@@ -24,15 +24,15 @@ For direct CMake builds, set `IGNORANT_SHUFFLE_UPDATE_REPOSITORY`. A saved nonem
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\package-release.ps1
 ```
 
-For version 0.9.0 it produces:
+For version 0.10.0 it produces:
 
 | File in `dist/` | Purpose |
 | --- | --- |
-| `IgnorantShuffle-v0.9.0.aimppack` | AIMP installer package with both architectures and the MIT license. |
+| `IgnorantShuffle-v0.10.0.aimppack` | AIMP installer package with both architectures and the MIT license. |
 | `aimp_ignorant_shuffle-x64.dll` | Separate DLL for 64-bit AIMP. |
 | `aimp_ignorant_shuffle-x86.dll` | Separate DLL for 32-bit AIMP. |
 | `SHA256SUMS.txt` | Checksums for the package and both DLLs. |
-| `IgnorantShuffle-v0.9.0.aimppack.sha256` | Package-only checksum. |
+| `IgnorantShuffle-v0.10.0.aimppack.sha256` | Package-only checksum. |
 
 Packaging verifies both DLL versions and every archived file against its source. It creates local artifacts only. Use `-OutputDirectory <folder>` to choose a different output location.
 
@@ -59,7 +59,7 @@ AIMP selects the appropriate architecture. The package can also be installed man
 
 ## Initial-release publishing script
 
-The current helper is configured for **khivus/IgnorantShuffle v0.9.0**. Run it after building and packaging, from an environment with GitHub network access and writable Git metadata:
+The current helper targets **khivus/IgnorantShuffle** and reads the release version from `CMakeLists.txt`. Run it after building and packaging, from an environment with GitHub network access and writable Git metadata:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\publish-release.ps1

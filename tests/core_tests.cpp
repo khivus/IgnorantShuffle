@@ -1,4 +1,5 @@
 #include "weights.h"
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -92,6 +93,33 @@ int main() {
         rejects([] { cooldown_pool({"A"}, {}, {}, 1); });
         rejects([] { cooldown_pool({"A"}, {-1}, {}, 1); });
         std::mt19937_64 random(123456);
+        const auto finite = finite_pool({"A", "B", "B", "C", "zero"}, {10, 1, 1, 25, 0}, {"A", "missing"});
+        check(finite.positive == 3 && finite.played == 1 && finite.indices == std::vector<std::size_t>({1, 3, 4}), "Finite pool removes played filenames and collapses duplicate entries");
+        check(finite_pool({"A", "zero"}, {10, 0}, {"A"}).indices == std::vector<std::size_t>({1}), "Completed finite pool preserves zero-exclusion reporting");
+        check(finite_pool({}, {}, {}).indices.empty(), "Empty finite pool");
+        rejects([] { finite_pool({"A"}, {}, {}); });
+        rejects([] { finite_pool({"A"}, {-1}, {}); });
+        int heavier_first = 0;
+        const std::vector<std::string> finite_keys{"A", "B", "C", "zero"};
+        const std::vector<double> finite_weights{100, 10, 1, 0};
+        for (int pass = 0; pass < 10000; ++pass) {
+            std::vector<std::string> heard;
+            for (int slot = 0; slot < 3; ++slot) {
+                const auto remaining = finite_pool(finite_keys, finite_weights, heard);
+                std::vector<double> mass;
+                for (const auto index : remaining.indices) mass.push_back(finite_weights[index]);
+                const auto selected = choose(mass, random);
+                check(selected.has_value(), "Every finite pass fills each positive position");
+                const auto key = finite_keys[remaining.indices[*selected]];
+                if (slot == 0 && key == "A") ++heavier_first;
+                check(std::find(heard.begin(), heard.end(), key) == heard.end() && key != "zero", "Finite weighted order never repeats or selects zero");
+                heard.push_back(key);
+            }
+            const auto end = finite_pool(finite_keys, finite_weights, heard);
+            check(end.played == 3 && end.indices == std::vector<std::size_t>{3}, "Finite weighted order reaches an end");
+        }
+        check(heavier_first > 8800 && heavier_first < 9300, "Higher weight is substantially more likely to occur first");
+        random.seed(123456);
         int first = 0;
         for (int i = 0; i < 100000; ++i) {
             auto selected = choose({0, 1, 3, 0}, random);

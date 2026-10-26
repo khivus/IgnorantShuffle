@@ -15,9 +15,29 @@ Turn on both **AIMP Shuffle** and the plugin's **Weighted shuffle enabled** opti
 
 Each choice is proportional to weight. If the only eligible tracks have weights 2 and 8, their chances are 20% and 80%. Larger imported weights remain unchanged when settings reopen or weights are exported.
 
-With cooldown off, every draw includes all positive-weight candidates, so immediate repeats are possible. With cooldown on, the draw uses tracks outside cooldown. Returning from cooldown makes a track eligible; it does not guarantee that it will be selected immediately.
+By default shuffle continues indefinitely. With cooldown off, every draw includes all positive-weight candidates, so immediate repeats are possible. With cooldown on, the draw uses tracks outside cooldown. Returning from cooldown makes a track eligible; it does not guarantee that it will be selected immediately.
 
-Zero weights are filtered before drawing. If no positive-weight tracks remain, the plugin supplies no next track and tells AIMP to stop. AIMP checks disabled playlist entries itself. Explicit user-queue entries and repeat settings can take precedence over the plugin's choice.
+Zero weights are filtered before drawing. In the default endless mode, if no positive-weight tracks remain, the plugin supplies no next track and tells AIMP to stop. AIMP checks disabled playlist entries itself. Explicit user-queue entries and repeat settings can take precedence over the plugin's choice.
+
+## Finite playlists
+
+Check **Play playlist once** in the panel to give weighted shuffle an end. This option is **off by default** and is saved across restarts.
+
+Each positive-weight filename is selected once per pass. The next track is still drawn in proportion to the remaining weights, so higher weights are more likely to play earlier; the list is not strictly sorted by weight. Weight 0 stays excluded, custom weights remain supported, and duplicate playlist entries with the same filename share one place in the pass.
+
+When the pass ends, the plugin reads AIMP's **On end of playlist** setting, available under its automatic playback settings or the Repeat button's context menu:
+
+| AIMP setting | Finite-mode behavior |
+| --- | --- |
+| Stop / do nothing | No next track is supplied and playback stops. |
+| Repeat playlist | Starts a fresh weighted pass through that playlist. |
+| Next playlist | Moves through loaded playlist order, wrapping to earlier playlists and skipping empty lists or lists with no positive weights. If no other eligible list exists, playback stops. |
+
+The panel shows **Already played**, **Remaining**, and the action at completion. **Reroll next** changes only the pending choice; it does not consume an unplayed track. Lookahead and duplicate preparation callbacks also do not advance listening progress.
+
+Cooldown controls are paused while finite mode is on because tracks already cannot repeat within a pass. The saved cooldown takes effect again when finite mode is turned off. AIMP's explicit track-repeat and manual queue choices still take precedence.
+
+Turning this option on begins a fresh pass with the current source counted as played. Stopping, changing the plugin or AIMP Shuffle on/off state, or manually switching playlists begins a fresh pass when weighted playback resumes. Manual playback, including zero-weight tracks and Previous navigation, remains available. Weight edits preserve progress; newly eligible or added tracks can join the remaining pool.
 
 ## Current and next track
 
@@ -26,6 +46,8 @@ The panel opens automatically whenever AIMP loads the plugin, including when wei
 **Current track** shows the actual playing or paused item and its weight. Click **1–10** or **0 - Exclude** to save immediately. The selected button reflects the value being edited; a fractional value or value above 10 is displayed without selecting an integer button. These controls are disabled when nothing is playing.
 
 **Next weighted choice** shows the track already supplied to AIMP, its relative chance, eligible and excluded counts, cooling-down count, and the random roll's weighted interval. Duplicate entries share one filename's cooldown and count once. Cooling-down counts are zero when cooldown is off or suspended for a short list.
+
+In finite mode, played and remaining counts describe the current pass. A completion message identifies a fresh pass, a playlist switch, or a stop.
 
 Reading the panel never rolls again. Prefetch for a later track does not replace the current track's decision. Before AIMP requests a choice, the panel reports that it is waiting; an empty positive-weight pool is explained explicitly. The displayed choice describes the plugin's decision, since AIMP's manual queue and repeat settings may override it.
 

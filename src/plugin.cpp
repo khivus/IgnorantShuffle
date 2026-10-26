@@ -17,6 +17,7 @@
 #include <locale>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -87,6 +88,11 @@ bool same_object(IUnknown* first, IUnknown* second) {
 // The custom queue value identifies a playback occurrence, not just a filename.
 // A repeat of the same track is a fresh occurrence with its own weighted draw.
 const GUID iid_queue_token = {0x62aa2619, 0x77ae, 0x4570, {0xb4, 0xae, 0x1e, 0x06, 0x91, 0x9c, 0xaa, 0x01}};
+struct FinitePass {
+    unsigned long long generation = 0;
+    Ref<IAIMPPlaylist> playlist;
+    std::set<std::string> played;
+};
 struct Occurrence {
     unsigned long long id = 0;
     Ref<IAIMPPlaylistItem> item;
@@ -94,11 +100,18 @@ struct Occurrence {
     std::weak_ptr<Occurrence> previous;
     std::weak_ptr<Occurrence> next;
     ignorant::Selection decision;
+    ignorant::Selection incoming_decision;
     ignorant::CooldownPool cooldown;
     bool decision_ready = false;
     bool started = false;
     bool planned = false;
     bool rerolled = false;
+    std::shared_ptr<FinitePass> pass;
+    std::shared_ptr<std::vector<std::string>> pass_path;
+    std::size_t pass_position = 0;
+    ignorant::FinitePool finite_pool;
+    bool pass_end = false;
+    int end_action = -1;
 };
 class QueueToken final : public IUnknown {
     std::atomic<ULONG> references_{1};
@@ -167,6 +180,9 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     unsigned long long next_occurrence_id_ = 1;
     std::string last_display_;
     bool enabled_ = true;
+    bool finite_ = false;
+    unsigned long long finite_generation_ = 1;
+    std::shared_ptr<FinitePass> active_pass_;
     bool pinned_ = true;
     bool side_panel_ = false;
     bool hooked_ = false;
@@ -218,6 +234,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         success = (WritePrivateProfileStringW(L"Monitor", L"Pinned", pinned_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Monitor", L"Attached", side_panel_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Monitor", L"CooldownTracks", std::to_wstring(cooldown_).c_str(), preferences_file_.c_str()) != FALSE) && success;
+        success = (WritePrivateProfileStringW(L"Shuffle", L"FinitePlaylist", finite_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Storage", L"MusicFolder", music_folder_.c_str(), preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Storage", L"SharedGlobal", shared_global_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Storage", L"FolderLocal", folder_local_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
@@ -250,6 +267,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         pinned_ = GetPrivateProfileIntW(L"Monitor", L"Pinned", 1, preferences_file_.c_str()) != 0;
         side_panel_ = GetPrivateProfileIntW(L"Monitor", L"Attached", 0, preferences_file_.c_str()) != 0;
         cooldown_ = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Monitor", L"CooldownTracks", 0, preferences_file_.c_str())), 0, 10000);
+        finite_ = GetPrivateProfileIntW(L"Shuffle", L"FinitePlaylist", 0, preferences_file_.c_str()) != 0;
         wchar_t folder[32768]{};
         GetPrivateProfileStringW(L"Storage", L"MusicFolder", L"", folder, 32768, preferences_file_.c_str());
         music_folder_ = folder;
@@ -320,6 +338,47 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         }
         log_.write("weights.current", "scope=" + std::to_string(static_cast<int>(scope)) + " weight=" + std::to_string(value) + " track=" + track);
     }
+    void reset_finite_progress() { active_pass_.reset(); ++finite_generation_; }
+    void set_finite(bool enabled) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (finite_ == enabled) return;
+        finite_ = enabled; reset_finite_progress();
+        save_preferences(); changed(); refresh_cooldown_preview(); update_monitor();
+        log_.write("shuffle.finite", "enabled=" + std::to_string(enabled));
+    }
+    std::shared_ptr<FinitePass> new_pass(const Ref<IAIMPPlaylist>& playlist) {
+        auto pass = std::make_shared<FinitePass>();
+        pass->generation = finite_generation_; pass->playlist = playlist; return pass;
+    }
+    void ensure_pass(const std::shared_ptr<Occurrence>& source, const Ref<IAIMPPlaylist>& playlist) {
+        if (!source->pass || source->pass->generation != finite_generation_ || !same_object(source->pass->playlist.get(), playlist.get())) {
+            source->pass = source->item && active_pass_ && active_pass_->generation == finite_generation_ && same_object(active_pass_->playlist.get(), playlist.get())
+                ? active_pass_ : new_pass(playlist);
+            source->pass_path.reset();
+        }
+        if (!source->pass_path) {
+            source->pass_path = std::make_shared<std::vector<std::string>>();
+            if (source->item) source->pass_path->push_back(track_key(source->item.get()));
+            source->pass_position = source->pass_path->size();
+        }
+    }
+    std::vector<std::string> projected_pass(const std::shared_ptr<Occurrence>& source) {
+        std::vector<std::string> played(source->pass->played.begin(), source->pass->played.end());
+        // Keep the projected prefix independently of bounded occurrence history.
+        // AIMP may probe more than 256 future items before any stream starts.
+        played.insert(played.end(), source->pass_path->begin(), source->pass_path->begin() + source->pass_position);
+        return played;
+    }
+    void commit_finite_start(const Ref<IAIMPPlaylistItem>& item) {
+        if (!finite_ || !enabled_ || !shuffle_enabled() || !item) return;
+        const auto playlist = playlist_for(item.get());
+        if (!playlist) return;
+        if (audible_) { ensure_pass(audible_, playlist); active_pass_ = audible_->pass; }
+        else if (!active_pass_ || !same_object(active_pass_->playlist.get(), playlist.get())) active_pass_ = new_pass(playlist);
+        const auto key = track_key(item.get());
+        if (!key.empty()) active_pass_->played.insert(key);
+        log_.write("shuffle.finite.played", "count=" + std::to_string(active_pass_->played.size()) + " track=" + key);
+    }
     void set_cooldown(int tracks) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (tracks < 0 || tracks > 10000) throw std::runtime_error("Cooldown must be from 0 to 10000 tracks.");
@@ -345,6 +404,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         return recent;
     }
     void refresh_cooldown_preview() {
+        if (finite_) { cooldown_preview_ready_ = false; return; }
         auto current = current_track();
         auto playlist = playlist_for(current.get());
         cooldown_preview_ready_ = false;
@@ -364,6 +424,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         cooldown_preview_ready_ = true;
     }
     std::wstring cooldown_status(const ignorant::CooldownPool* pool) const {
+        if (finite_) return L"Cooldown paused - each positive-weight filename plays once per pass.";
         if (!cooldown_) return L"Cooldown off - tracks can repeat immediately.";
         if (!pool) return L"Cooldown: " + std::to_wstring(cooldown_) + L" tracks. Waiting for a playlist.";
         if (pool->fallback) return L"Playlist too short: " + std::to_wstring(pool->distinct_positive) +
@@ -375,6 +436,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (enabled_ == enabled) return;
         enabled_ = enabled;
+        reset_finite_progress();
         log_.write("plugin.toggle", enabled ? "enabled=1" : "enabled=0");
         history_.clear(); playing_.reset(); audible_.reset(); cursor_source_.reset(); beginning_.reset();
         queue_refresh_pending_ = false;
@@ -431,10 +493,12 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         state.enabled = enabled_;
         state.pinned = pinned_;
         state.attached = side_panel_;
+        state.finite = finite_;
         state.cooldown = cooldown_;
         state.cooldown_status = cooldown_status(cooldown_preview_ready_ ? &cooldown_preview_ : nullptr);
         const auto shuffle = shuffle_enabled();
         state.mode = !enabled_ ? L"Off - AIMP controls track order." : shuffle ? L"Active - weighted shuffle chooses the next track." : L"On, waiting - turn AIMP Shuffle on to activate.";
+        if (finite_ && enabled_ && shuffle) state.mode = L"Finite playlist - higher weights are more likely to play earlier.";
         state.notice = preferences_error_.empty() ? L"AIMP's manual queue and repeat settings can take priority." : preferences_error_;
         if (!log_.error().empty()) state.notice = L"Logging unavailable: " + from_utf8(log_.error());
         auto current = current_track();
@@ -496,8 +560,17 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         const auto& decision = source->decision;
         auto next = source->next.lock();
         std::wostringstream explanation;
+        if (finite_) {
+            explanation << L"Already played: " << source->finite_pool.played << L" / " << source->finite_pool.positive
+                << L" | Remaining: " << source->finite_pool.positive - source->finite_pool.played << L"\r\n";
+            if (source->pass_end) {
+                if (next) explanation << (source->end_action == 1 ? L"Playlist complete - repeating with a fresh weighted pass.\r\n" : L"Playlist complete - moving to the next playlist.\r\n");
+                else explanation << (source->end_action == 2 ? L"Playlist complete - AIMP is set to stop.\r\n" : L"Playlist complete - no eligible tracks to continue.\r\n");
+            }
+        }
         if (!decision.index) {
-            state.next_track = L"No eligible tracks - playback will stop";
+            state.next_track = finite_ && source->pass_end ? L"Playlist complete - playback will stop" : L"No eligible tracks - playback will stop";
+            if (finite_) state.can_reroll = false;
             explanation << L"Eligible: 0 | Weight 0 excluded: " << decision.excluded;
             explanation << L"\r\nCooling down: " << source->cooldown.blocked;
         } else if (next) {
@@ -650,6 +723,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             monitor_.on_reroll = [this] { reroll_next(); };
             monitor_.on_weight = [this](int weight) { apply_current_weight(weight); };
             monitor_.on_cooldown = [this](int tracks) { set_cooldown(tracks); };
+            monitor_.on_finite = [this](bool enabled) { set_finite(enabled); };
             monitor_.on_scope = [this](int scope) {
                 std::lock_guard<std::recursive_mutex> lock(mutex_);
                 edit_scope_ = static_cast<ignorant::WeightScope>(std::clamp(scope, 0, 2));
@@ -801,8 +875,60 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (history_.size() > 256) history_.pop_front();
         return result;
     }
+    bool playlist_has_positive(const Ref<IAIMPPlaylist>& playlist) {
+        std::vector<std::string> keys;
+        for (int i = 0; i < playlist->GetItemCount(); ++i) {
+            Ref<IAIMPPlaylistItem> item;
+            if (SUCCEEDED(playlist->GetItem(i, IID_IAIMPPlaylistItem, item.out())) && item) {
+                const auto key = track_key(item.get()); if (!key.empty()) keys.push_back(key);
+            }
+        }
+        const auto context = context_for(playlist, &keys);
+        for (const auto& key : keys) if (effective_weight(key, context).weight > 0) return true;
+        return false;
+    }
+    std::shared_ptr<Occurrence> finite_end(const std::shared_ptr<Occurrence>& source, const Ref<IAIMPPlaylist>& playlist,
+        const Ref<IAIMPPlaylistItem>& avoid, bool reroll) {
+        // A handled null queue item means unconditional stop in the SDK. Read
+        // AIMP's end action explicitly; never delegate to its unweighted queue.
+        int action = 2;
+        if (messages_ && FAILED(messages_->Send(AIMP_MSG_PROPERTY_ACTION_ON_END_OF_PLAYLIST, AIMP_MSG_PROPVALUE_GET, &action))) action = 2;
+        if (action < 0 || action > 2) action = 2;
+        source->pass_end = true;
+        Ref<IAIMPPlaylist> target;
+        if (action == 1 && source->finite_pool.positive) target = playlist;
+        else if (action == 0) {
+            const auto count = playlists_->GetLoadedPlaylistCount();
+            int current_index = -1;
+            for (int i = 0; i < count; ++i) {
+                Ref<IAIMPPlaylist> candidate;
+                if (SUCCEEDED(playlists_->GetLoadedPlaylist(i, candidate.put())) && same_object(candidate.get(), playlist.get())) { current_index = i; break; }
+            }
+            // Follow loaded playlist order, wrapping to earlier tabs. Do not
+            // replay this same list when no other eligible playlist exists.
+            for (int step = 1; current_index >= 0 && step < count; ++step) {
+                Ref<IAIMPPlaylist> candidate;
+                if (SUCCEEDED(playlists_->GetLoadedPlaylist((current_index + step) % count, candidate.put())) && candidate && playlist_has_positive(candidate)) { target = std::move(candidate); break; }
+            }
+        }
+        const auto cached = source->next.lock();
+        if (!reroll && target && cached && source->end_action == action && cached->pass && cached->pass != source->pass &&
+            same_object(cached->playlist.get(), target.get()) && playlist_for(cached->item.get()) &&
+            effective_weight(track_key(cached->item.get()), context_for(target)).weight > 0) {
+            source->decision = cached->incoming_decision; return cached;
+        }
+        source->end_action = action; source->next.reset();
+        log_.write("shuffle.finite.end", "source=" + context_id(source) + " action=" + std::to_string(action) + " target=" + std::to_string(static_cast<bool>(target)));
+        if (!target) return {};
+        auto root = remember({}, target); root->pass = new_pass(target);
+        auto next = choose_next(root, target, avoid, reroll, false);
+        if (next) {
+            next->previous = source; source->next = next; source->decision = root->decision;
+        }
+        return next;
+    }
     std::shared_ptr<Occurrence> choose_next(const std::shared_ptr<Occurrence>& source, const Ref<IAIMPPlaylist>& playlist,
-        const Ref<IAIMPPlaylistItem>& avoid = {}, bool reroll = false) {
+        const Ref<IAIMPPlaylistItem>& avoid = {}, bool reroll = false, bool follow_end = true) {
         std::vector<Ref<IAIMPPlaylistItem>> items;
         std::vector<double> probabilities;
         std::vector<std::string> keys;
@@ -817,7 +943,20 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         }
         const auto context = context_for(playlist, &keys);
         for (const auto& key : keys) probabilities.push_back(effective_weight(key, context).weight);
-        auto pool = ignorant::cooldown_pool(keys, probabilities, projected_recent(source), cooldown_);
+        ignorant::CooldownPool pool;
+        if (finite_) {
+            ensure_pass(source, playlist);
+            // A delayed cursor probe can still refer to the preceding audible
+            // source after its successor committed. Preserve that known answer.
+            const auto committed_next = source->next.lock();
+            if (!reroll && source->decision_ready && committed_next && committed_next->started && committed_next->pass == source->pass) {
+                for (std::size_t i = 0; i < items.size(); ++i)
+                    if (probabilities[i] > 0 && same_object(items[i].get(), committed_next->item.get())) return committed_next;
+            }
+            source->finite_pool = ignorant::finite_pool(keys, probabilities, projected_pass(source));
+            pool.indices = source->finite_pool.indices; pool.distinct_positive = source->finite_pool.positive;
+        } else pool = ignorant::cooldown_pool(keys, probabilities, projected_recent(source), cooldown_);
+        source->pass_end = false;
         const bool same_pool = source->cooldown.indices == pool.indices;
         cooldown_preview_ = pool;
         cooldown_preview_ready_ = true;
@@ -849,16 +988,27 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 }
             }
         }
-        const auto decision = ignorant::choose_details(probabilities, std::generate_canonical<double, 53>(random_));
+        const auto unit = finite_ && source->finite_pool.positive == source->finite_pool.played ? 0.0 : std::generate_canonical<double, 53>(random_);
+        const auto decision = ignorant::choose_details(probabilities, unit);
         source->decision = decision;
         source->decision_ready = true;
         source->rerolled = reroll;
         request_monitor_update();
         if (!decision.index) {
+            if (finite_ && follow_end) return finite_end(source, playlist, avoid, reroll);
             log_.write("queue.next.stop", "source=" + context_id(source) + " reason=no_positive_weights excluded=" + std::to_string(decision.excluded));
             source->next.reset(); return {};
         }
         auto next = remember(items[*decision.index], playlist);
+        next->pass = finite_ ? source->pass : nullptr;
+        if (finite_) {
+            next->pass_path = source->pass_path;
+            if (next->pass_path->size() != source->pass_position)
+                next->pass_path = std::make_shared<std::vector<std::string>>(source->pass_path->begin(), source->pass_path->begin() + source->pass_position);
+            next->pass_path->push_back(keys[*decision.index]);
+            next->pass_position = source->pass_position + 1;
+        }
+        next->incoming_decision = decision;
         next->planned = true;
         source->next = next; next->previous = source;
         std::ostringstream details;
@@ -1291,10 +1441,10 @@ public:
     }
     TChar* WINAPI InfoGet(int index) override {
         switch (index) {
-        case AIMP_PLUGIN_INFO_NAME: return const_cast<TChar*>(L"IgnorantShuffle 0.9.0");
+        case AIMP_PLUGIN_INFO_NAME: return const_cast<TChar*>(L"IgnorantShuffle 0.10.0");
         case AIMP_PLUGIN_INFO_AUTHOR: return const_cast<TChar*>(L"IgnorantShuffle contributors");
         case AIMP_PLUGIN_INFO_SHORT_DESCRIPTION: return const_cast<TChar*>(L"Weighted shuffle: 0 excludes a track; larger weights play more often.");
-        case AIMP_PLUGIN_INFO_FULL_DESCRIPTION: return const_cast<TChar*>(L"Uses AIMP's Shuffle switch. Configure weights from 0 to 10 and an optional track cooldown; imported weights may exceed 10. Default weight: 5.");
+        case AIMP_PLUGIN_INFO_FULL_DESCRIPTION: return const_cast<TChar*>(L"Uses AIMP's Shuffle switch. Configure weights from 0 to 10, optional track cooldown, or finite weighted playlists that follow AIMP's end-of-playlist action. Imported weights may exceed 10. Default weight: 5.");
         default: return nullptr;
         }
     }
@@ -1327,6 +1477,7 @@ public:
             if (auto current = current_track()) {
                 const auto key = track_key(current.get());
                 if (!key.empty()) recent_tracks_.push_back(key);
+                commit_finite_start(current);
             }
             if (storage_error_.empty()) refresh_cooldown_preview();
             log_.write("weights.loaded", "entries=" + std::to_string(weights_.entries().size()) + " enabled=" + std::to_string(enabled_));
@@ -1358,6 +1509,7 @@ public:
         if (registered_ && core_) core_->UnregisterExtension(static_cast<IAIMPExtensionPlaybackQueue*>(this));
         registered_ = false;
         history_.clear();
+        reset_finite_progress();
         weight_contexts_.clear(); editor_playlist_ = {};
         playing_.reset(); audible_.reset(); cursor_source_.reset(); beginning_.reset();
         recent_tracks_.clear(); prepared_track_ = {}; cooldown_preview_ready_ = false;
@@ -1392,11 +1544,18 @@ public:
                 }
                 prepared_track_ = {};
                 audible_ = playing_ && started && same_object(playing_->item.get(), started.get()) ? playing_ : nullptr;
+                commit_finite_start(started);
                 awaiting_stream_start_ = false;
                 log_.write("playback.commit", "context=" + context_id(audible_));
                 flush_queue_refresh();
             }
-            if (message == AIMP_MSG_EVENT_PROPERTY_VALUE && parameter == AIMP_MSG_PROPERTY_SHUFFLE) changed();
+            if (message == AIMP_MSG_EVENT_PROPERTY_VALUE && parameter == AIMP_MSG_PROPERTY_SHUFFLE) { reset_finite_progress(); changed(); }
+            if (message == AIMP_MSG_EVENT_PROPERTY_VALUE && parameter == AIMP_MSG_PROPERTY_ACTION_ON_END_OF_PLAYLIST && finite_) changed();
+            if (message == AIMP_MSG_EVENT_PLAYER_STATE && finite_ && player_ && player_->GetState() == AIMP_PLAYER_STATE_STOPPED && !awaiting_stream_start_) {
+                reset_finite_progress();
+                history_.clear(); playing_.reset(); audible_.reset(); cursor_source_.reset(); beginning_.reset();
+                queue_refresh_pending_ = false;
+            }
             if (message == AIMP_MSG_EVENT_PLAYBACK_QUEUE) weight_contexts_.clear();
             if (message == AIMP_MSG_EVENT_STREAM_START || message == AIMP_MSG_EVENT_PLAYER_STATE ||
                 message == AIMP_MSG_EVENT_PLAYING_FILE_INFO || message == AIMP_MSG_EVENT_PLAYBACK_QUEUE ||
@@ -1488,7 +1647,10 @@ public:
                 // remaining cached chain after OnSelect has returned.
                 if (selected && selected->started) queue_refresh_pending_ = true;
             }
-            if (playing_) { playing_->started = true; playing_->planned = true; }
+            if (playing_) {
+                if (finite_) ensure_pass(playing_, playing_->playlist);
+                playing_->started = true; playing_->planned = true;
+            }
             awaiting_stream_start_ = true;
             // A Previous request authorizes one history navigation, not unlimited
             // reuse if AIMP later repeats this queue entry automatically.

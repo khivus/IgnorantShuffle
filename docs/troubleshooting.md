@@ -8,7 +8,7 @@ Turn on **AIMP Shuffle** and check **Weighted shuffle enabled** in the plugin pa
 
 ## Tracks repeat or cooldown is suspended
 
-Without cooldown, each draw uses the full positive-weight pool and repeats are possible. Set **Cooldown (tracks)** and click **Apply** to require intervening track starts.
+In the default endless mode without cooldown, each draw uses the full positive-weight pool and repeats are possible. Set **Cooldown (tracks)** and click **Apply** to require intervening track starts. For a complete weighted pass without repeats, enable [Play playlist once](usage.md#finite-playlists); cooldown is paused while this option is on.
 
 A cooldown of 10 needs at least 11 distinct positive-weight filenames. A shorter list shows a message and continues with weighted shuffle without cooldown. AIMP's explicit queue and repeat settings can still take priority. See [Track cooldown](usage.md#track-cooldown).
 

@@ -5,7 +5,9 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 $repositoryName = 'khivus/IgnorantShuffle'
 $description = 'Weighted smart shuffle for AIMP on Windows, with track weights, cooldowns, portable weight storage, and a compact control panel.'
-$version = '0.9.0'
+$cmakeText = [IO.File]::ReadAllText((Join-Path $projectRoot 'CMakeLists.txt'))
+if ($cmakeText -notmatch 'project\(IgnorantShuffle VERSION ([0-9]+\.[0-9]+\.[0-9]+)') { throw 'Cannot read project version.' }
+$version = $Matches[1]
 $tag = "v$version"
 $releaseNames = @("IgnorantShuffle-$tag.aimppack", 'aimp_ignorant_shuffle-x64.dll', 'aimp_ignorant_shuffle-x86.dll', 'SHA256SUMS.txt')
 $releaseDirectory = Join-Path $projectRoot 'dist'
@@ -61,7 +63,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $projectRoot '.git'))) { Invoke-Git 
 Invoke-Git -Arguments @('add', '--', '.gitignore', 'CMakeLists.txt', 'README.md', 'CHANGELOG.md', 'LICENSE', 'RELEASE_NOTES.md', 'build.ps1', 'docs', 'examples', 'src', 'tests', 'tools')
 Invoke-Git -Arguments @('diff', '--cached', '--check')
 & git -c "safe.directory=$projectRoot" diff --cached --quiet
-if ($LASTEXITCODE -eq 1) { Invoke-Git -Arguments @('commit', '-m', 'feat: release IgnorantShuffle weighted shuffle for AIMP') }
+if ($LASTEXITCODE -eq 1) { Invoke-Git -Arguments @('commit', '-m', "feat: release IgnorantShuffle v$version") }
 elseif ($LASTEXITCODE -ne 0) { throw 'Cannot inspect staged changes.' }
 $commit = (Invoke-Git -Arguments @('rev-parse', 'HEAD')).Trim()
 $branch = (Invoke-Git -Arguments @('branch', '--show-current')).Trim()

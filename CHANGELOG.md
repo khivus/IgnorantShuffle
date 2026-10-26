@@ -2,6 +2,10 @@
 
 Version history for IgnorantShuffle, newest first.
 
+## 0.10.0
+
+Adds **Play playlist once**, disabled by default. Finite mode chooses a weighted order without repeating a positive-weight filename within a pass; higher weights are more likely to play earlier and zero stays excluded. After a pass it follows AIMP's end-of-playlist setting: stop, repeat with a fresh weighted pass, or move through loaded playlists. The panel shows played/remaining counts, and cooldown is paused while finite mode is active. Playback starts commit progress; lookahead, rerolls, and duplicate preparation callbacks do not. Deep lookahead retains its projected order beyond the bounded playback-history cache.
+
 ## 0.9.0
 
 Adds optional GitHub release checks (enabled by default), manual checks and a **Download and install** action through AIMP's native package installer. Updates use [khivus/IgnorantShuffle](https://github.com/khivus/IgnorantShuffle) by default. Downloads are size-bounded and verified against GitHub's SHA256 digest. Also fixes leftover text and borders when changing tracks changes the panel's layout, including with AIMP Shuffle off.
