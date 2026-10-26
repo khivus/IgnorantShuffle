@@ -42,7 +42,9 @@ function Invoke-GitHub {
 }
 function Invoke-Git {
     param([string[]]$Arguments)
-    & git -c "safe.directory=$projectRoot" @Arguments
+    # An empty -c value is preserved in argv on Windows. An empty environment
+    # value is removed by .NET/Windows PowerShell and breaks GIT_CONFIG_COUNT.
+    & git -c "safe.directory=$projectRoot" -c credential.helper= @Arguments
     if ($LASTEXITCODE -ne 0) { throw 'Git operation failed; publishing stopped.' }
 }
 $account = Invoke-GitHub -Path '/user'
@@ -72,7 +74,7 @@ if ($remotes -contains 'origin') {
 # Supply authentication to Git through the child process environment, avoiding
 # helper shell invocation and avoiding credential storage in repository config.
 $previousGitEnvironment = @{}
-$gitEnvironment = @{ GIT_CONFIG_COUNT = '2'; GIT_CONFIG_KEY_0 = 'credential.helper'; GIT_CONFIG_VALUE_0 = ''; GIT_CONFIG_KEY_1 = 'http.https://github.com/.extraheader'; GIT_CONFIG_VALUE_1 = $gitAuthorization; GIT_TERMINAL_PROMPT = '0' }
+$gitEnvironment = @{ GIT_CONFIG_COUNT = '1'; GIT_CONFIG_KEY_0 = 'http.https://github.com/.extraheader'; GIT_CONFIG_VALUE_0 = $gitAuthorization; GIT_TERMINAL_PROMPT = '0' }
 foreach ($key in $gitEnvironment.Keys) { $previousGitEnvironment[$key] = [Environment]::GetEnvironmentVariable($key, 'Process'); [Environment]::SetEnvironmentVariable($key, $gitEnvironment[$key], 'Process') }
 try {
     Invoke-Git -Arguments @('push', '-u', 'origin', 'main')
