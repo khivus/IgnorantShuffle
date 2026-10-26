@@ -1,0 +1,5 @@
+/build*/
+/.deps/
+/.vs/
+/dist/
+*.user

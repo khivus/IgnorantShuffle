@@ -1,0 +1,3 @@
+LIBRARY aimp_ignorant_shuffle
+EXPORTS
+    AIMPPluginGetHeader

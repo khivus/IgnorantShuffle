@@ -1,0 +1,6 @@
+# IgnorantShuffle weights v1: weight<TAB>track (UTF-8)
+# Replace example paths with exact filenames/URIs from your playlist export.
+0	D:\Music\Excluded.flac
+5	D:\Music\Normal.flac
+10	D:\Music\Favorite.flac
+25	D:\Music\Imported favorite.flac
