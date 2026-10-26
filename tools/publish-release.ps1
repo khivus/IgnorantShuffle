@@ -58,7 +58,7 @@ catch {
 if ($repository.full_name -ine $repositoryName -or $repository.private) { throw 'The target repository is unexpected or private; publishing stopped.' }
 Write-Output "Repository: $($repository.html_url)"
 if (-not (Test-Path -LiteralPath (Join-Path $projectRoot '.git'))) { Invoke-Git -Arguments @('init', '-b', 'main') }
-Invoke-Git -Arguments @('add', '--', '.gitignore', 'CMakeLists.txt', 'README.md', 'RELEASE_NOTES.md', 'build.ps1', 'examples', 'src', 'tests', 'tools')
+Invoke-Git -Arguments @('add', '--', '.gitignore', 'CMakeLists.txt', 'README.md', 'CHANGELOG.md', 'LICENSE', 'RELEASE_NOTES.md', 'build.ps1', 'docs', 'examples', 'src', 'tests', 'tools')
 Invoke-Git -Arguments @('diff', '--cached', '--check')
 & git -c "safe.directory=$projectRoot" diff --cached --quiet
 if ($LASTEXITCODE -eq 1) { Invoke-Git -Arguments @('commit', '-m', 'feat: release IgnorantShuffle weighted shuffle for AIMP') }

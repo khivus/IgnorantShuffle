@@ -1,0 +1,34 @@
+# Updates
+
+[Back to README](../README.md)
+
+## Automatic and manual checks
+
+Open **Updates...** at the bottom of the floating panel. **Automatically check for updates** is enabled by default. It checks shortly after startup, then at most once per day during that session, including while the panel is hidden.
+
+Checks never start a download or installation. Unchecking the option persists across restarts; **Check now** still works.
+
+Only newer stable releases are offered. Drafts, prereleases, equal versions, and older versions are not offered.
+
+## Download and install
+
+1. Click **Check now**, or wait for an automatic check.
+2. Use **View release** to open its release page.
+3. Click **Download and install** to download its `.aimppack`.
+4. Finish AIMP's native installer prompts and restart if AIMP asks.
+
+The plugin verifies the exact byte count and GitHub SHA256 digest before passing the package to AIMP. Downloads are limited to 32 MiB. AIMP handles installation paths and replacing loaded plugin files.
+
+Closing the Updates dialog during a download cancels it. Checks and downloads run in the background and are canceled and joined before the plugin unloads. Connection or verification errors leave playback and weights alone.
+
+Verified packages are kept under `<AIMP profile>\IgnorantShuffle\Updates`.
+
+## Release source
+
+The default source is [khivus/IgnorantShuffle Releases](https://github.com/khivus/IgnorantShuffle/releases/latest).
+
+To change it, enter `owner/repository` or `https://github.com/owner/repository/releases`, then click **Save source** to save and check it. A saved nonempty source overrides the built-in default. Empty preferences from earlier placeholder builds adopt the published repository on startup.
+
+A missing repository or a repository without a published release is reported without affecting playback. A newer release without a complete supported package is shown with installation disabled, including when its GitHub digest is not available yet.
+
+For build-time source overrides and package naming requirements, see [Releasing](releasing.md).

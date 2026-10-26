@@ -15,6 +15,9 @@ foreach ($file in $files) {
     $actualVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($file.Source).FileVersion
     if ($actualVersion -ne $version) { throw "Version mismatch in $($file.Source): $actualVersion, expected $version" }
 }
+$licenseFile = Join-Path $projectRoot 'LICENSE'
+if (-not (Test-Path -LiteralPath $licenseFile -PathType Leaf)) { throw 'Missing project LICENSE.' }
+$files += @{ Source = $licenseFile; Entry = 'aimp_ignorant_shuffle/LICENSE' }
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $output = [IO.Directory]::CreateDirectory($OutputDirectory).FullName
