@@ -37,6 +37,7 @@ class MonitorWindow {
     void scroll_to(int position);
     void ensure_visible(HWND control);
     void remember_geometry();
+    void cancel_button_input();
     static LRESULT CALLBACK control_proc(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
     static INT_PTR CALLBACK procedure(HWND, UINT, WPARAM, LPARAM);
 public:

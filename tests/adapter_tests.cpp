@@ -264,6 +264,42 @@ public:
 };
 #undef STUB
 struct PluginChecks {
+    static void mouse_input_checks() {
+        module = GetModuleHandleW(nullptr);
+        MonitorWindow panel;
+        check(panel.create(module), "Create input regression panel.");
+        MonitorState state; state.can_set_weight = true; state.current_key = L"first"; state.selected_weight = 5;
+        int clicks = 0; panel.on_weight = [&](int) { ++clicks; };
+        panel.update(state); panel.restore_size(600, 900); panel.show(true);
+        const auto button = GetDlgItem(panel.handle(), IDC_QUICK_WEIGHT_3);
+        RECT bounds{}; GetWindowRect(button, &bounds);
+        const auto point = MAKELPARAM((bounds.right - bounds.left) / 2, (bounds.bottom - bounds.top) / 2);
+        const auto down = [&] { SendMessageW(button, WM_LBUTTONDOWN, MK_LBUTTON, point); };
+        const auto up = [&] { SendMessageW(button, WM_LBUTTONUP, 0, point); };
+        check(WindowFromPoint({(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2}) == button, "Input fixture button is exposed.");
+        down(); up();
+        check(clicks == 1, "An exposed mouse press and release activates once.");
+        const auto cover = CreateWindowExW(WS_EX_TOPMOST | WS_EX_NOACTIVATE, L"STATIC", L"Cover", WS_POPUP | WS_VISIBLE,
+            bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top, nullptr, nullptr, module, nullptr);
+        check(cover != nullptr, "Create an overlapping window.");
+        down(); up();
+        check(clicks == 1, "Mouse messages to a button behind another window are ignored.");
+        DestroyWindow(cover);
+        down();
+        const auto late_cover = CreateWindowExW(WS_EX_TOPMOST | WS_EX_NOACTIVATE, L"STATIC", L"Cover", WS_POPUP | WS_VISIBLE,
+            bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top, nullptr, nullptr, module, nullptr);
+        up(); DestroyWindow(late_cover);
+        check(clicks == 1 && GetCapture() != button, "A window covering a held button cancels the pending click and capture.");
+        down(); state.current_key = L"second"; panel.update(state); up();
+        check(clicks == 1, "A press started on the old track cannot assign a weight to the new track.");
+        down(); SendMessageW(panel.handle(), WM_ACTIVATE, WA_INACTIVE, 0); up();
+        check(clicks == 1 && GetCapture() != button, "Deactivation cancels a pending button press.");
+        SendMessageW(button, WM_KEYDOWN, VK_SPACE, 0); SendMessageW(button, WM_KEYUP, VK_SPACE, 0);
+        check(clicks == 2, "Intentional keyboard Space activation remains supported.");
+        SendMessageW(button, BM_CLICK, 0, 0);
+        check(clicks == 3, "Native accessibility button activation remains supported.");
+        panel.destroy();
+    }
     static void sorting_checks(Manager& manager) {
         Track first(L"Z:\\Music\\Zulu.flac"), second(L"A:\\Music\\alpha.flac"), third(L"M:\\Music\\Beta.flac");
         EmptyPlaylist playlist; playlist.items = {&first, &second, &third, &second};
@@ -844,6 +880,16 @@ struct PluginChecks {
         const auto window = plugin.monitor_.handle();
         auto click = [&](int id) { SendMessageW(window, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED), 0); };
         check(IsDlgButtonChecked(window, IDC_QUICK_WEIGHT_5) == BST_CHECKED, "Default current weight must be highlighted.");
+        const auto before_focus = plugin.weights_.entries();
+        const auto focus_notifications = queue.notifications;
+        SetFocus(GetDlgItem(window, IDC_CURRENT_TRACK));
+        for (int value = 0; value <= 10; ++value) SetFocus(GetDlgItem(window, IDC_QUICK_WEIGHT_0 + value));
+        SetFocus(GetDlgItem(window, IDC_CURRENT_TRACK));
+        check(plugin.weights_.entries() == before_focus && queue.notifications == focus_notifications,
+            "Focusing or tabbing through quick controls must never save a weight or invalidate playback.");
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(IDC_QUICK_WEIGHT_2, BN_SETFOCUS), reinterpret_cast<LPARAM>(GetDlgItem(window, IDC_QUICK_WEIGHT_2)));
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(IDC_QUICK_WEIGHT_2, BN_KILLFOCUS), reinterpret_cast<LPARAM>(GetDlgItem(window, IDC_QUICK_WEIGHT_2)));
+        check(plugin.weights_.entries() == before_focus, "Non-click button notifications cannot change weights.");
         RECT previous{};
         for (int weight = 1; weight <= 10; ++weight) {
             const auto button = GetDlgItem(window, IDC_QUICK_WEIGHT_0 + weight);
@@ -1587,6 +1633,7 @@ struct PluginChecks {
         check(plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Shuffle off must return boolean false, not E_NOTIMPL.");
         check(plugin.GetPrev(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Previous with shuffle off.");
         messages.shuffle = TRUE;
+        mouse_input_checks();
         sorting_checks(manager);
         quick_controls_checks(manager, messages);
         storage_checks(manager, messages);

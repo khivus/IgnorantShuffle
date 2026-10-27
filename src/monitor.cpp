@@ -112,6 +112,7 @@ void MonitorWindow::update(const MonitorState& state) {
     EnableWindow(GetDlgItem(window_, IDC_WEIGHT_SCOPE), state.can_set_weight);
     EnableWindow(GetDlgItem(window_, IDC_RESET_LOCAL), state.can_clear_override);
     if (displayed_track_ != state.current_key) {
+        cancel_button_input();
         displayed_track_ = state.current_key;
         const auto focused = GetFocus();
         if (focused && GetParent(focused) == window_ && is_weight_button(focused))
@@ -387,6 +388,14 @@ void MonitorWindow::restore_position(int x, int y) {
 }
 LRESULT CALLBACK MonitorWindow::control_proc(HWND control, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR data) {
     auto* self = reinterpret_cast<MonitorWindow*>(data);
+    if (message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK || message == WM_LBUTTONUP) {
+        POINT point{static_cast<short>(LOWORD(lparam)), static_cast<short>(HIWORD(lparam))};
+        ClientToScreen(control, &point);
+        if (WindowFromPoint(point) != control) {
+            SendMessageW(control, WM_CANCELMODE, 0, 0);
+            return 0;
+        }
+    }
     if (is_weight_button(control)) {
         if (message == WM_PAINT) {
             PAINTSTRUCT painting{}; const auto dc = BeginPaint(control, &painting);
@@ -405,6 +414,12 @@ LRESULT CALLBACK MonitorWindow::control_proc(HWND control, UINT message, WPARAM 
     if (message == WM_KEYDOWN && (wparam == VK_NEXT || wparam == VK_PRIOR))
         return SendMessageW(self->window_, message, wparam, lparam);
     return DefSubclassProc(control, message, wparam, lparam);
+}
+void MonitorWindow::cancel_button_input() {
+    const auto captured = GetCapture();
+    if (captured && IsChild(window_, captured)) SendMessageW(captured, WM_CANCELMODE, 0, 0);
+    for (int weight = 0; weight <= 10; ++weight)
+        SendDlgItemMessageW(window_, IDC_QUICK_WEIGHT_0 + weight, WM_CANCELMODE, 0, 0);
 }
 INT_PTR CALLBACK MonitorWindow::procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     auto* self = reinterpret_cast<MonitorWindow*>(GetWindowLongPtrW(window, DWLP_USER));
@@ -435,6 +450,8 @@ INT_PTR CALLBACK MonitorWindow::procedure(HWND window, UINT message, WPARAM wpar
             return TRUE;
         }
         if (!self) return FALSE;
+        if ((message == WM_ACTIVATE && LOWORD(wparam) == WA_INACTIVE) || (message == WM_SHOWWINDOW && !wparam))
+            self->cancel_button_input();
         if (message == WM_TIMER && wparam == 2) { self->sync_attachment(); return TRUE; }
         if (message == WM_TIMER || message == WM_APP + 1) { if (self->on_tick) self->on_tick(); return TRUE; }
         if (message == WM_GETMINMAXINFO) {
@@ -486,6 +503,7 @@ INT_PTR CALLBACK MonitorWindow::procedure(HWND window, UINT message, WPARAM wpar
         }
         if (message == WM_COMMAND) {
             const auto id = LOWORD(wparam);
+            if (id != IDC_WEIGHT_SCOPE && HIWORD(wparam) != BN_CLICKED) return TRUE;
             if (id == IDC_ENABLED && self->on_enabled) self->on_enabled(IsDlgButtonChecked(window, id) == BST_CHECKED);
             else if (id == IDC_PINNED && self->on_pinned) self->on_pinned(IsDlgButtonChecked(window, id) == BST_CHECKED);
             else if (id == IDC_ATTACHED && self->on_attached) self->on_attached(IsDlgButtonChecked(window, id) == BST_CHECKED);

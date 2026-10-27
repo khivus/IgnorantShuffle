@@ -5,6 +5,7 @@ Version history for IgnorantShuffle, newest first.
 ## Unreleased
 
 - Click any weight-table column header to sort ascending or descending. Weight and Edit values sort numerically; selection, keyboard caret and Shift anchor follow their tracks through sorting and edits.
+- Fix unintended weight changes when quick buttons receive focus or a window is reactivated. Obscured mouse input is ignored, and interrupted presses are canceled when playback changes or the panel loses activation.
 
 ## 0.10.1
 
