@@ -2,7 +2,7 @@
 
 Version history for IgnorantShuffle, newest first.
 
-## Unreleased
+## 0.11.0
 
 - Start the first update check immediately in the background. Startup no longer shows a missing release source while waiting to check; disabling automatic checks shows the correct status.
 - Click any weight-table column header to sort ascending or descending. Weight and Edit values sort numerically; selection, keyboard caret and Shift anchor follow their tracks through sorting and edits.

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(IgnorantShuffle VERSION 0.10.1 LANGUAGES CXX)
+project(IgnorantShuffle VERSION 0.11.0 LANGUAGES CXX)
 set(IGNORANT_SHUFFLE_UPDATE_REPOSITORY "khivus/IgnorantShuffle" CACHE STRING "GitHub owner/repository for stable releases")
 if(NOT IGNORANT_SHUFFLE_UPDATE_REPOSITORY MATCHES "^$|^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
   message(FATAL_ERROR "Update repository must be blank or owner/repository")
