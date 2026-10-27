@@ -1299,16 +1299,41 @@ struct PluginChecks {
         const auto profile = std::filesystem::current_path() / (L"adapter-profile-" + std::to_wstring(GetCurrentProcessId()));
         PlaybackQueue queue;
         Core core(manager, messages, queue, profile.wstring());
-        Plugin plugin;
+        std::atomic<int> requests{0};
+        std::atomic<bool> finish_check{false};
+        Plugin plugin([&](const auto& url, auto, const auto& canceled, const auto&) {
+            check(url == "https://api.github.com/repos/" + std::string(ignorant::default_update_repository) + "/releases/latest", "Startup uses the configured default release source.");
+            ++requests;
+            while (!finish_check.load() && !canceled.load()) Sleep(1);
+            return ignorant::HttpReply{404, {}};
+        });
         check(plugin.Initialize(&core) == S_OK, "Plugin initialization with host services.");
         const auto window = plugin.monitor_.handle();
         check(window && IsWindowVisible(window), "Initialization automatically opens the floating window.");
+        check(plugin.updater_.state().phase == ignorant::UpdatePhase::Checking && !finish_check,
+            "Startup immediately starts a background check without waiting for the network response.");
+        check(Plugin::control_text(window, IDC_UPDATE_SUMMARY) == L"Checking GitHub releases...",
+            "The first visible panel reports checking instead of an unconfigured release source.");
+        finish_check = true;
+        const auto deadline = GetTickCount64() + 3000;
+        while (plugin.updater_.state().busy() && GetTickCount64() < deadline) Sleep(1);
+        check(!plugin.updater_.state().busy() && requests == 1, "Startup performs exactly one metadata check.");
+        plugin.update_tick();
+        check(requests == 1 && plugin.next_update_check_ > GetTickCount64() + 23ULL * 60 * 60 * 1000,
+            "Immediate startup checks retain daily polling limits.");
         check(messages.observer && core.extension, "Initialization registers the message hook and queue.");
         const auto notifications = queue.notifications;
         plugin.set_enabled(false);
+        plugin.auto_updates_ = false; plugin.save_preferences();
         check(queue.notifications > notifications, "Toggling invalidates AIMP's prefetched queue.");
         check(plugin.Finalize() == S_OK && !IsWindow(window), "Finalization destroys the floating window.");
         check(!messages.observer && !core.extension, "Finalization removes host hooks and extensions.");
+        Plugin opted_out([&](const auto&, auto, const auto&, const auto&) { ++requests; return ignorant::HttpReply{404, {}}; });
+        check(opted_out.Initialize(&core) == S_OK && !opted_out.auto_updates_ && requests == 1,
+            "Startup still honors the persisted automatic-check opt-out.");
+        check(Plugin::control_text(opted_out.monitor_.handle(), IDC_UPDATE_SUMMARY) == L"Automatic update checks are off. Use Check now.",
+            "A configured source with automatic checks off never appears unconfigured.");
+        opted_out.Finalize();
         {
             std::ifstream input(profile / L"IgnorantShuffle" / L"plugin.log", std::ios::binary);
             const std::string contents{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
@@ -1426,6 +1451,8 @@ struct PluginChecks {
         });
         check(plugin.auto_updates_ && plugin.update_repository_ == ignorant::default_update_repository,
             "Auto updates default on with the compiled release repository.");
+        check(plugin.update_status(plugin.updater_.state()) == L"Waiting to check for updates...",
+            "A configured source has an accurate status even before the first check starts.");
         plugin.update_repository_.clear();
         plugin.next_update_check_ = 0; plugin.update_tick();
         check(plugin.updater_.state().phase == ignorant::UpdatePhase::Unconfigured && requests == 0, "Blank source does not start update checks.");
@@ -1441,6 +1468,8 @@ struct PluginChecks {
         ShowWindow(window, SW_SHOWNOACTIVATE); capture_preview(window, L"update-settings.bmp");
         plugin.update_repository_ = "example/shuffle"; plugin.update_tick();
         check(requests == 0, "Automatic opt-out prevents scheduled network requests.");
+        check(Plugin::control_text(window, IDC_UPDATE_STATUS) == L"Automatic update checks are off. Use Check now.",
+            "The Updates dialog distinguishes opt-out from a missing source.");
         CheckDlgButton(window, IDC_UPDATE_AUTO, BST_CHECKED);
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(IDC_UPDATE_AUTO, BN_CLICKED), 0);
         auto finish = [&] {

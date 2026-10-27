@@ -4,6 +4,7 @@ Version history for IgnorantShuffle, newest first.
 
 ## Unreleased
 
+- Start the first update check immediately in the background. Startup no longer shows a missing release source while waiting to check; disabling automatic checks shows the correct status.
 - Click any weight-table column header to sort ascending or descending. Weight and Edit values sort numerically; selection, keyboard caret and Shift anchor follow their tracks through sorting and edits.
 - Fix unintended weight changes when quick buttons receive focus or a window is reactivated. Obscured mouse input is ignored, and interrupted presses are canceled when playback changes or the panel loses activation.
 - Add a saved Default weight in Weight storage, initially 5. Accepts any finite nonnegative value, including fractions, values above ten, and zero to exclude unconfigured tracks; explicit saved weights remain unchanged.

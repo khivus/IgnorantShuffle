@@ -4,7 +4,7 @@
 
 ## Automatic and manual checks
 
-Open **Updates...** at the bottom of the floating panel. **Automatically check for updates** is enabled by default. It checks shortly after startup, then at most once per day during that session, including while the panel is hidden.
+Open **Updates...** at the bottom of the floating panel. **Automatically check for updates** is enabled by default. The first check starts immediately in the background at startup, then at most once per day during that session, including while the panel is hidden. The panel shows checking progress without waiting for the network response; a configured source is never labeled missing just because it has not been checked yet.
 
 Checks never start a download or installation. Unchecking the option persists across restarts; **Check now** still works.
 

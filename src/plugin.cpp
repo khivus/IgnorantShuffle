@@ -200,7 +200,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     ignorant::UpdateLauncher update_launcher_;
     std::string update_repository_ = ignorant::default_update_repository;
     bool auto_updates_ = true, install_requested_ = false;
-    ULONGLONG next_update_check_ = GetTickCount64() + 10000;
+    ULONGLONG next_update_check_ = 0;
     HWND update_dialog_ = nullptr;
     std::string last_update_status_;
     std::mt19937_64 random_{std::random_device{}()};
@@ -601,7 +601,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             const auto update = updater_.state();
             state.update_status = update.phase == ignorant::UpdatePhase::Available && update.release
                 ? L"Update " + from_utf8(update.release->tag) + L" available"
-                : update_repository_.empty() ? L"Release source not configured" : from_utf8(update.message);
+                : update_status(update);
             const auto summary = "playing=" + context_id(playing_) + " current=\"" + utf8(state.current_track) +
                 "\" next=\"" + utf8(state.next_track) + "\" cooldown=\"" + utf8(state.cooldown_status) + "\" detail=\"" + utf8(state.decision) + '"';
             if (summary != last_display_) { log_.write("display.change", summary); last_display_ = summary; }
@@ -624,14 +624,21 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (updater_.check(update_repository_)) log_.write("updates.check", "repository=" + update_repository_);
         next_update_check_ = GetTickCount64() + 24ULL * 60 * 60 * 1000;
     }
+    std::wstring update_status(const ignorant::UpdateState& state) const {
+        if (update_repository_.empty()) return L"Release source not configured";
+        if (state.phase == ignorant::UpdatePhase::Unconfigured)
+            return auto_updates_ ? L"Waiting to check for updates..." : L"Automatic update checks are off. Use Check now.";
+        return from_utf8(state.message);
+    }
     void update_tick() {
         if (shutting_down_) return;
         auto state = updater_.state();
         if (auto_updates_ && !update_repository_.empty() && !state.busy() && !install_requested_ && GetTickCount64() >= next_update_check_) {
             check_updates(); state = updater_.state();
         }
-        if (state.message != last_update_status_) {
-            last_update_status_ = state.message; log_.write("updates.state", state.message);
+        const auto status = utf8(update_status(state));
+        if (status != last_update_status_) {
+            last_update_status_ = status; log_.write("updates.state", status);
         }
         if (install_requested_ && (state.phase == ignorant::UpdatePhase::Ready || state.phase == ignorant::UpdatePhase::HandedOff)) {
             install_requested_ = false;
@@ -651,7 +658,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         }
         if (state.phase == ignorant::UpdatePhase::Error) install_requested_ = false;
         if (update_dialog_) {
-            auto text = from_utf8(state.message);
+            auto text = update_status(state);
             if (state.phase == ignorant::UpdatePhase::Downloading && state.release)
                 text += L"\r\n" + std::to_wstring(state.received / 1024) + L" / " + std::to_wstring(state.release->size / 1024) + L" KB";
             wchar_t previous[2048]{}; GetDlgItemTextW(update_dialog_, IDC_UPDATE_STATUS, previous, 2048);
@@ -1535,6 +1542,8 @@ public:
             if (FAILED(messages_->Hook(static_cast<IAIMPMessageHook*>(this)))) { Finalize(); return E_FAIL; }
             hooked_ = true;
             changed();
+            next_update_check_ = 0;
+            update_tick();
             open_monitor();
             return S_OK;
         } catch (const std::exception& error) {
