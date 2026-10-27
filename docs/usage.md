@@ -82,6 +82,8 @@ The editor separates information into columns:
 
 Hover a weight for full-precision values, its source, editing value, and full filename. Columns can be resized while keeping the selection. See [Weight storage](weight-storage.md) for scope precedence and **Inherit** behavior.
 
+Click any visible column header to sort ascending; click it again for descending. Weight and Edit columns sort numerically. The header arrow shows the active direction, and sorting stays active during edits and refreshes. Selected tracks, the keyboard caret, and the Shift-selection anchor follow their rows.
+
 ## Track cooldown
 
 Set **Cooldown (tracks)** to a whole number from **0 to 10000**, then click **Apply**. Zero turns it off.

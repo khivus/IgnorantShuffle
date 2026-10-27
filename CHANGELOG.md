@@ -2,6 +2,10 @@
 
 Version history for IgnorantShuffle, newest first.
 
+## Unreleased
+
+- Click any weight-table column header to sort ascending or descending. Weight and Edit values sort numerically; selection, keyboard caret and Shift anchor follow their tracks through sorting and edits.
+
 ## 0.10.1
 
 Fixes **Download and install** silently doing nothing after a successful download. The plugin now opens the verified package through the running AIMP executable instead of posting a file-drop message that AIMP could ignore. The Updates dialog stays open with **Open installer again**, **Open package folder**, and manual installation instructions. Retrying reuses the saved package and verifies its size and SHA256 again. Logs distinguish an installation request from confirmed installation.

@@ -15,6 +15,8 @@ class TrackTable {
     HFONT bold_ = nullptr;
     bool updating_ = false, edit_visible_ = false;
     bool high_contrast_ = false;
+    int sort_column_ = -1;
+    bool sort_ascending_ = true;
     std::wstring edit_caption_;
     std::vector<TrackTableRow> rows_;
     void fit_columns();
@@ -26,6 +28,8 @@ public:
     const auto& rows() const { return rows_; }
     std::vector<int> selected() const;
     void select_all();
+    void sort_by(int column);
+    void sort(std::vector<TrackTableRow>& rows) const;
     void replace(std::vector<TrackTableRow> rows, const std::vector<int>& selected, int caret, int anchor, int top,
         bool show_edit, const std::wstring& edit_caption);
     LRESULT notify(NMHDR* notification);

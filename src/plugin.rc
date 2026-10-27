@@ -6,7 +6,7 @@ STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "IgnorantShuffle"
 FONT 9, "Segoe UI"
 BEGIN
-    LTEXT "Weight is used for playback. Edit shows the selected scope's value. Ctrl/Shift-click to select tracks; hover a weight for full details.", -1, 10, 6, 366, 20
+    LTEXT "Click a column header to sort. Ctrl/Shift-click to select tracks; hover a weight for full details. Edit shows the selected scope's value.", -1, 10, 6, 366, 20
     PUSHBUTTON "Select all", IDC_SELECT_ALL, 386, 7, 84, 15
     CONTROL "", IDC_TRACKS, "SysListView32", LVS_REPORT | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 10, 30, 460, 158
     PUSHBUTTON "0", 1300, 10, 194, 38, 15, WS_GROUP

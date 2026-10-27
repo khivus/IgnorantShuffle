@@ -32,6 +32,36 @@ void TrackTable::attach(HWND window) {
 void TrackTable::detach() {
     if (bold_) DeleteObject(bold_);
     bold_ = nullptr; window_ = nullptr; rows_.clear(); edit_caption_.clear(); edit_visible_ = false;
+    sort_column_ = -1; sort_ascending_ = true;
+}
+void TrackTable::sort_by(int column) {
+    if (column < 0 || column >= 5 || (column == 3 && !edit_visible_)) return;
+    sort_ascending_ = column == sort_column_ ? !sort_ascending_ : true;
+    sort_column_ = column;
+    const auto header = ListView_GetHeader(window_);
+    for (int i = 0; i < 5; ++i) {
+        HDITEMW item{}; item.mask = HDI_FORMAT;
+        Header_GetItem(header, i, &item);
+        item.fmt &= ~(HDF_SORTUP | HDF_SORTDOWN);
+        if (i == column) item.fmt |= sort_ascending_ ? HDF_SORTUP : HDF_SORTDOWN;
+        Header_SetItem(header, i, &item);
+    }
+}
+void TrackTable::sort(std::vector<TrackTableRow>& rows) const {
+    if (sort_column_ < 0) return;
+    std::stable_sort(rows.begin(), rows.end(), [this](const auto& a, const auto& b) {
+        int order = 0;
+        if (sort_column_ == 0 || sort_column_ == 3) {
+            const auto left = sort_column_ == 0 ? a.weight : a.editing_weight;
+            const auto right = sort_column_ == 0 ? b.weight : b.editing_weight;
+            order = left < right ? -1 : left > right ? 1 : 0;
+        } else {
+            const auto left = sort_column_ == 1 ? a.title : sort_column_ == 2 ? a.source : std::filesystem::path(a.path).parent_path().wstring();
+            const auto right = sort_column_ == 1 ? b.title : sort_column_ == 2 ? b.source : std::filesystem::path(b.path).parent_path().wstring();
+            order = CompareStringOrdinal(left.c_str(), -1, right.c_str(), -1, TRUE) - CSTR_EQUAL;
+        }
+        return sort_ascending_ ? order < 0 : order > 0;
+    });
 }
 void TrackTable::fit_columns() {
     RECT client{}; GetClientRect(window_, &client);

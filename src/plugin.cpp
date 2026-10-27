@@ -1138,6 +1138,9 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             rows[i].weight = value.weight;
             rows[i].editing_weight = effective_weight(tracks[i], context, editing_scope).weight;
         }
+        track_table_.sort(rows);
+        tracks.clear();
+        for (const auto& row : rows) tracks.push_back(utf8(row.path));
         SendDlgItemMessageW(window, IDC_WEIGHT_SCOPE, CB_RESETCONTENT, 0, 0);
         for (const auto scope : {ignorant::WeightScope::Global, ignorant::WeightScope::Folder, ignorant::WeightScope::Playlist}) {
             if (!storage_.available(scope, context)) continue;
@@ -1147,21 +1150,21 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             if (scope == scope_for(context)) SendDlgItemMessageW(window, IDC_WEIGHT_SCOPE, CB_SETCURSEL, index, 0);
         }
         std::vector<int> selected;
+        std::vector<int> remapped(old_tracks.size(), -1);
         if (preserve) {
-            std::vector<bool> restored(tracks.size());
-            for (const auto old : old_rows) {
-                auto row = static_cast<std::size_t>(old);
-                if (row >= tracks.size() || restored[row] || tracks[row] != old_tracks[old]) {
-                    row = 0;
-                    while (row < tracks.size() && (restored[row] || tracks[row] != old_tracks[old])) ++row;
-                }
-                if (row < tracks.size()) { restored[row] = true; selected.push_back(static_cast<int>(row)); }
+            std::map<std::string, std::deque<int>> positions;
+            for (std::size_t row = 0; row < tracks.size(); ++row) positions[tracks[row]].push_back(static_cast<int>(row));
+            for (std::size_t old = 0; old < old_tracks.size(); ++old) {
+                auto& available = positions[old_tracks[old]];
+                if (!available.empty()) { remapped[old] = available.front(); available.pop_front(); }
             }
+            for (const auto old : old_rows) if (remapped[old] >= 0) selected.push_back(remapped[old]);
         }
+        const auto remap = [&](int old) { return old >= 0 && static_cast<std::size_t>(old) < remapped.size() ? remapped[old] : -1; };
         editor_playlist_ = playlist;
         visible_tracks_ = std::move(tracks);
         const bool show_edit = storage_.available(ignorant::WeightScope::Folder, context) || storage_.available(ignorant::WeightScope::Playlist, context);
-        track_table_.replace(std::move(rows), selected, preserve ? caret : -1, preserve ? anchor : -1, preserve ? top : 0,
+        track_table_.replace(std::move(rows), selected, remap(caret), remap(anchor), std::max(0, remap(top)),
             show_edit, L"Edit " + scope_label(editing_scope));
         editor_selection_pending_ = false;
         selection(window);
@@ -1414,6 +1417,10 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             if (self && message == WM_NOTIFY) {
                 auto* notification = reinterpret_cast<NMHDR*>(lparam);
                 if (notification->idFrom == IDC_TRACKS) {
+                    if (notification->code == LVN_COLUMNCLICK) {
+                        self->track_table_.sort_by(reinterpret_cast<NMLISTVIEW*>(lparam)->iSubItem);
+                        self->refresh(window); return TRUE;
+                    }
                     if (notification->code == LVN_ITEMCHANGED && !self->track_table_.updating()) {
                         const auto* change = reinterpret_cast<NMLISTVIEW*>(lparam);
                         if ((change->uChanged & LVIF_STATE) && ((change->uNewState ^ change->uOldState) & LVIS_SELECTED) && !self->editor_selection_pending_) {

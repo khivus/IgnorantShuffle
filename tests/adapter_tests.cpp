@@ -264,6 +264,51 @@ public:
 };
 #undef STUB
 struct PluginChecks {
+    static void sorting_checks(Manager& manager) {
+        Track first(L"Z:\\Music\\Zulu.flac"), second(L"A:\\Music\\alpha.flac"), third(L"M:\\Music\\Beta.flac");
+        EmptyPlaylist playlist; playlist.items = {&first, &second, &third, &second};
+        manager.active = &playlist;
+        Plugin plugin;
+        plugin.playlists_ = query<IAIMPServicePlaylistManager>(&manager, IID_IAIMPServicePlaylistManager);
+        plugin.weights_file_ = std::filesystem::current_path() / L"sort-weights.tsv";
+        plugin.weights_.set(track_key(&first), 25); plugin.weights_.set(track_key(&second), 2.5); plugin.weights_.set(track_key(&third), 0);
+        module = GetModuleHandleW(nullptr);
+        const auto editor = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_SETTINGS), nullptr, Plugin::dialog_proc, reinterpret_cast<LPARAM>(&plugin));
+        const auto table = GetDlgItem(editor, IDC_TRACKS);
+        const auto sort = [&](int column) {
+            NMLISTVIEW click{}; click.hdr = {table, IDC_TRACKS, LVN_COLUMNCLICK}; click.iSubItem = column;
+            SendMessageW(editor, WM_NOTIFY, IDC_TRACKS, reinterpret_cast<LPARAM>(&click));
+        };
+        ListView_SetItemState(table, 0, LVIS_SELECTED, LVIS_SELECTED);
+        ListView_SetItemState(table, 3, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+        ListView_SetSelectionMark(table, 3);
+        sort(0);
+        check(plugin.visible_tracks_ == std::vector<std::string>({track_key(&third), track_key(&second), track_key(&second), track_key(&first)}), "Weight sorting is numeric, including zero and fractional values.");
+        check(plugin.selected_rows(editor) == std::vector<int>({2, 3}) && ListView_GetNextItem(table, -1, LVNI_FOCUSED) == 2 && ListView_GetSelectionMark(table) == 2,
+            "Sorting preserves selected identities, duplicate occurrences, caret and Shift anchor.");
+        HDITEMW header{}; header.mask = HDI_FORMAT; Header_GetItem(ListView_GetHeader(table), 0, &header);
+        check((header.fmt & HDF_SORTUP) != 0, "The active column shows an ascending arrow.");
+        sort(0);
+        check(plugin.visible_tracks_.front() == track_key(&first) && plugin.visible_tracks_.back() == track_key(&third), "Clicking the same header reverses sorting.");
+        plugin.apply_editor_weight(editor, 10);
+        check(plugin.weights_.get(track_key(&first)) == 10 && plugin.weights_.get(track_key(&second)) == 10 && plugin.weights_.get(track_key(&third)) == 0,
+            "Bulk edits after sorting target the selected filenames and preserve the sort.");
+        sort(1);
+        check(plugin.visible_tracks_.front() == track_key(&second) && plugin.visible_tracks_.back() == track_key(&first), "Track titles sort without case sensitivity.");
+        sort(4);
+        check(plugin.visible_tracks_.front() == track_key(&second) && plugin.visible_tracks_.back() == track_key(&first), "Folder column sorts by folder path.");
+        // Exercise Source and the numeric editing column with distinct layer values.
+        auto rows = plugin.track_table_.rows();
+        rows[0].source = L"Playlist"; rows[1].source = L"Global"; rows[2].source = L"Folder"; rows[3].source = L"Global";
+        rows[0].editing_weight = 25; rows[1].editing_weight = 2.5; rows[2].editing_weight = 0; rows[3].editing_weight = 10;
+        plugin.track_table_.replace(rows, {}, -1, -1, 0, true, L"Edit Global");
+        plugin.track_table_.sort_by(2); plugin.track_table_.sort(rows);
+        check(rows.front().source == L"Folder" && rows.back().source == L"Playlist", "Source column supports text sorting.");
+        plugin.track_table_.sort_by(3); plugin.track_table_.sort(rows);
+        check(rows.front().editing_weight == 0 && rows[1].editing_weight == 2.5 && rows.back().editing_weight == 25, "Edit values sort numerically independently of playback weights.");
+        DestroyWindow(editor); plugin.Finalize(); manager.active = nullptr;
+        std::filesystem::remove(plugin.weights_file_);
+    }
     static void bulk_editor_checks(Manager& manager, Messages& messages) {
         namespace fs = std::filesystem;
         const auto fixture = fs::current_path() / (L"adapter-bulk-" + std::to_wstring(GetCurrentProcessId()));
@@ -1542,6 +1587,7 @@ struct PluginChecks {
         check(plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Shuffle off must return boolean false, not E_NOTIMPL.");
         check(plugin.GetPrev(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Previous with shuffle off.");
         messages.shuffle = TRUE;
+        sorting_checks(manager);
         quick_controls_checks(manager, messages);
         storage_checks(manager, messages);
         bulk_editor_checks(manager, messages);
