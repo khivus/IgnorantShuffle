@@ -19,6 +19,8 @@ The publisher regression is offline and does not authenticate or contact GitHub.
 
 Core tests cover weighted boundaries and a fixed-seed 100,000-draw distribution, zero/empty inputs, large imported values, invalid imports, transactional merging, round trips, and replacing an existing weights file.
 
+Default-weight tests cover finite nonnegative validation, fractional/large/zero fallbacks, explicit-weight and local-override precedence, inheritance, INI persistence and precision, invalid INI recovery, and immediate panel/table/queue updates through the settings dialog.
+
 ### AIMP adapter and queue contracts
 
 Adapter tests use the actual SDK interfaces to check that shuffle-off returns boolean false, an empty custom queue returns boolean true and clears the next item, and missing history stays handled. This matters because the C++ header declares these callback results as `HRESULT`, while the SDK documentation and Delphi declarations specify `LongBool`. The same test executable loads the built DLL, checks its undecorated entry point and interfaces, and releases/unloads it. These checks do not replace testing inside AIMP.

@@ -8,12 +8,14 @@ Turn on both **AIMP Shuffle** and the plugin's **Weighted shuffle enabled** opti
 
 | Weight | Meaning |
 | --- | --- |
-| Unconfigured | Defaults to **5**. |
+| Unconfigured | Uses **Default weight**, initially **5**. |
 | **0** | Excluded from weighted selection; still available for manual playback. |
 | **1–10** | Quick choices in the panel and editor. |
 | Any finite nonnegative value | Supported through custom editing and import, including fractions and values above 10. |
 
 Each choice is proportional to weight. If the only eligible tracks have weights 2 and 8, their chances are 20% and 80%. Larger imported weights remain unchanged when settings reopen or weights are exported.
+
+Set **Track weights... > Weight storage... > Default weight**, then click **Apply default** to change the weight for tracks without a saved value. Any finite nonnegative number is supported, including fractions and values above 10. Zero excludes unconfigured tracks. This setting is saved in the AIMP profile and takes effect immediately; existing explicit track weights and local overrides keep their values.
 
 By default shuffle continues indefinitely. With cooldown off, every draw includes all positive-weight candidates, so immediate repeats are possible. With cooldown on, the draw uses tracks outside cooldown. Returning from cooldown makes a track eligible; it does not guarantee that it will be selected immediately.
 

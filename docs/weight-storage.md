@@ -6,6 +6,8 @@
 
 By default, weights are stored under the profile directory returned by AIMP, at `IgnorantShuffle\weights.tsv`. This supports portable and normal AIMP installations without hard-coded usernames. A corrupt existing profile file prevents plugin initialization and is not overwritten; repair it or move it aside first.
 
+**Default weight** in **Track weights... > Weight storage...** controls the fallback for tracks with no saved weight. Click **Apply default** to save it and refresh playback choices immediately. It starts at **5** and accepts any finite nonnegative number, including fractions and values above ten. **0** excludes unconfigured tracks. Explicit profile/shared/local weights are preserved. The setting is stored separately in `IgnorantShuffle\preferences.ini`, under `[Shuffle]` as `DefaultWeight`, and is specific to that AIMP profile; it is not part of shared TSV files.
+
 ## Shared global and local weights
 
 All shared-storage options are **off by default**. The original profile file stays intact and remains the global fallback for tracks without a shared global entry, URLs, and tracks outside the selected music folder.
@@ -24,7 +26,7 @@ All shared-storage options are **off by default**. The original profile file sta
 
 The **folder context is the common parent folder of the local tracks in the current source list**, within the configured music root. It does not depend on naming an AIMP playlist. For example, a list containing `Music\Chill\song.mp3` and `Music\Chill\other.mp3` uses Chill's local file. A list spanning Chill and another subfolder uses their common parent, Music, so Chill's local overrides do not apply there. A single-track list uses that track's parent folder. A list containing local files outside the configured root has no folder-local context.
 
-The effective weight is the first configured value found in this order: the current AIMP playlist's override, the current folder's override, overrides in its parent folders up to the music root, the shared global value, the original profile value, then **5**. Weight **0 at the winning layer** excludes the track. Imported values above 10 remain supported. The panel distinguishes the actual playback weight from the value being edited when the selected scope differs.
+The effective weight is the first configured value found in this order: the current AIMP playlist's override, the current folder's override, overrides in its parent folders up to the music root, the shared global value, the original profile value, then the configured **Default weight** (initially **5**). Weight **0 at the winning layer** excludes the track. Imported values above 10 remain supported. The panel distinguishes the actual playback weight from the value being edited when the selected scope differs.
 
 Folder-local files use paths relative to their folder; global files use paths relative to the music root. Moving a track within the tree or changing its relative filename creates a new key. AIMP-playlist overrides additionally match the exact playlist name and folder context: keep that name on another device, and use distinct names for distinct playlists in the same context.
 

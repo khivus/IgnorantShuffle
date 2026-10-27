@@ -16,7 +16,12 @@
 namespace ignorant {
 double Weights::get(const std::string& track) const {
     const auto it = values_.find(track);
-    return it == values_.end() ? default_weight : it->second;
+    return it == values_.end() ? fallback_ : it->second;
+}
+void Weights::set_default(double weight) {
+    if (!std::isfinite(weight) || weight < 0)
+        throw std::invalid_argument("Default weight must be a finite nonnegative number.");
+    fallback_ = weight;
 }
 void Weights::set(const std::string& track, double weight) {
     if (track.empty() || track.find_first_of("\t\r\n\0", 0, 4) != std::string::npos)

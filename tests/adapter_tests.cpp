@@ -264,6 +264,66 @@ public:
 };
 #undef STUB
 struct PluginChecks {
+    static void default_weight_checks(Manager& manager, Messages& messages) {
+        Track first(L"default-first.flac"), second(L"default-second.flac");
+        EmptyPlaylist playlist; playlist.items = {&first, &second};
+        first.owner = second.owner = &playlist; second.index = 1; manager.active = &playlist;
+        Player player; player.current = &first;
+        PlaybackQueue queue;
+        Plugin plugin;
+        plugin.playlists_ = query<IAIMPServicePlaylistManager>(&manager, IID_IAIMPServicePlaylistManager);
+        plugin.messages_ = query<IAIMPServiceMessageDispatcher>(&messages, IID_IAIMPServiceMessageDispatcher);
+        plugin.player_ = query<IAIMPServicePlayer>(&player, IID_IAIMPServicePlayer);
+        plugin.queue_ = query<IAIMPServicePlaybackQueue2>(&queue, IID_IAIMPServicePlaybackQueue2);
+        plugin.preferences_file_ = std::filesystem::current_path() / L"default-weight-prefs.ini";
+        std::filesystem::remove(plugin.preferences_file_);
+        plugin.weights_.set(track_key(&second), 5);
+        module = GetModuleHandleW(nullptr); plugin.open_monitor();
+        const auto editor = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_SETTINGS), nullptr, Plugin::dialog_proc, reinterpret_cast<LPARAM>(&plugin));
+        const auto settings = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_STORAGE), editor, Plugin::storage_proc, reinterpret_cast<LPARAM>(&plugin));
+        check(Plugin::control_text(settings, IDC_DEFAULT_WEIGHT) == L"5", "Default-weight settings start at five.");
+        ListView_SetItemState(GetDlgItem(editor, IDC_TRACKS), 0, LVIS_SELECTED, LVIS_SELECTED);
+        const auto apply = [&](const wchar_t* value) {
+            SetDlgItemTextW(settings, IDC_DEFAULT_WEIGHT, value);
+            SendMessageW(settings, WM_COMMAND, MAKEWPARAM(IDC_APPLY_DEFAULT_WEIGHT, BN_CLICKED), 0);
+        };
+        QueueOutput next;
+        plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &next);
+        const auto before = queue.notifications;
+        apply(L"2.5");
+        check(plugin.weights_.get(track_key(&first)) == 2.5 && plugin.weights_.get(track_key(&second)) == 5 && plugin.weights_.entries().size() == 1,
+            "The default changes immediately without overwriting or materializing explicit track entries.");
+        check(queue.notifications == before + 1 && plugin.monitor_state().current_weight.find(L"2.5") != std::wstring::npos,
+            "Changing the default invalidates prefetched choices once and refreshes current playback weight.");
+        check(plugin.track_table_.rows().front().weight == 2.5 && plugin.selected_tracks(editor) == std::vector<std::string>{track_key(&first)},
+            "Changing the default refreshes table values and preserves selection.");
+        Plugin restored; restored.preferences_file_ = plugin.preferences_file_; restored.load_preferences();
+        check(restored.weights_.get("unsaved") == 2.5, "Configured default survives restart.");
+        apply(L"25.123456789012344");
+        restored.load_preferences();
+        check(restored.weights_.fallback() == plugin.weights_.fallback() && plugin.monitor_state().selected_weight == -1,
+            "Fractional defaults above ten round-trip without precision loss or a misleading quick-button highlight.");
+        apply(L"0");
+        plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &next);
+        check(same_object(next.item.get(), &second) && plugin.monitor_state().selected_weight == 0,
+            "A zero default excludes unsaved tracks from the real weighted queue and updates the panel.");
+        const auto preserved_notifications = queue.notifications;
+        for (const auto* bad : {L"", L"-1", L"NaN", L"inf", L"1e999", L"2junk"}) {
+            SetDlgItemTextW(settings, IDC_DEFAULT_WEIGHT, bad);
+            bool rejected = false;
+            try { plugin.apply_default_weight(settings); } catch (const std::exception&) { rejected = true; }
+            check(rejected && plugin.weights_.fallback() == 0 && queue.notifications == preserved_notifications,
+                "Invalid default input leaves the setting and prefetched queue unchanged.");
+        }
+        restored.load_preferences(); check(restored.weights_.fallback() == 0, "Invalid default input does not alter saved preferences.");
+        WritePrivateProfileStringW(L"Shuffle", L"DefaultWeight", L"NaN", plugin.preferences_file_.c_str());
+        restored.load_preferences();
+        check(restored.weights_.fallback() == 5 && !restored.preferences_error_.empty(), "Invalid INI defaults safely fall back to five with a diagnostic.");
+        SetDlgItemTextW(settings, IDC_DEFAULT_WEIGHT, L"0");
+        ShowWindow(settings, SW_SHOWNOACTIVATE); UpdateWindow(settings); capture_preview(settings, L"default-weight-settings.bmp");
+        DestroyWindow(settings); DestroyWindow(editor); plugin.Finalize(); manager.active = nullptr;
+        std::filesystem::remove(plugin.preferences_file_);
+    }
     static void mouse_input_checks() {
         module = GetModuleHandleW(nullptr);
         MonitorWindow panel;
@@ -1633,6 +1693,7 @@ struct PluginChecks {
         check(plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Shuffle off must return boolean false, not E_NOTIMPL.");
         check(plugin.GetPrev(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Previous with shuffle off.");
         messages.shuffle = TRUE;
+        default_weight_checks(manager, messages);
         mouse_input_checks();
         sorting_checks(manager);
         quick_controls_checks(manager, messages);

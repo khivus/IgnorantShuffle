@@ -23,6 +23,21 @@ int main() {
         using namespace ignorant;
         Weights weights;
         check(weights.get("unknown") == 5, "Default weight");
+        Weights configurable;
+        configurable.set("explicit", 5);
+        configurable.set_default(2.5);
+        check(configurable.get("unknown") == 2.5 && configurable.get("explicit") == 5 && configurable.entries().size() == 1,
+            "Configured fallback changes only unsaved tracks");
+        configurable.set_default(25);
+        check(configurable.get("unknown") == 25, "Fallback accepts values above ten");
+        configurable.set_default(0);
+        check(!choose({configurable.get("unknown")}, 0.0), "Zero fallback excludes unconfigured tracks");
+        for (const auto value : {-1.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+            rejects([&] { configurable.set_default(value); });
+            check(configurable.fallback() == 0, "Invalid fallback leaves configuration unchanged");
+        }
+        std::istringstream custom_import("7\timported\n"); configurable.import(custom_import);
+        check(configurable.get("unknown") == 0 && configurable.get("imported") == 7, "Import retains the configured fallback");
         weights.set_from_editor("muted", 0);
         weights.set_from_editor("favorite", 10);
         rejects([&] { weights.set_from_editor("favorite", 11); });

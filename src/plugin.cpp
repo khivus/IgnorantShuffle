@@ -236,6 +236,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         success = (WritePrivateProfileStringW(L"Monitor", L"Attached", side_panel_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Monitor", L"CooldownTracks", std::to_wstring(cooldown_).c_str(), preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Shuffle", L"FinitePlaylist", finite_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
+        success = (WritePrivateProfileStringW(L"Shuffle", L"DefaultWeight", weight_text(weights_.fallback()).c_str(), preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Storage", L"MusicFolder", music_folder_.c_str(), preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Storage", L"SharedGlobal", shared_global_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Storage", L"FolderLocal", folder_local_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
@@ -269,6 +270,14 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         side_panel_ = GetPrivateProfileIntW(L"Monitor", L"Attached", 0, preferences_file_.c_str()) != 0;
         cooldown_ = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Monitor", L"CooldownTracks", 0, preferences_file_.c_str())), 0, 10000);
         finite_ = GetPrivateProfileIntW(L"Shuffle", L"FinitePlaylist", 0, preferences_file_.c_str()) != 0;
+        wchar_t fallback[512]{};
+        GetPrivateProfileStringW(L"Shuffle", L"DefaultWeight", L"5", fallback, 512, preferences_file_.c_str());
+        try { weights_.set_default(parse_custom_weight(fallback)); }
+        catch (const std::exception& error) {
+            weights_.set_default(ignorant::default_weight);
+            preferences_error_ = L"Invalid default weight in preferences.ini; using 5. Change it in Weight storage.";
+            log_.write("preferences.default_weight.error", error.what());
+        }
         wchar_t folder[32768]{};
         GetPrivateProfileStringW(L"Storage", L"MusicFolder", L"", folder, 32768, preferences_file_.c_str());
         music_folder_ = folder;
@@ -524,7 +533,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 if (storage_.enabled()) weight << L" (" << scope_label(actual.scope) << L")";
                 if (editing.weight <= 10 && editing.weight == std::floor(editing.weight)) state.selected_weight = static_cast<int>(editing.weight);
                 if (actual.weight == 0) weight << L" (excluded)";
-                else if (actual.weight > 10) weight << L" (imported)";
+                else if (actual.weight > 10) weight << L" (custom)";
                 if (scope != actual.scope || editing.weight != actual.weight)
                     weight << L"\r\nEditing " << scope_label(scope) << L": " << editing.weight;
             } catch (const std::exception&) { weight << L"Weight unavailable"; state.can_set_weight = false; }
@@ -1060,6 +1069,21 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             throw std::runtime_error("Enter a finite, nonnegative weight, for example 2.5 or 25. Zero excludes selected tracks.");
         return value;
     }
+    static std::wstring weight_text(double value) {
+        std::wostringstream text; text.imbue(std::locale::classic());
+        text << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+        return text.str();
+    }
+    void apply_default_weight(HWND window) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        weights_.set_default(parse_custom_weight(control_text(window, IDC_DEFAULT_WEIGHT)));
+        save_preferences(); changed(); refresh_cooldown_preview();
+        if (dialog_) refresh(dialog_);
+        update_monitor();
+        log_.write("weights.default", "weight=" + utf8(weight_text(weights_.fallback())));
+        storage_status(window, L"Default weight applied: " + weight_text(weights_.fallback()) + L". Explicit track weights kept."
+            + (preferences_error_.empty() ? L"" : L"\r\n" + preferences_error_));
+    }
     void apply_editor_weight(HWND window, double value) {
         if (!std::isfinite(value) || value < 0) throw std::runtime_error("Weight must be finite and nonnegative.");
         const auto tracks = selected_tracks(window);
@@ -1306,6 +1330,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 self = reinterpret_cast<Plugin*>(lparam);
                 SetWindowLongPtrW(window, DWLP_USER, lparam); self->storage_dialog_ = window;
                 SetDlgItemTextW(window, IDC_MUSIC_FOLDER, self->music_folder_.c_str());
+                SetDlgItemTextW(window, IDC_DEFAULT_WEIGHT, weight_text(self->weights_.fallback()).c_str());
                 CheckDlgButton(window, IDC_SHARED_GLOBAL, self->shared_global_ ? BST_CHECKED : BST_UNCHECKED);
                 CheckDlgButton(window, IDC_FOLDER_LOCAL, self->folder_local_ ? BST_CHECKED : BST_UNCHECKED);
                 CheckDlgButton(window, IDC_PLAYLIST_LOCAL, self->playlist_local_ ? BST_CHECKED : BST_UNCHECKED);
@@ -1320,6 +1345,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 else if (id == IDC_SHARED_GLOBAL) EnableWindow(GetDlgItem(window, IDC_COPY_PROFILE), IsDlgButtonChecked(window, id) == BST_CHECKED);
                 else if (id == IDC_BROWSE_MUSIC) self->browse_music_folder(window);
                 else if (id == IDC_APPLY_STORAGE) self->apply_storage_dialog(window);
+                else if (id == IDC_APPLY_DEFAULT_WEIGHT) self->apply_default_weight(window);
                 else if (id == IDC_IMPORT || id == IDC_EXPORT) self->storage_transfer(window, id == IDC_EXPORT);
                 else if (id == IDC_WEIGHT_SCOPE && HIWORD(wparam) == CBN_SELCHANGE) {
                     std::lock_guard<std::recursive_mutex> lock(self->mutex_);
@@ -1466,7 +1492,7 @@ public:
         case AIMP_PLUGIN_INFO_NAME: return const_cast<TChar*>(L"IgnorantShuffle 0.10.1");
         case AIMP_PLUGIN_INFO_AUTHOR: return const_cast<TChar*>(L"IgnorantShuffle contributors");
         case AIMP_PLUGIN_INFO_SHORT_DESCRIPTION: return const_cast<TChar*>(L"Weighted shuffle: 0 excludes a track; larger weights play more often.");
-        case AIMP_PLUGIN_INFO_FULL_DESCRIPTION: return const_cast<TChar*>(L"Uses AIMP's Shuffle switch. Configure weights from 0 to 10, optional track cooldown, or finite weighted playlists that follow AIMP's end-of-playlist action. Imported weights may exceed 10. Default weight: 5.");
+        case AIMP_PLUGIN_INFO_FULL_DESCRIPTION: return const_cast<TChar*>(L"Uses AIMP's Shuffle switch. Configure track weights, optional track cooldown, or finite weighted playlists that follow AIMP's end-of-playlist action. Custom weights may exceed 10. The default weight is configurable in Weight storage (initially 5).");
         default: return nullptr;
         }
     }

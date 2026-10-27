@@ -12,6 +12,8 @@ constexpr double default_weight = 5.0;
 class Weights {
 public:
     double get(const std::string& track) const;
+    double fallback() const { return fallback_; }
+    void set_default(double weight);
     void set(const std::string& track, double weight);
     void set_from_editor(const std::string& track, int weight);
     void erase(const std::string& track) { values_.erase(track); }
@@ -22,6 +24,7 @@ public:
     void save(const std::filesystem::path& path) const;
     const auto& entries() const { return values_; }
 private:
+    double fallback_ = default_weight;
     std::map<std::string, double> values_;
 };
 

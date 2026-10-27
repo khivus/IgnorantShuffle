@@ -31,6 +31,15 @@ int main() {
         storage.configure(root, true, true, true);
         context = storage.context({track, nested}, "Favorites");
         check(context.folder == album, "Folder scope uses the list's common music folder.");
+        profile.set_default(2.5);
+        check(storage.resolve(profile, nested, context).weight == 2.5 && storage.resolve(profile, track, context).weight == 7,
+            "Shared layers inherit the configurable default without replacing explicit weights.");
+        storage.set(WeightScope::Folder, nested, context, 9);
+        profile.set_default(0);
+        check(storage.resolve(profile, nested, context).weight == 9, "Local overrides beat even a zero default.");
+        storage.clear(WeightScope::Folder, nested, context);
+        check(storage.resolve(profile, nested, context).weight == 0, "Inherit restores the configured default.");
+        profile.set_default(5);
         check(storage.copy_profile(profile) == 2, "Existing profile weights can be copied into portable global storage.");
         Weights global; global.load(root / "IgnorantShuffle.weights.tsv");
         check(global.get("Favorites/song.mp3") == 7 && global.entries().count(track) == 0, "Shared global file uses relative paths.");
