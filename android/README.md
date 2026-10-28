@@ -15,6 +15,17 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`. Copy to the phone using USB fi
 transfer and open with its file manager. No ADB is required. This app has a separate
 application ID from AIMP Media Probe; both can remain installed.
 
+On Windows, `..\tools\build-android.ps1` builds, tests, lints, verifies signing and
+copies the APK to the repository's `dist/` folder with an Android-specific checksum
+file. SDK/JDK environment variables are honored; common Android Studio install
+paths are detected without a hard-coded Windows username. Use `-Offline` once
+dependencies are cached. The script never installs, commits, pushes or publishes.
+
+The common GitHub Actions workflow checks portable rules, Windows x64/x86, and
+Android builds/tests/lint. CI's debug APK is signed with the runner's temporary
+debug key; it is not a stable release/update-signing setup. Do not assume it can
+update an APK built locally with another debug key.
+
 Grant **IgnorantShuffle — AIMP control** notification access from the app's button,
 then open AIMP and start music. On Android 13+ a sideloaded app may require allowing
 restricted settings in its Android app-info menu before notification access.
