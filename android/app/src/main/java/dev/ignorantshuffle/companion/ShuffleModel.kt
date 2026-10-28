@@ -4,9 +4,9 @@ import java.security.MessageDigest
 
 data class Track(val queueId: Long, val mediaId: String?, val uri: String?, val title: String, val artist: String) {
     // Conservative app-local identity. Do not persist numeric queue IDs or guess file paths.
-    val key: String get() {
+    val key: String = run {
         val text = listOf(mediaId ?: uri ?: "unidentified", title, artist).joinToString("\u0000")
-        return "android:v1:" + MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+        "android:v1:" + MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 255) }
     }
     val selectable get() = mediaId != null || uri != null || queueId >= 0
@@ -55,6 +55,7 @@ class ShuffleModel(private val planner: Planner) {
     private var cursor = -1
     private var navigation: Int? = null
     private var preview: Choice? = null
+    var choiceSequence: Long = 0; private set
 
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
 
@@ -71,7 +72,9 @@ class ShuffleModel(private val planner: Planner) {
     fun catalog(value: List<Track>) {
         val changed = tracks.map { it.key }.sorted() != value.map { it.key }.sorted()
         tracks = value
-        if (changed) preview = null
+        // A published roll is a commitment, not a request to draw again on queue
+        // reorder/addition. Removal of its target requires an explicit new roll.
+        if (changed && preview?.track?.let { chosen -> value.none { it.key == chosen.key } } != false) preview = null
     }
 
     fun confirmPlaying(track: Track, restarted: Boolean = false) {
@@ -109,10 +112,10 @@ class ShuffleModel(private val planner: Planner) {
         if (!reroll && old != null) return old.copy(track = old.track?.let { t -> tracks.firstOrNull { it.key == t.key } })
         if (!reroll && cursor >= 0 && cursor < timeline.lastIndex) {
             val forward = tracks.firstOrNull { it.key == timeline[cursor + 1] && weight(it) > 0 }
-            if (forward != null) return Choice(forward, historyIndex = cursor + 1).also { preview = it }
+            if (forward != null) return Choice(forward, historyIndex = cursor + 1).also { preview = it; choiceSequence++ }
         }
         return planner.choose(tracks, tracks.map(::weight).toDoubleArray(), recent.toList(), played.toList(),
-            settings, if (reroll) old?.track?.key.orEmpty() else "").also { preview = it }
+            settings, if (reroll) old?.track?.key.orEmpty() else "").also { preview = it; choiceSequence++ }
     }
 
     fun previous(): Choice? {

@@ -68,6 +68,17 @@ class ShuffleModelTest {
         model.catalog(listOf(a.copy(queueId = 99), b))
         assertEquals(99L, model.next().track!!.queueId); assertEquals(1, p.calls)
     }
+    @Test fun newQueueEntriesDoNotReplacePublishedRoll() {
+        val p = FakePlanner(); val model = model(p)
+        val rolled = model.next(); val sequence = model.choiceSequence
+        model.catalog(listOf(b, a.copy(queueId = 91), a.copy(mediaId = "new", title = "New")))
+        assertEquals(rolled.track!!.key, model.next().track!!.key)
+        assertEquals(sequence, model.choiceSequence); assertEquals(1, p.calls)
+    }
+    @Test fun removedTargetInvalidatesRoll() {
+        val p = FakePlanner(); val model = model(p); model.next()
+        model.catalog(listOf(b)); assertEquals(b.key, model.next().track!!.key); assertEquals(2, p.calls)
+    }
     @Test fun reusedMediaIdWithDifferentMetadataReceivesNoOldWeight() {
         val model = model(); model.configure(Settings(), mapOf(a.key to 0.0))
         val replacement = a.copy(title = "Different song")

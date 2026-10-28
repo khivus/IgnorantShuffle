@@ -93,7 +93,7 @@ private fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () 
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("IgnorantShuffle", style = MaterialTheme.typography.headlineMedium)
-                Text("AIMP companion · Android preview 0.1.0")
+                Text("AIMP companion · Android preview 0.2.0")
                 Text(m.status)
                 Text("Notification access: ${if (m.permission) "granted" else "required"}")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -138,7 +138,7 @@ private fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () 
                     Text("Enable timed shuffle", Modifier.padding(start = 8.dp, top = 12.dp))
                 }
                 Text(m.automaticStatus)
-                Text("Off on startup and connection loss. Pause cancels the pending timer; resuming AIMP reschedules it. Failed commands stop timed mode. With no eligible tracks it requests Pause at the estimated end.")
+                Text("CPU protection stays active only during timed playback and its pending command. It allows screen-off switching but uses more battery. Pause, disable and disconnect release it.")
                 HorizontalDivider()
                 Text("Shuffle settings", style = MaterialTheme.typography.titleMedium)
                 OutlinedTextField(default, { default = it }, label = { Text("Default weight (0 excludes)") }, modifier = Modifier.fillMaxWidth())
@@ -171,6 +171,12 @@ private fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () 
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Diagnostics", style = MaterialTheme.typography.titleMedium)
+                Row {
+                    Switch(m.preferences.logging, { m.changePreferences(m.preferences.copy(logging = it)) })
+                    Text("Automatic logging", Modifier.padding(start = 8.dp, top = 12.dp))
+                }
+                Text("Logs persist across restarts; two files of about 2MB are retained. Full export includes saved logs and track identities.")
+                m.logError?.let { Text("Log write error: $it") }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = copy) { Text("Copy summary") }
                     OutlinedButton(onClick = exportLog) { Text("Export full log") }
