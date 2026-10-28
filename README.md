@@ -36,6 +36,10 @@ Separate DLL downloads are available for manual installation. Choose the archite
 
 ## Development
 
+Windows, Android and the shared core have [independent versions](docs/versioning.md).
+Edit the corresponding file in `versions/`; app diagnostics include the bundled
+core version. Release tags use `windows/v...`, `android/v...` and `core/v...`.
+
 An early **Android companion** now lives in [android/](android/README.md). It shares
 the C++ selection rules with this Windows plugin and provides weight editing,
 Smart Next/Previous, cooldown and finite passes. Optional timed automatic mode

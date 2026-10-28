@@ -680,7 +680,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             if (message == WM_INITDIALOG) {
                 self = reinterpret_cast<Plugin*>(lparam); SetWindowLongPtrW(window, DWLP_USER, lparam);
                 self->update_dialog_ = window;
-                SetDlgItemTextW(window, IDC_UPDATE_VERSION, (L"Installed version: " + from_utf8(ignorant::build_version)).c_str());
+                SetDlgItemTextW(window, IDC_UPDATE_VERSION, (L"Windows " + from_utf8(ignorant::build_version) + L" / Core " + from_utf8(ignorant::core_version)).c_str());
                 SetDlgItemTextW(window, IDC_UPDATE_REPOSITORY, from_utf8(self->update_repository_).c_str());
                 SendDlgItemMessageW(window, IDC_UPDATE_REPOSITORY, EM_SETLIMITTEXT, 500, 0);
                 CheckDlgButton(window, IDC_UPDATE_AUTO, self->auto_updates_ ? BST_CHECKED : BST_UNCHECKED);
@@ -1496,7 +1496,7 @@ public:
     }
     TChar* WINAPI InfoGet(int index) override {
         switch (index) {
-        case AIMP_PLUGIN_INFO_NAME: return const_cast<TChar*>(L"IgnorantShuffle 0.11.0");
+        case AIMP_PLUGIN_INFO_NAME: return const_cast<TChar*>(L"IgnorantShuffle " IGNORANT_SHUFFLE_WINDOWS_VERSION_W);
         case AIMP_PLUGIN_INFO_AUTHOR: return const_cast<TChar*>(L"IgnorantShuffle contributors");
         case AIMP_PLUGIN_INFO_SHORT_DESCRIPTION: return const_cast<TChar*>(L"Weighted shuffle: 0 excludes a track; larger weights play more often.");
         case AIMP_PLUGIN_INFO_FULL_DESCRIPTION: return const_cast<TChar*>(L"Uses AIMP's Shuffle switch. Configure track weights, optional track cooldown, or finite weighted playlists that follow AIMP's end-of-playlist action. Custom weights may exceed 10. The default weight is configurable in Weight storage (initially 5).");
@@ -1520,7 +1520,7 @@ public:
             std::filesystem::create_directories(weights_file_.parent_path());
             log_file_ = weights_file_.parent_path() / L"plugin.log";
             log_.start(log_file_);
-            log_.write("plugin.start", "version=" + std::string(ignorant::build_version) + " arch=" + std::string(sizeof(void*) == 8 ? "x64" : "x86") + " pid=" + std::to_string(GetCurrentProcessId()));
+            log_.write("plugin.start", "version=" + std::string(ignorant::build_version) + " core=" + ignorant::core_version + " arch=" + std::string(sizeof(void*) == 8 ? "x64" : "x86") + " pid=" + std::to_string(GetCurrentProcessId()));
             preferences_file_ = weights_file_.parent_path() / L"preferences.ini";
             load_preferences();
             weights_.load(weights_file_);

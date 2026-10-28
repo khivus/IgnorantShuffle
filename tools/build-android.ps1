@@ -2,6 +2,8 @@
 param([switch]$Offline)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'component-version.ps1')
+$expected = Get-ComponentVersion android
 $androidRoot = Join-Path $repoRoot 'android'
 if (-not $env:ANDROID_HOME) {
     $sdkCandidate = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Android\Sdk'
@@ -22,7 +24,9 @@ try {
 $apk = Join-Path $androidRoot 'app\build\outputs\apk\debug\app-debug.apk'
 $metadata = Get-Content -LiteralPath (Join-Path (Split-Path $apk) 'output-metadata.json') -Raw | ConvertFrom-Json
 $version = $metadata.elements[0].versionName
-if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Unexpected Android version.' }
+if ($version -ne $expected.Version -or $metadata.elements[0].versionCode -ne $expected.VersionCode) {
+    throw 'Built APK does not match versions/android.properties.'
+}
 $signer = Join-Path $env:ANDROID_HOME 'build-tools\36.0.0\apksigner.bat'
 if (-not (Test-Path -LiteralPath $signer)) { throw 'Install Android Build Tools 36.0.0 to verify the APK.' }
 & $signer verify --verbose $apk

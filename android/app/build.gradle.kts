@@ -1,6 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+val componentVersion = Properties().apply {
+    rootProject.file("../versions/android.properties").inputStream().use { load(it) }
+}
+val androidVersion = componentVersion.getProperty("version")
+require(androidVersion != null && androidVersion.matches(Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)"))) {
+    "versions/android.properties must contain a stable MAJOR.MINOR.PATCH version"
+}
+val androidVersionCode = componentVersion.getProperty("versionCode")?.toIntOrNull()
+require(androidVersionCode != null && androidVersionCode in 1..2100000000) {
+    "versions/android.properties must contain versionCode in 1..2100000000"
 }
 android {
     namespace = "dev.ignorantshuffle.companion"
@@ -10,13 +23,13 @@ android {
         applicationId = "dev.ignorantshuffle.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = androidVersionCode
+        versionName = androidVersion
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         externalNativeBuild { cmake { cppFlags += "-std=c++17" } }
     }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

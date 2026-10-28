@@ -1,5 +1,6 @@
 #include <jni.h>
 #include "weights.h"
+#include "core_version.h"
 #include <stdexcept>
 
 namespace {
@@ -21,6 +22,10 @@ std::vector<std::string> strings(JNIEnv* env, jobjectArray array) {
     }
     return result;
 }
+}
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_ignorantshuffle_companion_ShuffleNative_coreVersion(JNIEnv* env, jobject) {
+    return env->NewStringUTF(ignorant::core_version);
 }
 extern "C" JNIEXPORT jdoubleArray JNICALL
 Java_dev_ignorantshuffle_companion_ShuffleNative_plan(JNIEnv* env, jobject,

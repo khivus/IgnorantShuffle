@@ -1,4 +1,9 @@
-# IgnorantShuffle Android preview 0.2.0
+# IgnorantShuffle Android preview
+
+Android has its own [version source](../versions/android.properties) and
+[changelog](../docs/changelogs/android.md), independent of Windows. The UI and
+exported diagnostics show both the Android and bundled core versions. See the
+[versioning policy](../docs/versioning.md) before preparing an update APK.
 
 Kotlin/Compose companion for AIMP for Android, API 26+. Open **this android folder**
 in Android Studio. Keep the parent repository: native builds compile

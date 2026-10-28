@@ -1,5 +1,7 @@
 #pragma once
+#include "windows_version.h"
+#include "core_version.h"
 namespace ignorant {
-inline constexpr const char* build_version = "@PROJECT_VERSION@";
+inline constexpr const char* build_version = IGNORANT_SHUFFLE_WINDOWS_VERSION;
 inline constexpr const char* default_update_repository = "@IGNORANT_SHUFFLE_UPDATE_REPOSITORY@";
 }

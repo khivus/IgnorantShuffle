@@ -1,0 +1,4 @@
+#pragma once
+namespace ignorant {
+inline constexpr const char* core_version = "@IGNORANT_SHUFFLE_CORE_VERSION@";
+}

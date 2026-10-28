@@ -46,7 +46,8 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                         style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Text("0.2.0", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Android ${BuildConfig.VERSION_NAME}\nCore ${remember { ShuffleNative.coreVersion() }}",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         PrimaryScrollableTabRow(selectedTabIndex = pager.currentPage, edgePadding = 12.dp,
             containerColor = MaterialTheme.colorScheme.background) {

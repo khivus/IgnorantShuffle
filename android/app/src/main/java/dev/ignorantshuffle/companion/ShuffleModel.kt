@@ -30,6 +30,7 @@ fun interface Planner {
 
 object ShuffleNative {
     init { System.loadLibrary("ignorant_shuffle") }
+    external fun coreVersion(): String
     external fun plan(keys: Array<String>, weights: DoubleArray, recent: Array<String>, played: Array<String>,
         cooldown: Int, finite: Boolean, avoid: String, unit: Double): DoubleArray
 }

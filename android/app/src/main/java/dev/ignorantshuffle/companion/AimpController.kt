@@ -89,7 +89,7 @@ class AimpController(private val context: Context) {
         events = journal.tail()
         runCatching { preferenceStore.load() }.onSuccess { preferences = it }
             .onFailure { log("Preference read failed; using defaults: $it") }
-        log("PROCESS START; IgnorantShuffle Android 0.2.0; Android ${Build.VERSION.RELEASE}; ${Build.MANUFACTURER} ${Build.MODEL}")
+        log("PROCESS START; IgnorantShuffle Android ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}); Core ${ShuffleNative.coreVersion()}; Android ${Build.VERSION.RELEASE}; ${Build.MANUFACTURER} ${Build.MODEL}")
         try {
             val loaded = store.load()
             settings = loaded.first; weights = loaded.second
@@ -429,7 +429,7 @@ class AimpController(private val context: Context) {
     val passCount get() = model.played.size
     fun savedEvents(): List<String> = journal.contents().lineSequence().filter(String::isNotBlank).toList()
     fun report(full: Boolean = false): String = buildString {
-        appendLine("IgnorantShuffle Android 0.2.0\n$status\n$settings\n$playback\nPreview: $preview\nResult: $result")
+        appendLine("IgnorantShuffle Android ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}); Core ${ShuffleNative.coreVersion()}\n$status\n$settings\n$playback\nPreview: $preview\nResult: $result")
         appendLine("Preferences: $preferences; log error: ${journal.failure}; roll=$rollSequence reason=$rollReason")
         appendLine("Scheduled: $scheduled; screen=${power.isInteractive}; idle=${power.isDeviceIdleMode}")
         appendLine("CPU held=${wake.isHeld}; powerSave=${power.isPowerSaveMode}; batteryExempt=${power.isIgnoringBatteryOptimizations(context.packageName)}")

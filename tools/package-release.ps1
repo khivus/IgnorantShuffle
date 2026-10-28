@@ -3,9 +3,8 @@ param([string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $projectRoot 'dist' }
-$cmakeText = Get-Content -LiteralPath (Join-Path $projectRoot 'CMakeLists.txt') -Raw
-if ($cmakeText -notmatch 'project\(IgnorantShuffle VERSION ([0-9]+\.[0-9]+\.[0-9]+)') { throw 'Cannot read project version.' }
-$version = $Matches[1]
+. (Join-Path $PSScriptRoot 'component-version.ps1')
+$version = (Get-ComponentVersion windows).Version
 $files = @(
     @{ Source = Join-Path $projectRoot 'build-Win32\Release\aimp_ignorant_shuffle.dll'; Entry = 'aimp_ignorant_shuffle/aimp_ignorant_shuffle.dll' },
     @{ Source = Join-Path $projectRoot 'build-x64\Release\aimp_ignorant_shuffle.dll'; Entry = 'aimp_ignorant_shuffle/x64/aimp_ignorant_shuffle.dll' }
