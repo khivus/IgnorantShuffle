@@ -72,4 +72,16 @@ class DiagnosticsAndHandoffTest {
         assertTrue(prefs.logging); assertEquals(Accent.ORANGE, prefs.accent)
         assertEquals(ThemeMode.SYSTEM, prefs.theme); assertFalse(prefs.notifyRoll)
     }
+    @Test fun pendingHandoffKeepsCpuThroughAimpTransientPauseOrBuffering() {
+        val sample = TimingSnapshot("source", 2, 0, 30_000, 1f, 1000)
+        assertTrue(CpuProtection.needed(true, true, sample, 1000))
+        assertTrue(CpuProtection.needed(true, true, sample.copy(state = 6), 1000))
+        assertFalse(CpuProtection.needed(false, true, sample, 1000))
+    }
+    @Test fun ordinaryPauseAndUnknownTimingDoNotHoldCpu() {
+        val sample = TimingSnapshot("source", 2, 20_000, 30_000, 1f, 1000)
+        assertFalse(CpuProtection.needed(true, false, sample, 1000))
+        assertFalse(CpuProtection.needed(true, false, sample.copy(state = 3, duration = -1), 1000))
+        assertTrue(CpuProtection.needed(true, false, sample.copy(state = 3), 1000))
+    }
 }

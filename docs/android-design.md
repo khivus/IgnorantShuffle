@@ -18,6 +18,18 @@ Android, and does not replace headset/lock-screen Next. It is off at startup and
 after connection loss. It must not fight manual track selections or retry failed
 commands in a loop. This is not equivalent to Windows's pre-playback GetNext hook.
 
+v0.2 holds renewable bounded CPU leases only during valid timed playback/pending
+handoff and releases them on pause/off/disconnect. This addresses Handler uptime
+deadlines slipping during deep sleep, with an explicit battery cost. Each deadline
+captures its published choice and roll sequence; its lightweight revalidation does
+not refetch/hash the queue twice. Queue additions/reorders preserve a valid roll;
+target removal invalidates it. Roll/dispatch/observed-result and both-clock logs
+are automatic and persisted by default. Device testing remains necessary.
+
+Presentation preferences are stored separately from weight/rule settings. Theme,
+accent, logging and notification-stat edits cannot consume progress or reroll.
+Status notifications are optional, quiet, private, and independent of media buttons.
+
 Only observed PLAYING tracks advance history/cooldown/finite progress. Previewing,
 rerolling, UI redraws and command dispatch do not consume tracks. One command can
 be pending at a time, with a bounded confirmation timeout.

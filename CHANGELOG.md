@@ -4,6 +4,15 @@ Version history for IgnorantShuffle, newest first.
 
 ## Unreleased — Android companion preview
 
+### Android 0.2.0
+
+- Preserve the displayed next roll through queue additions/reordering, capture it at timer scheduling, and reduce deadline work. Add bounded CPU protection for timed screen-off playback, released on pause/off/disconnect.
+- Automatically save detailed roll, command, observed-result, timer and power logs by default; view live/saved history, filter entries, and export full diagnostics.
+- Add optional quiet next-roll notifications with individually selectable statistics.
+- Replace the long single view with six swipeable categories and persistent System/Light/Dark themes, AIMP orange by default, and five other accents.
+
+### Android 0.1.0
+
 - Add an installable Kotlin/Compose companion with shared C++ selection rules, local weights, Smart Next/Previous, stable next preview/reroll, cooldown and finite passes.
 - Add opt-in timed automatic playback with visible timing limitations, source revalidation, and bounded command verification. Queue insertion/append is not used.
 - Split portable selection rules from Windows weight-file I/O without changing the Windows playback adapter.

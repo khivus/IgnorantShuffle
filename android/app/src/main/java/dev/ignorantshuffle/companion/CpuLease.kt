@@ -32,3 +32,8 @@ object HandoffPolicy {
     fun valid(roll: ScheduledRoll, sample: TimingSnapshot, currentSequence: Long, now: Long): Boolean =
         roll.sequence == currentSequence && EndTiming.due(sample, roll.source, now)
 }
+
+object CpuProtection {
+    fun needed(automatic: Boolean, pending: Boolean, sample: TimingSnapshot, now: Long): Boolean =
+        automatic && (pending || EndTiming.delayMillis(sample, now) != null)
+}

@@ -12,26 +12,23 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import java.io.ByteArrayOutputStream
-import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val monitor get() = (application as ShuffleApplication).controller
-    private var exportText = ""
+    private var exportKind = "log"
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         monitor.log("Notification permission result: $granted"); monitor.refreshNotifications()
     }
     private val export = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         if (uri != null) {
-            val text = exportText
+            // The document picker can recreate this Activity. Rebuild the text
+            // from app state rather than keeping a transient multi-MB string.
+            val text = if (exportKind == "weights") monitor.exportWeights() else monitor.report(true)
             Thread {
                 try {
                     requireNotNull(contentResolver.openOutputStream(uri, "wt")).bufferedWriter(Charsets.UTF_8).use { it.write(text) }
@@ -60,18 +57,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        exportKind = savedInstanceState?.getString("exportKind") ?: "log"
         enableEdgeToEdge()
         setContent {
             ShuffleTheme(monitor.preferences, window) { Surface(Modifier.fillMaxSize()) {
                 ShuffleScreen(monitor, ::openSettings, ::openAimp, ::copySummary,
-                    { exportText = monitor.report(true); export.launch("IgnorantShuffle-log.txt") },
-                    { exportText = monitor.exportWeights(); export.launch("IgnorantShuffle-Android.weights.tsv") },
+                    { exportKind = "log"; export.launch("IgnorantShuffle-log.txt") },
+                    { exportKind = "weights"; export.launch("IgnorantShuffle-Android.weights.tsv") },
                     { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications)
             } }
         }
     }
     override fun onResume() { super.onResume(); monitor.log("Activity resumed"); monitor.refresh(); monitor.refreshNotifications() }
     override fun onStop() { monitor.log("Activity backgrounded"); super.onStop() }
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("exportKind", exportKind)
+        super.onSaveInstanceState(outState)
+    }
     private fun openSettings() { runCatching { startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.onFailure { monitor.log("Settings error: $it") } }
     private fun openAimp() {
         val intent = packageManager.getLaunchIntentForPackage("com.aimp.player")
@@ -93,4 +95,3 @@ class MainActivity : ComponentActivity() {
         }.onFailure { monitor.log("Cannot open notification settings: $it") }
     }
 }
-

@@ -141,6 +141,7 @@ class AimpController(private val context: Context) {
         if (!environmentRegistered) {
             val filter = IntentFilter(Intent.ACTION_SCREEN_ON).apply {
                 addAction(Intent.ACTION_SCREEN_OFF); addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
+                addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
             }
             if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(environment, filter, Context.RECEIVER_NOT_EXPORTED)
             else context.registerReceiver(environment, filter)
@@ -168,6 +169,8 @@ class AimpController(private val context: Context) {
         native = c; callback = cb; connected = true
         status = "Connected to AIMP; ${matches.size} session(s)"
         log(status)
+        val aimpVersion = runCatching { context.packageManager.getPackageInfo("com.aimp.player", 0).versionName }.getOrNull()
+        log("AIMP version=$aimpVersion; powerSave=${power.isPowerSaveMode}; batteryExempt=${power.isIgnoringBatteryOptimizations(context.packageName)}")
         read(refreshQueue = true)
     }
 
@@ -383,8 +386,9 @@ class AimpController(private val context: Context) {
     }
 
     private fun sustainCpu() {
-        cpu.update(automatic && playback.state == 3 &&
-            (pending || EndTiming.delayMillis(timing(), SystemClock.elapsedRealtime()) != null))
+        // AIMP can briefly report PAUSED/BUFFERING during the requested handoff.
+        // Keep the bounded command-confirmation window awake through that state.
+        cpu.update(CpuProtection.needed(automatic, pending, timing(), SystemClock.elapsedRealtime()))
     }
 
     private val endTimer = Runnable {
@@ -423,11 +427,14 @@ class AimpController(private val context: Context) {
     }
 
     val passCount get() = model.played.size
+    fun savedEvents(): List<String> = journal.contents().lineSequence().filter(String::isNotBlank).toList()
     fun report(full: Boolean = false): String = buildString {
         appendLine("IgnorantShuffle Android 0.2.0\n$status\n$settings\n$playback\nPreview: $preview\nResult: $result")
         appendLine("Preferences: $preferences; log error: ${journal.failure}; roll=$rollSequence reason=$rollReason")
         appendLine("Scheduled: $scheduled; screen=${power.isInteractive}; idle=${power.isDeviceIdleMode}")
-        tracks.forEach { appendLine("TRACK $it key=${it.key} weight=${weight(it)}") }
+        appendLine("CPU held=${wake.isHeld}; powerSave=${power.isPowerSaveMode}; batteryExempt=${power.isIgnoringBatteryOptimizations(context.packageName)}")
+        (if (full) tracks else tracks.take(20)).forEach { appendLine("TRACK $it key=${it.key} weight=${weight(it)}") }
+        if (!full && tracks.size > 20) appendLine("Queue truncated in summary; export full log for every track")
         appendLine("Queue: ${tracks.size}; explicit weights: ${weights.size}; current-pass starts: ${model.played.size}")
         appendLine("Timed mode: $automatic; $automaticStatus")
         appendLine("Immediate companion controls; AIMP's own next-track selection is independent.")

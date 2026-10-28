@@ -294,7 +294,9 @@ private fun LogsPage(m: AimpController, copy: () -> Unit, export: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var group by rememberSaveable { mutableStateOf("All") }
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
-    val visible = m.events.asReversed().filter { line ->
+    var saved by remember { mutableStateOf<List<String>?>(null) }
+    val source = saved ?: m.events
+    val visible = source.asReversed().filter { line ->
         line.contains(query, ignoreCase = true) && when (group) {
             "Rolls" -> line.contains("ROLL") || line.contains("HANDOFF")
             "Commands" -> listOf("COMMAND", "DISPATCH", "VERIFY", "RESULT").any { line.contains(it) }
@@ -311,11 +313,15 @@ private fun LogsPage(m: AimpController, copy: () -> Unit, export: () -> Unit) {
             OutlinedButton(onClick = copy) { Text("Copy summary") }
         }
         m.logError?.let { Text("Log storage error: $it", color = MaterialTheme.colorScheme.error) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(saved == null, { saved = null }, label = { Text("Live") })
+            FilterChip(saved != null, { saved = m.savedEvents() }, label = { Text("Saved history") })
+        }
         OutlinedTextField(query, { query = it }, label = { Text("Search log") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("All", "Rolls", "Commands", "Errors").forEach { name -> FilterChip(group == name, { group = name }, label = { Text(name) }) }
         }
-        Text("Showing ${visible.size} of the latest ${m.events.size} events. Tap an entry to expand; export includes older saved events and the queue snapshot.", style = MaterialTheme.typography.labelSmall)
+        Text("${visible.size} / ${source.size} events · ${if (saved == null) "live view" else "saved snapshot; tap Saved history to reload"}. Tap an entry to expand.", style = MaterialTheme.typography.labelSmall)
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             itemsIndexed(visible) { _, line ->
                 Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
