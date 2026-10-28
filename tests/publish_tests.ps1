@@ -9,11 +9,15 @@ if ($parseErrors.Count) { throw 'Publisher syntax check failed.' }
 $versionInfo = Get-ComponentVersion windows
 $version = $versionInfo.Version
 $tag = $versionInfo.Tag
-$assetAssignment = $tree.Find({ param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$releaseNames' }, $true)
-if (-not $assetAssignment) { throw 'Missing Windows asset configuration.' }
-. ([scriptblock]::Create($assetAssignment.Extent.Text))
-if ($tag -cne "windows/v$version" -or $releaseNames[0] -cne "IgnorantShuffle-v$version.aimppack" -or
-    @($releaseNames | Where-Object { $_ -match '[/\\]' }).Count) { throw 'Component tag must not become an asset path.' }
+$repoRoot = $projectRoot
+. (Join-Path $projectRoot 'tools\release-bundle.ps1')
+foreach ($component in 'windows', 'android', 'core') {
+    $bundle = Get-ReleaseBundle $component
+    if ($bundle.Names.Count -ne 6 -or @($bundle.Names | Where-Object { $_ -match '[/\\]' }).Count) {
+        throw 'Every component release must include both platforms with flat asset names.'
+    }
+    if ($bundle.Tag -cne (Get-ComponentVersion $component).Tag) { throw 'Wrong component tag.' }
+}
 if ($tree.Extent.Text -match "Invoke-Git -Arguments @\('(add|commit)'") { throw 'Publisher must not stage or commit unrelated components.' }
 $notes = [IO.File]::ReadAllText((Join-Path $projectRoot 'RELEASE_NOTES.md'))
 if ($notes.Split("`n")[0].TrimEnd("`r") -cne "# IgnorantShuffle Windows v$version") { throw 'Windows release notes/version mismatch.' }
@@ -22,7 +26,7 @@ if (-not $gitFunction) { throw 'Missing publisher Git invocation.' }
 . ([scriptblock]::Create($gitFunction.Extent.Text))
 $environmentAssignment = $tree.Find({ param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$gitEnvironment' -and $node.Right.Extent.Text.StartsWith('@{') }, $true)
 if (-not $environmentAssignment) { throw 'Missing publisher environment configuration.' }
-$gitAuthorization = 'AUTHORIZATION: basic offline-test-value'
+$gitHeader = 'AUTHORIZATION: basic offline-test-value'
 . ([scriptblock]::Create($environmentAssignment.Extent.Text))
 $count = [int]$gitEnvironment.GIT_CONFIG_COUNT
 for ($index = 0; $index -lt $count; $index++) {
@@ -35,7 +39,7 @@ foreach ($key in $gitEnvironment.Keys) { $previousEnvironment[$key] = [Environme
 try {
     foreach ($key in $gitEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $gitEnvironment[$key], 'Process') }
     $header = Invoke-Git -Arguments @('config', '--get', 'http.https://github.com/.extraheader')
-    if ($header -cne $gitAuthorization) { throw 'Child Git did not receive the authentication header.' }
+    if ($header -cne $gitHeader) { throw 'Child Git did not receive the authentication header.' }
     $helper = Invoke-Git -Arguments @('config', '--get', 'credential.helper')
     if (($helper -join '') -ne '') { throw 'Child Git did not disable credential helpers.' }
 } finally {

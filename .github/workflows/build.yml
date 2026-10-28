@@ -36,6 +36,7 @@ jobs:
         run: |
           ./tests/version_tests.ps1
           ./tests/publish_tests.ps1
+          ./tests/release_bundle_tests.ps1
   android:
     runs-on: ubuntu-24.04
     steps:

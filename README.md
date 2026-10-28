@@ -4,7 +4,9 @@ Weighted smart shuffle for **AIMP 5.40 on Windows**, with an **Android companion
 preview. Give each track a weight to control how often it is chosen, add a cooldown
 to reduce repeats, and see why the next track was selected.
 
-[Windows downloads](https://github.com/khivus/IgnorantShuffle/releases) · [Android preview](https://github.com/khivus/IgnorantShuffle/releases/tag/android%2Fv0.4.0) · [Changelogs](CHANGELOG.md) · [MIT License](LICENSE)
+[Windows downloads](https://github.com/khivus/IgnorantShuffle/releases) · [Android preview](https://github.com/khivus/IgnorantShuffle/releases/tag/android%2Fv0.4.1) · [Changelogs](CHANGELOG.md) · [MIT License](LICENSE)
+
+Every new release includes both Windows and Android downloads and lists their independent versions plus the bundled core version.
 
 ## Features
 

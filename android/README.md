@@ -41,7 +41,9 @@ The first version cannot provide Windows's native pre-playback queue hook.
 
 ## App updates
 
-Tap **Android version / Updates** at the top right for release notes, Download,
+Tap the full-width **App v... / Core v...** area below the title. Its **Tap to
+check updates** hint starts a manual check; an existing update or download opens
+without restarting. The update screen offers release notes, Download,
 Install, progress/cancel/retry, Not now and Skip this version. Checks run daily
 when the app comes to the foreground, or manually. Preview inclusion is optional
 (on by default for this debug preview). Only `android/v...` releases are considered;

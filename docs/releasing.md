@@ -1,137 +1,105 @@
-# Packaging and publishing component releases
+# Packaging and publishing releases
 
 [Back to README](../README.md) · [Building](building.md) · [Testing](testing.md)
 
-Run commands from the repository root. See [versioning](versioning.md) for the
-independent source files and bump policy. Updating a version or building artifacts
-does not create a Git tag or publish anything.
+Every new release includes **both Windows and Android**. Release titles and notes
+list Windows, Android and core versions independently. An unchanged component
+keeps its version; it is still included in the download set.
 
-| Component | Tag | Release notes | Local artifacts |
-| --- | --- | --- | --- |
-| Windows | `windows/vX.Y.Z` | [RELEASE_NOTES.md](../RELEASE_NOTES.md) | `.aimppack`, x64/x86 DLLs, `SHA256SUMS.txt` |
-| Android | `android/vX.Y.Z` | [android/RELEASE_NOTES.md](../android/RELEASE_NOTES.md) | Android APK, `SHA256SUMS-Android.txt` |
-| Core | `core/vX.Y.Z` | [core release notes](core-release-notes.md) | Repository source snapshot; no installable runtime |
-
-Update only the component's version file, changelog and release notes. Record the
-bundled core version in app notes. Keep historical Windows `vX.Y.Z` tags/releases
-intact. Tag names capture the component version, even though a tag contains the
-whole repository. Do not reuse an existing tag for different contents.
-
-## Build-time update source
-
-The default update repository is `khivus/IgnorantShuffle`. Override it with the build script:
-
-```powershell
-.\build.ps1 -Architecture Both -UpdateRepository owner/repository
-```
-
-For direct CMake builds, set `IGNORANT_SHUFFLE_UPDATE_REPOSITORY`. A saved nonempty user preference takes precedence. An explicitly empty build source makes no requests until a repository is entered in the plugin. See [Updates](updates.md) for user settings and placeholder migration.
-
-## Prepare Windows release assets
-
-1. Build and test both architectures using the [build guide](building.md).
-2. Update [Windows history](changelogs/windows.md) and [RELEASE_NOTES.md](../RELEASE_NOTES.md), including its download table. Its heading must be `# IgnorantShuffle Windows vX.Y.Z` matching Windows metadata.
-3. Run the packaging script:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\package-release.ps1
-```
-
-For Windows version 0.11.1 it produces:
-
-| File in `dist/` | Purpose |
+| Included file | Purpose |
 | --- | --- |
-| `IgnorantShuffle-v0.11.1.aimppack` | AIMP installer package with both architectures and the MIT license. |
-| `aimp_ignorant_shuffle-x64.dll` | Separate DLL for 64-bit AIMP. |
-| `aimp_ignorant_shuffle-x86.dll` | Separate DLL for 32-bit AIMP. |
-| `SHA256SUMS.txt` | Checksums for the package and both DLLs. |
-| `IgnorantShuffle-v0.11.1.aimppack.sha256` | Package-only checksum. |
+| `IgnorantShuffle-vWINDOWS.aimppack` | AIMP installer with x64 and x86 DLLs and license. |
+| `aimp_ignorant_shuffle-x64.dll` | Manual install for 64-bit AIMP. |
+| `aimp_ignorant_shuffle-x86.dll` | Manual install for 32-bit AIMP. |
+| `SHA256SUMS.txt` | Windows package and DLL checksums. |
+| `IgnorantShuffle-Android-vANDROID-debug.apk` | Same-key Android preview for installation and in-app updates. |
+| `SHA256SUMS-Android.txt` | APK checksum. |
+| GitHub source archives | Complete source snapshot, including the shared core. |
 
-Packaging verifies both DLL versions and every archived file against its source. It creates local artifacts only. Use `-OutputDirectory <folder>` to choose a different output location.
+## Versions and tags
 
-## Package layout
+Follow [versioning](versioning.md): only bump changed components. Each distributed
+Android update also needs a strictly larger `versionCode`. Update the relevant
+changelog and component release notes; their first heading must match metadata:
 
-The `.aimppack` is a ZIP containing one plugin folder, following the SDK layout:
+| Component | Notes | Tag |
+| --- | --- | --- |
+| Windows | [RELEASE_NOTES.md](../RELEASE_NOTES.md), `# IgnorantShuffle Windows vX.Y.Z` | `windows/vX.Y.Z` |
+| Android | [android/RELEASE_NOTES.md](../android/RELEASE_NOTES.md), `# IgnorantShuffle Android vX.Y.Z` | `android/vX.Y.Z` |
+| Core | [core-release-notes.md](core-release-notes.md), `# IgnorantShuffle Core vX.Y.Z` | `core/vX.Y.Z` |
 
-```text
-aimp_ignorant_shuffle/
-    aimp_ignorant_shuffle.dll       # x86
-    LICENSE
-    x64/
-        aimp_ignorant_shuffle.dll   # x64
-```
+Component notes contain changes and testing details. The publisher combines them
+with a version table and direct download links to **all** assets in that release.
+No manual download-table edits are needed.
 
-AIMP selects the appropriate architecture. The package can also be installed manually by opening it with AIMP or dropping it onto the main window.
+Tags select updater channels. Android checks `android/v...`; Windows checks
+`windows/v...` and historical `v...`. If both applications have new versions,
+publish both component tags at the same commit with the same complete artifact
+set. An Android-only change needs only a new Android tag, still containing both
+applications. Never move old tags or replace published assets.
 
-## Windows updater release contract
+## Build and verify both applications
 
-- Publish a stable GitHub release tagged `windows/vMAJOR.MINOR.PATCH`. Historical Windows `vMAJOR.MINOR.PATCH` releases also work with the updated checker. Android/core tags are always excluded.
-- Attach exactly one supported package named `IgnorantShuffle-vMAJOR.MINOR.PATCH.aimppack` or `IgnorantShuffle.aimppack`.
-- Keep the package at most 32 MiB and wait for GitHub's `sha256:` asset digest. The updater checks size, hash, and repository/release URL before handing the download to AIMP.
-- A release without a complete supported asset remains visible with installation disabled.
-- The checker scans up to ten pages of 100 releases and selects the highest newer Windows version. Reaching that bound without finding the end of history reports an error instead of claiming the installation is current.
-- Windows 0.11.0 and earlier need a manual install of the first component-tagged Windows release; their old checker only understands `v...` tags. See [Updates](updates.md).
-
-## Windows publishing script
-
-The existing `publish-release.ps1` is **Windows-only**. It targets
-**khivus/IgnorantShuffle** and reads `versions/windows.properties`. Build/package,
-review the changes and commit them first. Run it only when publishing is intended,
-from an environment with GitHub network access and writable Git metadata:
+Run from the repository root after preparing the [official AIMP SDK](building.md):
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\publish-release.ps1
+.\build.ps1 -Architecture Both
+.\tools\package-release.ps1
+.\tools\build-android.ps1 -Offline  # omit -Offline if dependencies are not cached
+.\tests\version_tests.ps1
+.\tests\publish_tests.ps1
+.\tests\release_bundle_tests.ps1
 ```
 
-It requires a clean committed checkout and never stages or commits files. It uses
-the existing `khivus` Git Credential Manager account and pushes `main` plus the
-Windows tag. It uploads assets to a Windows draft, verifies sizes and SHA256
-digests, publishes it, and verifies that exact tag and its public downloads.
-Credentials stay out of project files and command arguments.
+Both apps build the same checkout's core. Check phone playback and installation
+before release when available; automated tests do not establish the phone's
+installer flow or native AIMP restart behavior.
 
-The script stops on an unexpected account, origin, tag, private repository, dirty
-checkout, mismatched release-note version, or checksum mismatch. It can resume a
-partial publication without replacing assets. It never publishes Android/core.
+Retain the Android signing key outside Git. CI debug APKs have temporary keys and
+cannot generally update existing local preview installs. The publisher checks the
+public fingerprint in `android/signing-certificate.sha256`; never change that pin
+to work around a signing mismatch. The current Android helper produces a preview,
+not a production-signed release.
 
-## Android releases
+## Preflight and publish
 
-1. Update `versions/android.properties`: semantic version and a strictly larger `versionCode` for each distributed update APK. Update Android history and release notes only.
-2. Run `.\tools\build-android.ps1` (`-Offline` when cached). It builds, tests, lints, verifies the signature and copies a versioned APK/checksum into `dist/`.
-3. Verify playback on a phone. Use the same signing key as previous installs. CI debug APKs have a temporary key and cannot generally update local builds.
-4. Commit the intended changes. When ready to publish, create an annotated `android/vX.Y.Z` tag at that commit and a GitHub release named **IgnorantShuffle Android vX.Y.Z**. Use Android's release notes and attach only its APK and `SHA256SUMS-Android.txt`.
-
-Android's in-app updater recognizes those Android tags and APK names, requires
-GitHub's completed SHA256 asset digest, and checks the installed signing key and
-newer version code. See the [Android updater release contract](android-updates.md#release-contract).
-
-The current build helper produces a debug-signed preview, explicitly named
-`IgnorantShuffle-Android-vX.Y.Z-debug.apk`. It does not configure a production
-signing key or publish. Preserve the preview key for updates, or establish stable
-release signing before a production release. Mark experimental previews as
-prereleases. Reserve GitHub's general Latest label for stable Windows releases;
-the updated Windows checker filters component tags independently.
-
-## Core releases
-
-1. Update `versions/core.properties`, core history and core release notes. Do not automatically change an app's version unless preparing a new app build that ships the new core.
-2. Run shared tests and both platform builds as described in [Testing](testing.md).
-3. Commit the intended changes. When ready to publish, create an annotated `core/vX.Y.Z` tag and a release named **IgnorantShuffle Core vX.Y.Z**, using core's release notes. Source archives include the whole repository; no app APK/DLL is attached to a core release. Do not mark it Latest.
-
-The Android preview publisher validates the APK version, checksum and pinned
-public signing-certificate fingerprint:
+All entry points default to **local preflight only**, with no authentication,
+network requests, tags or pushes:
 
 ```powershell
-.\tools\publish-android.ps1             # local preflight only
-.\tools\publish-android.ps1 -Publish    # push main/tag and publish Android preview
+.\tools\publish-release.ps1 -Component windows
+.\tools\publish-android.ps1
+.\tools\publish-release.ps1 -Component core
 ```
 
-It uses the existing khivus Git Credential Manager account, requires a clean main
-branch and matching origin, and refuses a diverged remote or conflicting tag.
-Uploads go to a draft and are checked against GitHub's digests before publishing
-as a prerelease with `make_latest=false`. Public download hashes are then verified.
-It never publishes Windows assets. `android/signing-certificate.sha256` contains
-only the public certificate fingerprint; retain the corresponding private key
-outside Git. Do not replace the pin to work around a mismatched CI/debug key.
+Preflight requires every file, validates checksums, Windows DLL versions and
+architectures, installer contents, Android package/version/code and the pinned
+signing key. It writes the exact combined notes to `dist/release-notes-COMPONENT.md`
+for review. Missing or stale companion assets stop the release.
 
-Core publication remains manual; the Windows publishing script must not be used
-for Android/core. Build and metadata checks create no release or tag.
+Commit the intended changes, then publish only newly versioned component tags:
+
+```powershell
+.\tools\publish-release.ps1 -Component windows -Publish
+.\tools\publish-android.ps1 -Publish
+# For a newly versioned core: .\tools\publish-release.ps1 -Component core -Publish
+```
+
+The shared publisher requires a clean `main` checkout and the matching
+`khivus/IgnorantShuffle` origin. It uses the existing khivus Git Credential Manager
+account, keeps credentials in memory, refuses a diverged remote or conflicting
+tag, and pushes main and the component tag. It never stages or commits files.
+
+All six assets upload to a draft and must match GitHub's sizes and SHA256 digests
+before publication. Public downloads are then fetched and hashed again. Existing
+published assets are never overwritten; matching draft uploads can be resumed.
+
+Android entries are prereleases. Stable Windows entries receive GitHub's Latest
+label; Android/core entries preserve it. Both entries clearly label the bundled
+Android build as a preview. This keeps existing component updaters compatible.
+Windows 0.11.0 and earlier need a manual install of the first `windows/v...` release.
+
+The Windows update repository defaults to `khivus/IgnorantShuffle`; override it with
+`build.ps1 -Architecture Both -UpdateRepository owner/repository` or CMake's
+`IGNORANT_SHUFFLE_UPDATE_REPOSITORY`. Saved nonempty preferences take precedence.
+See [Windows updates](updates.md) and the [Android contract](android-updates.md).

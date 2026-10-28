@@ -3,7 +3,7 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
-## Unreleased — 0.12.0
+## 0.12.0
 
 - Prefer the main music folder's global TSV by default, ready to synchronize relative-path weights with Android. Use profile weights until a root is selected and respect existing explicit storage choices.
 - Keep optional Windows folder/playlist overrides separate; check a common UTF-8 TSV fixture on both platforms.

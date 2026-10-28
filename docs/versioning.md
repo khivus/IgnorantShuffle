@@ -22,7 +22,8 @@ Only bump components whose shipped behavior or public contract changes. An
 Android UI change does not require a Windows or core bump. A Windows adapter
 change does not require an Android or core bump. A selection-rule change bumps
 the core; when either app ships that new core, bump that app's version as well.
-An unmodified app does not need a new release just because another component did.
+An unmodified app keeps its version when another component changes. Its current
+binary is still included in every new release alongside the changed component.
 
 Both apps compile the core from the same repository checkout. They report their
 own version and the exact bundled core version in the UI and diagnostics. Core
@@ -54,3 +55,9 @@ Use the component-specific changelogs and release instructions linked from the
 [changelog index](../CHANGELOG.md) and [release guide](releasing.md). Tags identify
 the released component; each tag still captures the entire repository, including
 the bundled core source/version. Record the core version in app release notes.
+
+Every release includes the Android APK, Windows installer and both Windows DLLs,
+checksums, and a table of all three component versions. Component tags continue
+to drive independent updater channels; if both apps have new versions, publish
+both component tags with the same complete artifact set. The core ships inside
+each app and in the source snapshot.

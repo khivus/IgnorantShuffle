@@ -44,6 +44,9 @@ uploaded; playback, local files and shuffle rules do not require a backend.
   Bare `v...`, `windows/...` and `core/...` tags are ignored. Release version
   numbers use the strict stable three-part format from Android's version file;
   a preview is indicated by GitHub's prerelease flag.
+- Every release includes both Android and Windows assets and all component
+  versions. The tag selects the updater channel; unchanged components retain
+  their own versions. See [publishing](releasing.md).
 - Attach `IgnorantShuffle-Android-vX.Y.Z-debug.apk` for the debug preview,
   `IgnorantShuffle-Android-vX.Y.Z.apk`, or `...-release.apk`. Debug installs prefer
   the debug asset; production builds exclude it. Other filenames need an explicit
