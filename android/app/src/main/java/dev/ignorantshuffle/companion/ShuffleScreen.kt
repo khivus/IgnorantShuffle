@@ -123,6 +123,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                 val choice = m.preview
                 Text(choice.track?.title ?: "No eligible next track", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 choice.track?.artist?.takeIf(String::isNotBlank)?.let { Text(it) }
+                choice.track?.let { Text("Weight ${m.weight(it)}", fontWeight = FontWeight.SemiBold) }
                 Text(if (choice.historyIndex != null) "Forward in listening history" else
                     "${String.format(Locale.ROOT, "%.1f", choice.probability * 100)}% at roll · ${choice.eligible} eligible · ${choice.blocked} cooling",
                     style = MaterialTheme.typography.bodySmall)
