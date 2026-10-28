@@ -68,7 +68,12 @@ void WeightStorage::configure(const std::filesystem::path& root, bool global, bo
     *this = std::move(next);
 }
 Weights WeightStorage::read_current(const std::filesystem::path& path) {
-    try { Weights weights; weights.load(path); return weights; }
+    try {
+        auto backup = path; backup += ".bak";
+        if (!std::filesystem::exists(path) && std::filesystem::exists(backup))
+            throw std::runtime_error("Shared file is missing but its .bak exists. Restore the backup before reloading.");
+        Weights weights; weights.load(path); return weights;
+    }
     catch (const std::exception& error) {
         throw std::runtime_error("Cannot load shared weights (" + path.u8string() + "): " + error.what());
     }

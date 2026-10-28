@@ -28,7 +28,8 @@ private val pages = listOf("Player", "Shuffle", "Playlist", "Alerts", "Theme", "
 
 @Composable
 internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () -> Unit, copy: () -> Unit,
-    exportLog: () -> Unit, exportWeights: () -> Unit, importWeights: () -> Unit, requestNotifications: () -> Unit) {
+    exportLog: () -> Unit, exportWeights: () -> Unit, importWeights: () -> Unit, requestNotifications: () -> Unit,
+    chooseMusicFolder: () -> Unit) {
     val pager = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Track?>(null) }
@@ -58,7 +59,7 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
         HorizontalPager(pager, modifier = Modifier.weight(1f).fillMaxWidth(), beyondViewportPageCount = 1) { page ->
             when (page) {
                 0 -> PlayerPage(m, settings, openAimp) { editing = it }
-                1 -> ShufflePage(m)
+                1 -> ShufflePage(m, chooseMusicFolder)
                 2 -> PlaylistPage(m, importWeights, exportWeights) { editing = it }
                 3 -> AlertsPage(m, requestNotifications)
                 4 -> ThemePage(m)
@@ -88,7 +89,7 @@ private fun Intro(title: String, subtitle: String) {
     }
 }
 
-private fun AimpController.ready() = connected && !pending && storageError == null
+private fun AimpController.ready() = connected && !pending && storageError == null && !folder.blocked
 private val pagePadding get() = PaddingValues(16.dp)
 
 @Composable
@@ -146,6 +147,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
         item {
             Text(m.result, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 4.dp))
             m.storageError?.let { Text("Saved data/native error: $it", color = MaterialTheme.colorScheme.error) }
+            if (m.folder.blocked) Text(m.folder.error ?: m.folder.status, color = MaterialTheme.colorScheme.error)
             Row {
                 TextButton(onClick = openAimp) { Text("Open AIMP") }
                 TextButton(onClick = m::refresh, enabled = !m.pending) { Text("Refresh connection") }
@@ -157,6 +159,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
 @Composable
 private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Unit, edit: (Track) -> Unit) {
     var search by rememberSaveable { mutableStateOf("") }
+    var linking by remember { mutableStateOf<Track?>(null) }
     val visible = remember(search, m.tracks) { m.tracks.filter { search.isBlank() || it.title.contains(search, true) || it.artist.contains(search, true) } }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(16.dp))
@@ -164,7 +167,7 @@ private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Un
         OutlinedTextField(search, { search = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
             label = { Text("Search title or artist") }, singleLine = true, shape = RoundedCornerShape(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = import, enabled = !m.pending) { Text("Import weights") }
+            TextButton(onClick = import, enabled = !m.pending && !m.folder.blocked) { Text("Import weights") }
             TextButton(onClick = export) { Text("Export weights") }
         }
         if (visible.isEmpty()) Text(if (m.tracks.isEmpty()) "Start music in AIMP and refresh to load its queue." else "No matching tracks.", Modifier.padding(vertical = 16.dp))
@@ -178,20 +181,28 @@ private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Un
                         Text(track.title.ifBlank { "Untitled track" }, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(onClick = { edit(track) }, enabled = !m.pending && m.storageError == null) { Text("Weight ${m.weight(track)}") }
+                            FilledTonalButton(onClick = { edit(track) }, enabled = !m.pending && m.storageError == null && !m.folder.blocked) { Text("Weight ${m.weight(track)}") }
                             TextButton(onClick = { m.play(track) }, enabled = m.ready() && track.selectable) { Text("Play now") }
-                            Text(if (m.weights.containsKey(track.key)) "Custom" else "Default", style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text(m.weightSource(track), style = MaterialTheme.typography.labelSmall)
+                        if (m.folder.active) {
+                            val match = m.folder.match(track)
+                            Text(match.path ?: match.description, style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { linking = track }, enabled = !m.pending && !m.folder.busy && m.folder.files.isNotEmpty()) {
+                                Text(if (match.path == null) "Link music file" else "Change file link")
+                            }
                         }
                     }
                 }
             }
-            item { Text("Track identity is based on AIMP's ID and metadata. Library edits may require weight reassignment.", style = MaterialTheme.typography.bodySmall) }
+            item { Text("Shared weights use real paths relative to your music folder. Unmatched entries keep local weights until linked; ambiguous tags are never linked automatically.", style = MaterialTheme.typography.bodySmall) }
         }
     }
+    linking?.let { track -> FileLinkDialog(m, track) { linking = null } }
 }
 
 @Composable
-private fun ShufflePage(m: AimpController) {
+private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
     var default by rememberSaveable(m.settings.defaultWeight) { mutableStateOf(m.settings.defaultWeight.toString()) }
     var cooldown by rememberSaveable(m.settings.cooldown) { mutableStateOf(m.settings.cooldown.toString()) }
     var finite by rememberSaveable(m.settings.finite) { mutableStateOf(m.settings.finite) }
@@ -199,6 +210,28 @@ private fun ShufflePage(m: AimpController) {
     var lead by rememberSaveable(m.preferences.leadMs) { mutableStateOf(m.preferences.leadMs.toString()) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Intro("Shuffle rules", "Shared selection rules with the Windows plugin") }
+        item {
+            Section("Music-folder weights") {
+                Toggle("Use music-folder file", "Default · synchronize the same file and relative music paths with Windows", m.folder.config.enabled,
+                    enabled = !m.folder.busy && !m.pending, onChange = m.folder::enable)
+                Text(m.folder.config.label)
+                Text(m.folder.status, style = MaterialTheme.typography.bodySmall)
+                m.folder.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (m.folder.config.root == null) Text("Choose your main music folder once. Local weights work until a folder is selected.", style = MaterialTheme.typography.bodySmall)
+                Text("File: ${PortableWeights.FILENAME}. Keep the same relative folder/file names on both devices. Reindex after adding or retagging music; link unresolved entries in Playlist.", style = MaterialTheme.typography.bodySmall)
+                val enabled = !m.folder.busy && !m.pending
+                OutlinedButton(onClick = chooseMusicFolder, enabled = enabled) { Text("Choose music folder") }
+                if (m.folder.config.root != null) {
+                    Text("${m.tracks.count { m.folder.match(it).path != null }}/${m.tracks.size} playlist entries linked to files", style = MaterialTheme.typography.bodySmall)
+                    Row {
+                        TextButton(onClick = { m.folder.reload() }, enabled = enabled && m.folder.active) { Text("Reload weights") }
+                        TextButton(onClick = { m.folder.reload(true) }, enabled = enabled) { Text("Reindex files") }
+                    }
+                    TextButton(onClick = m::copyLocalWeights, enabled = enabled && m.folder.active && m.folder.error == null) { Text("Copy missing local weights") }
+                    Text("Copies linked entries only; existing shared values, including 0, win. Unmatched weights stay local.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         item {
             Section("Automatic switch timing") {
                 OutlinedTextField(lead, { lead = it }, label = { Text("Lead before track end (ms)") },
@@ -379,19 +412,44 @@ private fun WeightDialog(m: AimpController, track: Track, close: () -> Unit) {
     AlertDialog(onDismissRequest = close, title = { Text(track.title) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("0 excludes weighted choices. Fractions and values above 10 are supported.")
+            Text(if (m.folder.active) m.folder.match(track).path?.let { "Saves to shared file: $it" }
+                ?: "No file link: this weight stays local. Link the entry in Playlist to share it." else "Saves to local app storage.",
+                style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(text, { text = it; error = null }, label = { Text("Weight") }, singleLine = true, isError = error != null)
             Row { listOf(0, 1, 5, 10).forEach { value -> TextButton(onClick = { text = value.toString() }) { Text("$value") } } }
             TextButton(onClick = {
                 m.setWeight(track, "", inherit = true)
-                if (!m.weights.containsKey(track.key)) close() else error = m.result
-            }) { Text("Inherit default (${m.settings.defaultWeight})") }
+                if (m.folder.busy || !m.weights.containsKey(track.key)) close() else error = m.result
+            }) { Text("Remove override / inherit") }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = { TextButton(onClick = {
         val value = text.toDoubleOrNull()
         if (value == null || !value.isFinite() || value < 0) error = "Enter a finite nonnegative number"
-        else { m.setWeight(track, text); if (m.weights[track.key] == value) close() else error = m.result }
+        else { m.setWeight(track, text); if (m.folder.busy || m.weights[track.key] == value) close() else error = m.result }
     }) { Text("Save weight") } }, dismissButton = { TextButton(onClick = close) { Text("Cancel") } })
+}
+
+@Composable
+private fun FileLinkDialog(m: AimpController, track: Track, close: () -> Unit) {
+    var search by remember { mutableStateOf(track.title) }
+    val files = remember(search, m.folder.files) { m.folder.files.filter {
+        search.isBlank() || it.path.contains(search, true) || it.title.contains(search, true) || it.artist.contains(search, true)
+    } }
+    AlertDialog(onDismissRequest = close, title = { Text("Link ${track.title}") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Choose the actual file in your selected music folder. The link stays on this device; its weight uses the shared relative path.")
+            OutlinedTextField(search, { search = it }, label = { Text("Search file, title or artist") }, singleLine = true)
+            LazyColumn(Modifier.heightIn(min = 100.dp, max = 300.dp)) {
+                itemsIndexed(files) { _, file ->
+                    TextButton(onClick = { m.linkFile(track, file.path); close() }, modifier = Modifier.fillMaxWidth()) { Text(file.path) }
+                }
+                if (files.isEmpty()) item { Text("No files match. Clear the search or reindex your folder.") }
+            }
+        }
+    }, confirmButton = { TextButton(onClick = close) { Text("Close") } }, dismissButton = {
+        TextButton(onClick = { m.linkFile(track, null); close() }) { Text("Automatic match") }
+    })
 }
 
 private fun clock(ms: Long): String = if (ms < 0) "unknown" else "${ms / 60000}:${(ms / 1000 % 60).toString().padStart(2, '0')}"

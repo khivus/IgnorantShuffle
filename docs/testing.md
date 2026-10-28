@@ -43,6 +43,13 @@ Core tests exercise weighted selection without replacement over 10,000 complete 
 
 ### Updater
 
+Shared-folder checks also exercise a single UTF-8 TSV fixture in Windows and
+Android, conservative/ambiguous file matching, source preservation after queue
+additions, provider renames that change document IDs, failed temporary verification,
+promotion/rollback failures and synchronized changes arriving before replacement.
+The Android document-provider grant, actual tag reads and bidirectional phone/file
+sync still require the device checks in [shared storage](shared-music-folder.md).
+
 Component-version regressions run offline with `tests/version_tests.ps1`; they
 exercise independent bumps, component tag naming, invalid semantic versions and
 Android version-code/Windows resource limits. `tests/publish_tests.ps1` checks

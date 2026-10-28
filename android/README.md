@@ -39,6 +39,21 @@ Use Smart Next/Previous in the companion for weighted selection. Headset, AIMP,
 and lock-screen Next remain under AIMP's own control. Queue editing is not used.
 The first version cannot provide Windows's native pre-playback queue hook.
 
+## Shared music-folder file
+
+Shared weights are configured under **Shuffle > Music-folder weights**. Choose
+the main music root and grant read/write folder access once. Shared mode is on
+by default; Windows prefers the same root **`IgnorantShuffle.weights.tsv`**.
+Synchronize it with the music, preserving relative folder/file names.
+
+Android indexes actual files/tags off the playback thread. Unique title/artist
+matches link automatically; use **Playlist > Link music file** for ambiguous or
+unmatched entries. Rows show Shared, Local only or Default. Unmatched entries
+keep private weights until linked. **Copy missing local weights** preserves
+existing shared values, including zero. Use **Reload weights** after syncing
+(also done on resume) and **Reindex files** after adding/retagging music. See
+[setup, migration and recovery](../docs/shared-music-folder.md).
+
 ## Swipeable categories and appearance
 
 Swipe left/right or tap the tabs: **Player**, **Shuffle**, **Playlist**, **Alerts**,
@@ -92,7 +107,9 @@ Logs shows live events or a saved-history snapshot, with search, Roll/Command/Er
 filters and expandable entries. Export Full Log includes retained history, current
 queue/weights, roll sequence numbers, source/target identities, dispatched IDs,
 observed results, both clocks, deadline lateness and power/screen/CPU-lease events.
-Logging can be disabled; saved logs remain available for viewing/export.
+Logging can be disabled; saved logs remain available for viewing/export. Exports
+use `IgnorantShuffle-yyyy-MM-dd_HH-mm-ss.log` with an export date/time header;
+event lines include date, time and timezone.
 
 Alerts can enable a quiet next-roll notification. Artist, weight, chance at roll,
 pool counts, cooldown, finite-pass remaining count, and playback mode are individually
@@ -100,7 +117,9 @@ selectable. A single notification is updated; it does not own a MediaSession or
 intercept AIMP's controls. Track content is private on the lock screen. On Android
 13+ POST_NOTIFICATIONS is requested only when the user enables this option.
 Denial or a disabled channel does not block shuffle. Android settings can override
-notification visibility and appearance.
+notification visibility and appearance. Alerts offers **Always while connected**,
+**Playing or paused**, and **Playing only** visibility; callbacks hide/repost it
+without polling or changing the next roll.
 
 The screen-off fix preserves the published roll rather than drawing again on a
 queue reorder/addition, captures the target with its timer, and removes repeated
@@ -109,8 +128,9 @@ roll; stale or changed-source deadlines never take over manual playback. Phone
 retesting is necessary to establish the fix on a particular device/OEM.
 
 Logs are private, bounded, and exportable through Android's file picker. Imports
-merge transactionally. No storage, audio-file access, network, accessibility, or
-root permission is requested. WAKE_LOCK is used for timed CPU protection, and
+merge transactionally. Audio files are read inside the system-picked folder grant;
+no broad storage/media, network, accessibility, or root permission is requested.
+WAKE_LOCK is used for timed CPU protection, and
 POST_NOTIFICATIONS is optional. Only AIMP session information is used; notification
 contents are not inspected. No AIMP APK modification is performed.
 
@@ -141,5 +161,10 @@ new APK has been tested on a phone.
 8. Enable timed mode, record the next roll number/title, turn the screen off for
    several transitions, then compare observed tracks. Check that pausing/disabling
    timed mode releases CPU protection (shown in exported power diagnostics).
-9. Export the full log and report what you heard. Actual JNI loading, service
+9. Select matching roots on both devices, copy missing private weights, sync the
+   TSV and reload in both directions. Verify a shared zero exclusion, a weight
+   above 10, duplicate tags/manual links, and folder permission loss/corrupt TSV.
+10. Try leads 300, 100, 50 and 0 ms with screen on/off; compare timer lateness,
+    audible transitions, and notification visibility during play/pause/stop.
+11. Export the full `.log` and report what you heard. Actual JNI loading, service
    survival and AIMP response cannot be established by desktop tests.

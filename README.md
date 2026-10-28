@@ -11,7 +11,8 @@ Weighted smart shuffle for **AIMP 5.40 on Windows**. Give each track a weight to
 - Optional finite playlists: higher weights tend to play earlier, each positive-weight filename plays once per pass, then AIMP's end-of-playlist setting applies.
 - Current/next track details, selection probabilities, and a **Reroll next** button.
 - A compact, resizable panel with scrolling, always-on-top mode, and optional attachment beside AIMP.
-- Bulk weight editing, import/export, and optional portable global, folder-local, and AIMP-playlist weights.
+- Bulk weight editing, import/export, and optional folder-local and AIMP-playlist weight layers.
+- A shared global music-folder file preferred by default, with relative paths compatible with the Android companion. [Set up both devices](docs/shared-music-folder.md).
 - Automatic update checks, with downloads and installation started only when you choose.
 
 ## Quick start
@@ -19,7 +20,7 @@ Weighted smart shuffle for **AIMP 5.40 on Windows**. Give each track a weight to
 1. Download the **AIMP installer package (.aimppack)** from a **Windows** entry in [Releases](https://github.com/khivus/IgnorantShuffle/releases). It contains both x64 and x86 builds. Historical `v...` releases are also Windows releases.
 2. Open it with AIMP or drop it onto AIMP's main window. Complete installation and restart if asked.
 3. Enable IgnorantShuffle in **Preferences → Plugins** if needed.
-4. Start playback and use **Track weights...** to assign weights. Unconfigured tracks default to **5**; change **Default weight** under **Weight storage...** to customize it.
+4. Choose your main synchronized music root under **Track weights... > Weight storage...** to use the shared file. Profile weights work until then; **Copy missing profile weights** migrates saved values. Assign weights under **Track weights...**; unconfigured tracks default to **5**.
 5. Turn on **AIMP Shuffle** and leave **Weighted shuffle enabled** checked in the plugin panel.
 
 Separate DLL downloads are available for manual installation. Choose the architecture of **AIMP**, which may differ from Windows. See the [installation guide](docs/installation.md) for details.

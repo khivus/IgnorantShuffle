@@ -4,16 +4,24 @@
 
 ## Profile storage
 
-By default, weights are stored under the profile directory returned by AIMP, at `IgnorantShuffle\weights.tsv`. This supports portable and normal AIMP installations without hard-coded usernames. A corrupt existing profile file prevents plugin initialization and is not overwritten; repair it or move it aside first.
+Shared global weights are preferred by default, pending selection of the main
+music folder. Until then, weights stay under the profile directory returned by
+AIMP, at `IgnorantShuffle\weights.tsv`. Existing saved storage choices are
+respected. A corrupt existing profile file prevents plugin initialization and is
+not overwritten; repair it or move it aside first. See the
+[Windows/Android folder guide](shared-music-folder.md) for synchronization.
 
 **Default weight** in **Track weights... > Weight storage...** controls the fallback for tracks with no saved weight. Click **Apply default** to save it and refresh playback choices immediately. It starts at **5** and accepts any finite nonnegative number, including fractions and values above ten. **0** excludes unconfigured tracks. Explicit profile/shared/local weights are preserved. The setting is stored separately in `IgnorantShuffle\preferences.ini`, under `[Shuffle]` as `DefaultWeight`, and is specific to that AIMP profile; it is not part of shared TSV files.
 
 ## Shared global and local weights
 
-All shared-storage options are **off by default**. The original profile file stays intact and remains the global fallback for tracks without a shared global entry, URLs, and tracks outside the selected music folder.
+**Shared global weights are preferred by default** once a root is selected.
+Folder/playlist override layers remain off by default and are Windows-only.
+The original profile file stays intact as the fallback for missing shared entries,
+URLs and tracks outside the selected music folder.
 
 1. Open **Track weights... > Weight storage...** and choose the root music folder you copy between devices.
-2. Enable **Use shared global weights** and **Use folder-local weight overrides** for a folder-based collection. **AIMP-playlist-specific overrides** are a separate optional layer.
+2. Leave **Use shared global weights** checked. Folder-local and AIMP-playlist-specific overrides are optional Windows layers; Android shares the root global file only.
 3. Click **Apply / reload**. Click **Copy missing profile weights** to copy existing weights for tracks under that root into the shared global file; existing shared values, including zero, are kept.
 4. Select **Global**, **Folder local**, or **AIMP playlist** in the panel's **Edit** selector or the editor's scope selector. Weight buttons save to that scope immediately. **Inherit** removes an explicit local entry and restores the lower layer's value.
 5. On another device, copy the music tree including the TSV files, choose its new root path in Weight storage, and enable the same options. Relative track paths continue to work when the root folder or drive changes.

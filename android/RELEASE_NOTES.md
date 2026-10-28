@@ -3,6 +3,8 @@
 Preview APK, versionCode **4**, bundled core **0.1.0**.
 
 - Configure automatic-switch timing from 0 to 5000 ms; the default remains 300 ms.
+- Share the main music folder's global TSV with Windows using real relative paths and explicit links for ambiguous AIMP entries. Shared mode is preferred by default after choosing a folder.
+- Reload synchronized weights, migrate missing local values, and protect saves with verified temporary files and backup/rollback.
 - Hide next-roll notifications while paused/stopped, or keep them visible while paused.
 - Use Player, Shuffle, Playlist, Alerts, Theme and Logs tabs in that order.
 - Export logs with a dated `.log` filename and date/time header.

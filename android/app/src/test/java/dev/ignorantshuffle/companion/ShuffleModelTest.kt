@@ -20,6 +20,17 @@ class ShuffleModelTest {
     }
     private fun model(p: FakePlanner = FakePlanner()) = ShuffleModel(p).also { it.catalog(listOf(a, b)) }
 
+    @Test fun sharedWeightForAddedTrackDoesNotReplacePublishedChoice() {
+        val planner = FakePlanner(); val model = model(planner)
+        val selected = model.next(); val sequence = model.choiceSequence
+        val added = Track(3, "new", null, "Added", "Artist")
+        model.catalog(listOf(a, b, added))
+        model.configure(Settings(), mapOf(added.key to 25.0), preservePreview = true)
+        assertEquals(selected.track, model.next().track); assertEquals(sequence, model.choiceSequence)
+        model.configure(Settings(), mapOf(a.key to 0.0), preservePreview = true)
+        model.next(); assertTrue(model.choiceSequence > sequence)
+    }
+
     @Test fun previewIsStableAndDoesNotConsumeProgress() {
         val planner = FakePlanner(); val model = model(planner)
         repeat(10) { model.next() }

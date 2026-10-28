@@ -17,6 +17,11 @@ int main() {
     const auto fixture = fs::current_path() / ("storage-fixture-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     try {
         using namespace ignorant;
+        Weights portable_fixture;
+        portable_fixture.load(std::filesystem::u8path(PORTABLE_WEIGHTS_FIXTURE));
+        check(portable_fixture.entries().size() == 4 && portable_fixture.get("Album/Excluded.flac") == 0 &&
+            portable_fixture.get("Album/Quiet.mp3") == 2.5 && portable_fixture.get(u8"Музыка/Любимая песня.flac") == 25.125 &&
+            portable_fixture.get("Other/Big.ogg") == 100, "Shared Android/Windows TSV fixture, Unicode, zero, fractional and exponent weights.");
         check(!fs::exists(fixture), "Fixture must be a new directory.");
         const auto root = fixture / "Music", album = root / "Favorites", other = root / "Other";
         fs::create_directories(album / "Nested"); fs::create_directories(other);
@@ -112,6 +117,15 @@ int main() {
         std::ifstream preserved(target); std::string line; std::getline(preserved, line);
         check(line == "invalid weights", "Corrupt shared files are reported and never silently replaced.");
         preserved.close();
+        const auto shared = moved / "IgnorantShuffle.weights.tsv";
+        auto shared_backup = shared; shared_backup += ".bak";
+        fs::rename(shared, shared_backup);
+        WeightStorage interrupted_android_save;
+        rejects([&] { interrupted_android_save.configure(moved, true, false, false); });
+        fs::rename(shared_backup, shared);
+        interrupted_android_save.configure(moved, true, false, false);
+        check(interrupted_android_save.resolve({}, moved_track, moved_context).weight == 25,
+            "An Android backup-only state cannot bypass shared weights; restored canonical data reloads normally.");
         fs::remove_all(fixture);
         std::cout << "Portable layers, folder context, relocation, migration and transactional failures passed.\n";
         return 0;

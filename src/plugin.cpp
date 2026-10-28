@@ -164,7 +164,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     ignorant::Weights weights_;
     ignorant::WeightStorage storage_;
     std::filesystem::path music_folder_;
-    bool shared_global_ = false, folder_local_ = false, playlist_local_ = false;
+    bool shared_global_ = true, folder_local_ = false, playlist_local_ = false;
     ignorant::WeightScope edit_scope_ = ignorant::WeightScope::Global;
     std::wstring storage_error_;
     struct ContextCache { Ref<IAIMPPlaylist> playlist; int count; ignorant::WeightContext value; };
@@ -281,7 +281,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         wchar_t folder[32768]{};
         GetPrivateProfileStringW(L"Storage", L"MusicFolder", L"", folder, 32768, preferences_file_.c_str());
         music_folder_ = folder;
-        shared_global_ = GetPrivateProfileIntW(L"Storage", L"SharedGlobal", 0, preferences_file_.c_str()) != 0;
+        shared_global_ = GetPrivateProfileIntW(L"Storage", L"SharedGlobal", 1, preferences_file_.c_str()) != 0;
         folder_local_ = GetPrivateProfileIntW(L"Storage", L"FolderLocal", 0, preferences_file_.c_str()) != 0;
         playlist_local_ = GetPrivateProfileIntW(L"Storage", L"PlaylistLocal", 0, preferences_file_.c_str()) != 0;
         edit_scope_ = static_cast<ignorant::WeightScope>(std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Storage", L"EditScope", 0, preferences_file_.c_str())), 0, 2));
@@ -329,7 +329,9 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     void set_storage(const std::filesystem::path& folder, bool global, bool local_folder, bool local_playlist) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         ignorant::WeightStorage next;
-        next.configure(folder, global, local_folder, local_playlist);
+        // Shared global is preferred by default; until a root is chosen, keep
+        // using profile weights. Explicit saved opt-outs remain respected.
+        next.configure(folder, global && !folder.empty(), local_folder, local_playlist);
         storage_ = std::move(next); music_folder_ = folder;
         shared_global_ = global; folder_local_ = local_folder; playlist_local_ = local_playlist;
         storage_error_.clear(); weight_contexts_.clear();
@@ -1296,7 +1298,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (!status.empty()) status += L"\r\n";
         if (!storage_error_.empty()) status += L"Error: " + storage_error_ + L"\r\n";
         status += L"Import/export scope: " + scope_label(scope_for(context)) + L" (applied settings)\r\n";
-        status += L"Global: " + (shared_global_ ? music_folder_ / L"IgnorantShuffle.weights.tsv" : weights_file_).wstring();
+        status += L"Global: " + (shared_global_ && !music_folder_.empty() ? music_folder_ / L"IgnorantShuffle.weights.tsv" : weights_file_).wstring();
+        if (shared_global_ && music_folder_.empty()) status += L"\r\nChoose the synchronized music root to activate shared weights; using profile for now.";
         for (const auto scope : {ignorant::WeightScope::Folder, ignorant::WeightScope::Playlist}) {
             status += L"\r\n" + scope_label(scope) + L": ";
             if (storage_.available(scope, context)) status += storage_.target(scope, "", context)->wstring();
@@ -1341,7 +1344,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 CheckDlgButton(window, IDC_SHARED_GLOBAL, self->shared_global_ ? BST_CHECKED : BST_UNCHECKED);
                 CheckDlgButton(window, IDC_FOLDER_LOCAL, self->folder_local_ ? BST_CHECKED : BST_UNCHECKED);
                 CheckDlgButton(window, IDC_PLAYLIST_LOCAL, self->playlist_local_ ? BST_CHECKED : BST_UNCHECKED);
-                EnableWindow(GetDlgItem(window, IDC_COPY_PROFILE), self->shared_global_);
+                EnableWindow(GetDlgItem(window, IDC_COPY_PROFILE), self->shared_global_ && !self->music_folder_.empty());
                 self->fill_storage_scopes(window);
                 self->storage_status(window); return TRUE;
             }
@@ -1349,7 +1352,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             if (message == WM_COMMAND) {
                 const auto id = LOWORD(wparam);
                 if (id == IDOK || id == IDCANCEL) EndDialog(window, 0);
-                else if (id == IDC_SHARED_GLOBAL) EnableWindow(GetDlgItem(window, IDC_COPY_PROFILE), IsDlgButtonChecked(window, id) == BST_CHECKED);
+                else if (id == IDC_SHARED_GLOBAL || (id == IDC_MUSIC_FOLDER && HIWORD(wparam) == EN_CHANGE))
+                    EnableWindow(GetDlgItem(window, IDC_COPY_PROFILE), IsDlgButtonChecked(window, IDC_SHARED_GLOBAL) == BST_CHECKED && !control_text(window, IDC_MUSIC_FOLDER).empty());
                 else if (id == IDC_BROWSE_MUSIC) self->browse_music_folder(window);
                 else if (id == IDC_APPLY_STORAGE) self->apply_storage_dialog(window);
                 else if (id == IDC_APPLY_DEFAULT_WEIGHT) self->apply_default_weight(window);
@@ -1525,7 +1529,7 @@ public:
             load_preferences();
             weights_.load(weights_file_);
             for (const auto& entry : weights_.entries()) from_utf8(entry.first);
-            try { storage_.configure(music_folder_, shared_global_, folder_local_, playlist_local_); }
+            try { storage_.configure(music_folder_, shared_global_ && !music_folder_.empty(), folder_local_, playlist_local_); }
             catch (const std::exception& error) { storage_error_ = from_utf8(error.what()); log_.write("storage.error", error.what()); }
             // Loading the plugin during playback must also cool down the track
             // already playing, even though we missed its stream-start event.

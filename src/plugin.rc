@@ -36,7 +36,7 @@ STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "IgnorantShuffle - Weight storage"
 FONT 9, "Segoe UI"
 BEGIN
-    LTEXT "Optional shared files use relative track paths. With all options off, weights stay in AIMP's profile as before.", -1, 10, 8, 330, 16
+    LTEXT "Shared global weights are preferred. Choose the main music folder you synchronize with Android; profile weights work until then.", -1, 10, 8, 330, 16
     LTEXT "Music folder:", -1, 10, 30, 330, 10
     EDITTEXT IDC_MUSIC_FOLDER, 10, 42, 264, 14, ES_AUTOHSCROLL | WS_TABSTOP
     PUSHBUTTON "Browse...", IDC_BROWSE_MUSIC, 282, 42, 58, 14

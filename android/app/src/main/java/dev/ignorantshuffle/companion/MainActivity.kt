@@ -21,6 +21,18 @@ import java.io.ByteArrayOutputStream
 class MainActivity : ComponentActivity() {
     private val monitor get() = (application as ShuffleApplication).controller
     private var exportKind = "log"
+    private val musicFolder = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { reply ->
+        val uri = reply.data?.data
+        if (reply.resultCode == RESULT_OK && uri != null) {
+            try {
+                val requested = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                val granted = (reply.data?.flags ?: 0) and requested
+                check(granted == requested) { "Choose a music folder with read and write access" }
+                contentResolver.takePersistableUriPermission(uri, granted)
+                monitor.chooseMusicFolder(uri)
+            } catch (e: Exception) { monitor.folder.pickerFailed(e) }
+        }
+    }
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         monitor.log("Notification permission result: $granted"); monitor.refreshNotifications()
     }
@@ -64,17 +76,22 @@ class MainActivity : ComponentActivity() {
                 ShuffleScreen(monitor, ::openSettings, ::openAimp, ::copySummary,
                     { exportKind = "log"; export.launch(LogExport.filename()) },
                     { exportKind = "weights"; export.launch("IgnorantShuffle-Android.weights.tsv") },
-                    { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications)
+                    { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications, ::chooseMusicFolder)
             } }
         }
     }
-    override fun onResume() { super.onResume(); monitor.log("Activity resumed"); monitor.refresh(); monitor.refreshNotifications() }
+    override fun onResume() { super.onResume(); monitor.log("Activity resumed"); monitor.refresh(); monitor.refreshNotifications(); monitor.reloadSharedWeights() }
     override fun onStop() { monitor.log("Activity backgrounded"); super.onStop() }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("exportKind", exportKind)
         super.onSaveInstanceState(outState)
     }
     private fun openSettings() { runCatching { startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.onFailure { monitor.log("Settings error: $it") } }
+    private fun chooseMusicFolder() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+        runCatching { musicFolder.launch(intent) }.onFailure { monitor.folder.pickerFailed(it) }
+    }
     private fun openAimp() {
         val intent = packageManager.getLaunchIntentForPackage("com.aimp.player")
         if (intent == null) monitor.log("AIMP is not installed or has no launcher activity")

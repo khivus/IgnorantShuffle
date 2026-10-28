@@ -43,6 +43,8 @@ class AimpController(private val context: Context) {
     private val store = SettingsStore(context)
     private val preferenceStore = PreferenceStore(context)
     private val model = ShuffleModel(NativePlanner())
+    private var localWeights = emptyMap<String, Double>()
+    val folder = FolderWeightsController(context, ::log, ::folderChanged)
     private val journal = DiagnosticJournal(context.filesDir)
     private val notifications = RollNotifications(context) { log(it) }
     private val runId = UUID.randomUUID().toString().take(8)
@@ -92,7 +94,7 @@ class AimpController(private val context: Context) {
         log("PROCESS START; IgnorantShuffle Android ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}); Core ${ShuffleNative.coreVersion()}; Android ${Build.VERSION.RELEASE}; ${Build.MANUFACTURER} ${Build.MODEL}")
         try {
             val loaded = store.load()
-            settings = loaded.first; weights = loaded.second
+            settings = loaded.first; localWeights = loaded.second; weights = localWeights
             model.configure(settings, weights)
         } catch (e: Exception) { storageError = e.toString(); log("Saved settings unreadable; preserved: $e") }
     }
@@ -119,7 +121,7 @@ class AimpController(private val context: Context) {
 
     fun refreshNotifications() {
         notificationsAllowed = notifications.allowed()
-        if (!connected || storageError != null) {
+        if (!connected || storageError != null || folder.blocked) {
             notifications.clear()
             notificationStatus = if (preferences.notifyRoll) "Waiting for a connected AIMP session" else "Next-roll notifications are off"
         } else notificationStatus = notifications.render(preferences, preview, preview.track?.let(::weight) ?: 0.0,
@@ -210,7 +212,7 @@ class AimpController(private val context: Context) {
         }.orEmpty() else tracks
         if (queue != tracks) {
             log("CATALOG changed: ${tracks.size} -> ${queue.size} entries; targets=${queue.take(20)}")
-            tracks = queue; model.catalog(queue)
+            tracks = queue; model.catalog(queue); applyWeights(preservePreview = true)
         }
         val mediaId = metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
         val mediaUri = uri(metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_URI))
@@ -249,7 +251,7 @@ class AimpController(private val context: Context) {
     }
 
     private fun updatePreview(reason: String = "Settings changed") {
-        if (storageError != null) return
+        if (storageError != null || folder.blocked) return
         preview = model.next()
         canPrevious = model.previous() != null
         if (publishedSequence != model.choiceSequence) {
@@ -261,34 +263,68 @@ class AimpController(private val context: Context) {
 
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
 
+    private fun applyWeights(preservePreview: Boolean = false) {
+        val effective = folder.effective(tracks, localWeights)
+        if (weights != effective || model.settings != settings) {
+            weights = effective; model.configure(settings, weights, preservePreview)
+        }
+    }
+    private fun folderChanged() {
+        if (folder.blocked) {
+            handler.removeCallbacks(endTimer); scheduled = null; preview = Choice(null)
+            if (folder.error != null) disableAutomatic("Shared weights unavailable; reload or choose local weights")
+            refreshNotifications(); return
+        }
+        applyWeights(); updatePreview("Music-folder weights updated"); scheduleTimer()
+        val matched = tracks.count { folder.match(it).path != null }
+        log("FOLDER root=${folder.config.root}; shared=${folder.active}; matched=$matched/${tracks.size}; overrides=${folder.values.size}")
+    }
+    fun chooseMusicFolder(uri: Uri) { disableAutomatic("Music-folder selection changed; enable timed mode after indexing"); folder.select(uri) }
+    fun reloadSharedWeights() { folder.reload() }
+    fun copyLocalWeights() = guarded { folder.copyMissing(tracks, localWeights) }
+    fun linkFile(track: Track, path: String?) { folder.link(track, path) }
+    fun weightSource(track: Track): String {
+        val path = folder.match(track).path
+        return when {
+            folder.active && path != null && folder.values.containsKey(path) -> "Shared · $path"
+            localWeights.containsKey(track.key) -> "Local only"
+            else -> "Default"
+        }
+    }
+
     fun configure(value: Settings) = guarded {
         check(storageError == null) { "Saved settings could not be read; existing data is preserved" }
-        store.save(value, weights)
+        store.save(value, localWeights)
         settings = value; model.configure(value, weights)
         updatePreview(); scheduleTimer(); log("Settings changed: $value")
     }
 
     fun setWeight(track: Track, text: String, inherit: Boolean = false) = guarded {
-        check(!pending && storageError == null)
-        val next = weights.toMutableMap()
+        check(!pending && storageError == null && !folder.blocked)
+        val number = if (inherit) null else text.toDoubleOrNull().also {
+            require(it != null && it.isFinite() && it >= 0) { "Enter a finite nonnegative weight" }
+        }
+        if (folder.active && folder.match(track).path != null) {
+            folder.edit(track, number); return@guarded
+        }
+        val next = localWeights.toMutableMap()
         if (inherit) next.remove(track.key)
         else {
-            val number = text.toDoubleOrNull()
-            require(number != null && number.isFinite() && number >= 0) { "Enter a finite nonnegative weight" }
-            next[track.key] = number
+            next[track.key] = requireNotNull(number)
         }
-        store.save(settings, next); weights = next; model.configure(settings, next); updatePreview(); scheduleTimer()
-        log("Weight ${track.title}: ${next[track.key] ?: "inherited"}")
+        store.save(settings, next); localWeights = next; applyWeights(); updatePreview(); scheduleTimer()
+        log("Local weight ${track.title}: ${next[track.key] ?: "inherited"}; shared file link=${folder.match(track)}")
     }
 
     fun importWeights(text: String) = guarded {
-        check(!pending && storageError == null)
-        val next = weights + WeightTransfer.parse(text)
-        store.save(settings, next); weights = next; model.configure(settings, next); updatePreview(); scheduleTimer()
+        check(!pending && storageError == null && !folder.blocked)
+        if (folder.active) { folder.import(text); return@guarded }
+        val next = localWeights + WeightTransfer.parse(text)
+        store.save(settings, next); localWeights = next; applyWeights(); updatePreview(); scheduleTimer()
         log("Imported weight overrides transactionally")
     }
 
-    fun exportWeights() = WeightTransfer.write(weights)
+    fun exportWeights() = if (folder.active) PortableWeights.write(folder.values) else WeightTransfer.write(localWeights)
     fun newPass() = guarded { model.newPass(); updatePreview(); scheduleTimer(); log("Started a new finite pass; current track counted") }
     fun reroll() = guarded { if (!pending) { model.next(true); updatePreview("User reroll"); scheduleTimer() } }
     fun smartNext() = guarded { if (!pending) playChoice(model.next()) }
@@ -296,7 +332,7 @@ class AimpController(private val context: Context) {
     fun play(track: Track) = guarded { if (!pending) playChoice(Choice(track)) }
 
     private fun playChoice(choice: Choice, planned: ScheduledRoll? = null) {
-        check(storageError == null) { "Storage error; playback selection disabled" }
+        check(storageError == null && !folder.blocked) { "Storage is loading/unavailable; playback selection disabled" }
         val target = choice.track ?: run { result = "No eligible tracks / finite pass complete"; return }
         // Manual requests refresh the queue. Timed requests already performed a
         // lightweight source read; do not refetch/hash the whole queue twice here.
@@ -354,7 +390,7 @@ class AimpController(private val context: Context) {
 
     fun changeAutomatic(enabled: Boolean) = guarded {
         if (!enabled) { disableAutomatic("Timed automatic mode is off"); return@guarded }
-        check(connected && permission && storageError == null && !pending) { "Connect AIMP and finish the current command first" }
+        check(connected && permission && storageError == null && !pending && !folder.blocked) { "Connect AIMP and finish loading/current commands first" }
         automatic = true
         log("USER ENABLED timed shuffle; lead=${preferences.leadMs}ms; CPU protection while playing; no queue insertion")
         read()
@@ -375,7 +411,7 @@ class AimpController(private val context: Context) {
     private fun scheduleTimer() {
         handler.removeCallbacks(endTimer); scheduled = null
         sustainCpu()
-        if (!automatic || pending) return
+        if (!automatic || pending || folder.blocked) return
         val delay = EndTiming.delayMillis(timing(), SystemClock.elapsedRealtime(), preferences.leadMs)
         if (delay == null) {
             automaticStatus = "Waiting for PLAYING state with a known track, position, speed and duration"
@@ -437,7 +473,8 @@ class AimpController(private val context: Context) {
         appendLine("Preferences: $preferences; log error: ${journal.failure}; roll=$rollSequence reason=$rollReason")
         appendLine("Scheduled: $scheduled; screen=${power.isInteractive}; idle=${power.isDeviceIdleMode}")
         appendLine("CPU held=${wake.isHeld}; powerSave=${power.isPowerSaveMode}; batteryExempt=${power.isIgnoringBatteryOptimizations(context.packageName)}")
-        (if (full) tracks else tracks.take(20)).forEach { appendLine("TRACK $it key=${it.key} weight=${weight(it)}") }
+        appendLine("Music folder: ${folder.config}; busy=${folder.busy}; error=${folder.error}; ${folder.status}")
+        (if (full) tracks else tracks.take(20)).forEach { appendLine("TRACK $it key=${it.key} weight=${weight(it)} source=${weightSource(it)} fileMatch=${folder.match(it)}") }
         if (!full && tracks.size > 20) appendLine("Queue truncated in summary; export full log for every track")
         appendLine("Queue: ${tracks.size}; explicit weights: ${weights.size}; current-pass starts: ${model.played.size}")
         appendLine("Timed mode: $automatic; $automaticStatus")

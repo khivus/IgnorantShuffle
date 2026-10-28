@@ -60,14 +60,17 @@ class ShuffleModel(private val planner: Planner) {
 
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
 
-    fun configure(settings: Settings, weights: Map<String, Double>) {
+    fun configure(settings: Settings, weights: Map<String, Double>, preservePreview: Boolean = false) {
         settings.validate()
         require(weights.values.all { it.isFinite() && it >= 0 }) { "Weights must be finite and nonnegative" }
         val changedMode = settings.finite != this.settings.finite
+        val keep = preservePreview && settings == this.settings && preview?.track?.let { t ->
+            (this.weights[t.key] ?: this.settings.defaultWeight) == (weights[t.key] ?: settings.defaultWeight)
+        } == true
         this.settings = settings
         this.weights = weights.toMap()
         if (changedMode) newPass()
-        preview = null
+        if (!keep) preview = null
     }
 
     fun catalog(value: List<Track>) {

@@ -6,6 +6,8 @@ These entries do not imply published GitHub releases.
 
 ## Unreleased — 0.3.0 (versionCode 4)
 
+- Prefer a selected music folder's Windows-compatible global TSV; index actual files, match unique tags and provide manual links for ambiguous queue entries.
+- Reload synchronized weights on foreground/manual refresh, copy missing local values without replacing shared exclusions, and verify saves with temporary files and backup/rollback on a background worker.
 - Customize the automatic switch lead from 0 to 5000 ms, including 0/50/100/300 ms presets; retain the selected lead in each captured handoff plan.
 - Choose notification visibility: always, playing or paused, or playing only.
 - Rename Tracks to Playlist and order tabs Player, Shuffle, Playlist, Alerts, Theme, Logs.

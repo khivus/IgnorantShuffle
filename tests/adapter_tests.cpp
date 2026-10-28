@@ -550,11 +550,14 @@ struct PluginChecks {
         };
         play(&first); plugin.open_monitor();
         const auto panel = plugin.monitor_.handle();
-        check(!plugin.shared_global_ && !plugin.folder_local_ && !plugin.playlist_local_ && !IsWindowVisible(GetDlgItem(panel, IDC_WEIGHT_SCOPE)),
-            "Portable options are off by default and preserve the compact legacy panel.");
+        check(plugin.shared_global_ && !plugin.storage_.enabled() && !plugin.folder_local_ && !plugin.playlist_local_ && !IsWindowVisible(GetDlgItem(panel, IDC_WEIGHT_SCOPE)),
+            "Shared global is preferred; an unset root uses profile weights without enabling local layers.");
         const auto settings = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_STORAGE), panel, Plugin::storage_proc, reinterpret_cast<LPARAM>(&plugin));
         check(settings != nullptr, "Storage settings dialog creates.");
+        check(IsDlgButtonChecked(settings, IDC_SHARED_GLOBAL) == BST_CHECKED && !IsWindowEnabled(GetDlgItem(settings, IDC_COPY_PROFILE)),
+            "New storage settings prefer shared global but require a folder before migration.");
         SetDlgItemTextW(settings, IDC_MUSIC_FOLDER, music.c_str());
+        CheckDlgButton(settings, IDC_SHARED_GLOBAL, BST_UNCHECKED);
         CheckDlgButton(settings, IDC_FOLDER_LOCAL, BST_CHECKED);
         SendMessageW(settings, WM_COMMAND, MAKEWPARAM(IDC_APPLY_STORAGE, BN_CLICKED), 0);
         check(plugin.folder_local_ && !plugin.shared_global_ && plugin.storage_error_.empty(), "Folder overrides can be enabled independently of shared global storage.");

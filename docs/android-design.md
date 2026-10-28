@@ -37,8 +37,17 @@ be pending at a time, with a bounded confirmation timeout.
 Queue IDs are volatile. Persistent Android keys include AIMP's exposed media ID
 or URI plus title and artist. Changed identities receive new keys to avoid
 silently assigning an old track's weight to another track. Some library edits
-therefore require weight reassignment. Windows filename keys and Android keys
-are not automatically mapped; no cross-device weight synchronization is claimed.
+therefore require weight reassignment for local-only values. v0.3 links identities
+to actual relative paths by indexing the selected music tree; unique title/artist
+tags match automatically and ambiguous entries require a manual file link. Both
+platforms prefer the root global TSV, pending folder selection. Unmatched entries
+keep local/default values. Shared-file I/O is serialized off the playback thread,
+with fresh-read merging, temporary verification, backup and rollback. Only root
+global weights are shared; see [folder storage](shared-music-folder.md).
+
+The automatic lead is configurable from 0 to 5000 ms (300 by default). A scheduled
+roll captures its lead for deadline validation. Notifications can include paused
+playback or be limited to PLAYING. Exports have a dated `.log` name and time header.
 
 Maintain both by running the common C++ tests and the Windows x64/x86 regression
 suites whenever selection changes. Android additionally needs Kotlin state-machine
