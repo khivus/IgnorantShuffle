@@ -14,4 +14,9 @@ constexpr std::size_t maximum_update_size = 32 * 1024 * 1024;
 std::string normalize_repository(std::string value);
 std::array<unsigned, 4> release_version(std::string value);
 std::optional<ReleaseUpdate> parse_release(const std::string& json, const std::string& repository, const std::string& installed);
+struct ReleasePage {
+    std::optional<ReleaseUpdate> newest;
+    std::size_t count = 0;
+};
+ReleasePage parse_release_page(const std::string& json, const std::string& repository, const std::string& installed);
 }

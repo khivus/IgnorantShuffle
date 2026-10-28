@@ -5,17 +5,22 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 $repositoryName = 'khivus/IgnorantShuffle'
 $description = 'Weighted smart shuffle for AIMP on Windows, with track weights, cooldowns, portable weight storage, and a compact control panel.'
-$cmakeText = [IO.File]::ReadAllText((Join-Path $projectRoot 'CMakeLists.txt'))
-if ($cmakeText -notmatch 'project\(IgnorantShuffle VERSION ([0-9]+\.[0-9]+\.[0-9]+)') { throw 'Cannot read project version.' }
-$version = $Matches[1]
-$tag = "v$version"
-$releaseNames = @("IgnorantShuffle-$tag.aimppack", 'aimp_ignorant_shuffle-x64.dll', 'aimp_ignorant_shuffle-x86.dll', 'SHA256SUMS.txt')
+# This existing publisher is Windows-only. Android/core use their own tags/notes.
+. (Join-Path $PSScriptRoot 'component-version.ps1')
+$versionInfo = Get-ComponentVersion windows
+$version = $versionInfo.Version
+$tag = $versionInfo.Tag
+$releaseNames = @("IgnorantShuffle-v$version.aimppack", 'aimp_ignorant_shuffle-x64.dll', 'aimp_ignorant_shuffle-x86.dll', 'SHA256SUMS.txt')
+$dirty = & git -c "safe.directory=$projectRoot" status --porcelain
+if ($LASTEXITCODE -ne 0 -or $dirty) { throw 'Commit the intended changes before publishing. This script never stages or commits files.' }
 $releaseDirectory = Join-Path $projectRoot 'dist'
 $releaseFiles = @($releaseNames | ForEach-Object { Join-Path $releaseDirectory $_ })
 foreach ($file in $releaseFiles) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing release file: $file. Build both architectures and run tools/package-release.ps1 first." }
 }
 $notes = [IO.File]::ReadAllText((Join-Path $projectRoot 'RELEASE_NOTES.md'))
+if (-not $notes.StartsWith("# IgnorantShuffle Windows v$version" + "`n") -and
+    -not $notes.StartsWith("# IgnorantShuffle Windows v$version" + "`r`n")) { throw 'Windows release notes do not match versions/windows.properties.' }
 $manifest = Get-Content -LiteralPath (Join-Path $releaseDirectory 'SHA256SUMS.txt')
 foreach ($file in $releaseFiles | Where-Object { [IO.Path]::GetFileName($_) -ne 'SHA256SUMS.txt' }) {
     $expectedLine = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($file)
@@ -59,12 +64,6 @@ catch {
 }
 if ($repository.full_name -ine $repositoryName -or $repository.private) { throw 'The target repository is unexpected or private; publishing stopped.' }
 Write-Output "Repository: $($repository.html_url)"
-if (-not (Test-Path -LiteralPath (Join-Path $projectRoot '.git'))) { Invoke-Git -Arguments @('init', '-b', 'main') }
-Invoke-Git -Arguments @('add', '--', '.gitignore', 'CMakeLists.txt', 'README.md', 'CHANGELOG.md', 'LICENSE', 'RELEASE_NOTES.md', 'build.ps1', 'docs', 'examples', 'src', 'tests', 'tools')
-Invoke-Git -Arguments @('diff', '--cached', '--check')
-& git -c "safe.directory=$projectRoot" diff --cached --quiet
-if ($LASTEXITCODE -eq 1) { Invoke-Git -Arguments @('commit', '-m', "feat: release IgnorantShuffle v$version") }
-elseif ($LASTEXITCODE -ne 0) { throw 'Cannot inspect staged changes.' }
 $commit = (Invoke-Git -Arguments @('rev-parse', 'HEAD')).Trim()
 $branch = (Invoke-Git -Arguments @('branch', '--show-current')).Trim()
 if ($branch -ne 'main') { throw 'Expected local main branch; publishing stopped.' }
@@ -81,18 +80,21 @@ foreach ($key in $gitEnvironment.Keys) { $previousGitEnvironment[$key] = [Enviro
 try {
     Invoke-Git -Arguments @('push', '-u', 'origin', 'main')
     $existingTags = @(Invoke-Git -Arguments @('tag', '--list', $tag))
-    if ($existingTags -notcontains $tag) { Invoke-Git -Arguments @('tag', '-a', $tag, '-m', "IgnorantShuffle $tag", $commit) }
+    if ($existingTags -notcontains $tag) { Invoke-Git -Arguments @('tag', '-a', $tag, '-m', "IgnorantShuffle Windows v$version", $commit) }
     $tagCommit = (Invoke-Git -Arguments @('rev-parse', "$tag^{}")).Trim()
     if ($tagCommit -ne $commit) { throw 'Existing release tag refers to a different commit.' }
     Invoke-Git -Arguments @('push', 'origin', "refs/tags/$tag")
 } finally {
-    foreach ($key in $previousGitEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $previousGitEnvironment[$key], 'Process') }
+    foreach ($key in $previousGitEnvironment.Keys) {
+        if ($null -eq $previousGitEnvironment[$key]) { Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue }
+        else { [Environment]::SetEnvironmentVariable($key, $previousGitEnvironment[$key], 'Process') }
+    }
     $gitAuthorization = $null; $gitEnvironment = $null
 }
 $repository = Invoke-GitHub -Path "/repos/$repositoryName" -Method PATCH -Body @{ description = $description; default_branch = 'main' }
 $releases = @(Invoke-GitHub -Path "/repos/$repositoryName/releases?per_page=100")
 $release = $releases | Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
-if (-not $release) { $release = Invoke-GitHub -Path "/repos/$repositoryName/releases" -Method POST -Body @{ tag_name = $tag; target_commitish = $commit; name = "IgnorantShuffle $tag"; body = $notes; draft = $true; prerelease = $false } }
+if (-not $release) { $release = Invoke-GitHub -Path "/repos/$repositoryName/releases" -Method POST -Body @{ tag_name = $tag; target_commitish = $commit; name = "IgnorantShuffle Windows v$version"; body = $notes; draft = $true; prerelease = $false } }
 foreach ($file in $releaseFiles) {
     $name = [IO.Path]::GetFileName($file)
     $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -110,8 +112,8 @@ foreach ($file in $releaseFiles) {
     Write-Output "Verified release asset: $name"
 }
 if ($release.draft) { $release = Invoke-GitHub -Path "/repos/$repositoryName/releases/$($release.id)" -Method PATCH -Body @{ body = $notes; draft = $false; make_latest = 'true' } }
-$latest = Invoke-GitHub -Path "/repos/$repositoryName/releases/latest"
-if ($latest.tag_name -ne $tag -or $latest.draft -or $latest.prerelease) { throw 'Latest stable release verification failed.' }
+$latest = Invoke-GitHub -Path ("/repos/$repositoryName/releases/tags/" + [Uri]::EscapeDataString($tag))
+if ($latest.tag_name -ne $tag -or $latest.draft -or $latest.prerelease) { throw 'Published Windows release verification failed.' }
 foreach ($file in $releaseFiles) {
     $name = [IO.Path]::GetFileName($file)
     $asset = $latest.assets | Where-Object { $_.name -ceq $name } | Select-Object -First 1
@@ -120,6 +122,6 @@ foreach ($file in $releaseFiles) {
     Invoke-WebRequest -Uri $asset.browser_download_url -UseBasicParsing -OutFile $download -TimeoutSec 60
     if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash) { throw "Published download verification failed: $name" }
 }
-[IO.File]::WriteAllText((Join-Path $releaseDirectory 'release-latest.json'), ($latest | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText((Join-Path $releaseDirectory 'release-windows.json'), ($latest | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false))
 Write-Output "Published and verified: $($latest.html_url)"
 Write-Output "Commit: $commit"

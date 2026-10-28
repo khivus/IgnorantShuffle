@@ -5,6 +5,18 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $tokens = $null; $parseErrors = $null
 $tree = [Management.Automation.Language.Parser]::ParseFile((Join-Path $projectRoot 'tools\publish-release.ps1'), [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw 'Publisher syntax check failed.' }
+. (Join-Path $projectRoot 'tools\component-version.ps1')
+$versionInfo = Get-ComponentVersion windows
+$version = $versionInfo.Version
+$tag = $versionInfo.Tag
+$assetAssignment = $tree.Find({ param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$releaseNames' }, $true)
+if (-not $assetAssignment) { throw 'Missing Windows asset configuration.' }
+. ([scriptblock]::Create($assetAssignment.Extent.Text))
+if ($tag -cne "windows/v$version" -or $releaseNames[0] -cne "IgnorantShuffle-v$version.aimppack" -or
+    @($releaseNames | Where-Object { $_ -match '[/\\]' }).Count) { throw 'Component tag must not become an asset path.' }
+if ($tree.Extent.Text -match "Invoke-Git -Arguments @\('(add|commit)'") { throw 'Publisher must not stage or commit unrelated components.' }
+$notes = [IO.File]::ReadAllText((Join-Path $projectRoot 'RELEASE_NOTES.md'))
+if ($notes.Split("`n")[0].TrimEnd("`r") -cne "# IgnorantShuffle Windows v$version") { throw 'Windows release notes/version mismatch.' }
 $gitFunction = $tree.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-Git' }, $true)
 if (-not $gitFunction) { throw 'Missing publisher Git invocation.' }
 . ([scriptblock]::Create($gitFunction.Extent.Text))
@@ -27,7 +39,10 @@ try {
     $helper = Invoke-Git -Arguments @('config', '--get', 'credential.helper')
     if (($helper -join '') -ne '') { throw 'Child Git did not disable credential helpers.' }
 } finally {
-    foreach ($key in $previousEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $previousEnvironment[$key], 'Process') }
+    foreach ($key in $previousEnvironment.Keys) {
+        if ($null -eq $previousEnvironment[$key]) { Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue }
+        else { [Environment]::SetEnvironmentVariable($key, $previousEnvironment[$key], 'Process') }
+    }
 }
 foreach ($key in $previousEnvironment.Keys) {
     if ([Environment]::GetEnvironmentVariable($key, 'Process') -cne $previousEnvironment[$key]) { throw "Git test failed to restore $key." }

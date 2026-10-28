@@ -43,6 +43,18 @@ Core tests exercise weighted selection without replacement over 10,000 complete 
 
 ### Updater
 
+Component-version regressions run offline with `tests/version_tests.ps1`; they
+exercise independent bumps, component tag naming, invalid semantic versions and
+Android version-code/Windows resource limits. `tests/publish_tests.ps1` checks
+the Windows publisher's metadata, asset names and real child-Git environment
+without authenticating or publishing. Both are included in Windows CI jobs.
+
+Updater tests cover mixed component histories, Windows namespace and historical
+tags, numeric version ordering across unsorted releases, an Android-only
+repository, Windows entries beyond the first page, encoded tag URLs, and a
+bounded scan that reports an incomplete check. These are local fixtures; they
+do not establish that a component-tagged release has been published to GitHub.
+
 Automated checks cover release parsing, version ordering, placeholder behavior, auto-check timing and opt-out persistence, verified/corrupt downloads, background cancellation, and actual WinHTTP requests against localhost. Installer tests launch a local GUI helper through ShellExecute and verify the exact package argument with spaces and Unicode. Dialog tests cover installation requests, visible retry controls, reuse of the saved package, and preventing repeated launches on timer ticks. Saved packages are checked again before installation, including rejection after tampering. The actual GitHub update and AIMP installer/restart flow require live verification.
 
 ## Live AIMP verification

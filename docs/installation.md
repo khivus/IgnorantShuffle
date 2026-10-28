@@ -8,7 +8,7 @@ IgnorantShuffle is built for **AIMP 5.40 on Windows**. Choose a DLL that matches
 
 ## Install with the AIMP package
 
-1. Download the `.aimppack` from [GitHub Releases](https://github.com/khivus/IgnorantShuffle/releases/latest).
+1. Download the `.aimppack` from a **Windows** entry in [GitHub Releases](https://github.com/khivus/IgnorantShuffle/releases). Historical `v...` releases are Windows releases too.
 2. Open it with AIMP, or drop it onto AIMP's main window.
 3. Finish AIMP's installation prompts and restart if asked.
 4. Enable IgnorantShuffle in **Preferences → Plugins** if needed.

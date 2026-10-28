@@ -19,12 +19,14 @@ UpdateState completed(UpdateClient& client) {
     while (client.state().busy() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(5));
     check(!client.state().busy(), "Update worker did not finish."); return client.state();
 }
-std::string metadata(const std::vector<unsigned char>& bytes, std::string digest = {}) {
+std::string metadata(const std::vector<unsigned char>& bytes, std::string digest = {}, const std::string& tag = "v1.2.0") {
     if (digest.empty()) digest = update_sha256(bytes);
-    return "{\"tag_name\":\"v1.2.0\",\"draft\":false,\"prerelease\":false,\"body\":\"Unicode \\ud83c\\udfb5\",\"assets\":[{\"name\":\"IgnorantShuffle-v1.2.0.aimppack\",\"state\":\"uploaded\",\"size\":" + std::to_string(bytes.size()) +
-        ",\"digest\":\"sha256:" + digest + "\",\"browser_download_url\":\"https://github.com/example/shuffle/releases/download/v1.2.0/IgnorantShuffle-v1.2.0.aimppack\"}]}";
+    return "{\"tag_name\":\"" + tag + "\",\"draft\":false,\"prerelease\":false,\"body\":\"Unicode \\ud83c\\udfb5\",\"assets\":[{\"name\":\"IgnorantShuffle-v1.2.0.aimppack\",\"state\":\"uploaded\",\"size\":" + std::to_string(bytes.size()) +
+        ",\"digest\":\"sha256:" + digest + "\",\"browser_download_url\":\"https://github.com/example/shuffle/releases/download/" + tag + "/IgnorantShuffle-v1.2.0.aimppack\"}]}";
 }
-HttpReply json_reply(const std::string& value) { return {200, {value.begin(), value.end()}}; }
+HttpReply json_reply(const std::string& value) {
+    const auto page = "[" + value + "]"; return {200, {page.begin(), page.end()}};
+}
 void model_checks() {
     check(normalize_repository("  https://github.com/example/shuffle/releases/latest/ ") == "example/shuffle", "Repository URL normalization.");
     check(normalize_repository("").empty(), "Placeholder repository.");
@@ -32,6 +34,7 @@ void model_checks() {
         rejects([&] { normalize_repository(value); }, "Unsafe repository accepted.");
     check(release_version("v0.10.0") > release_version("0.9.9"), "Numeric version ordering.");
     check(release_version("1.2.0") == release_version("1.2.0.0"), "Version normalization.");
+    check(release_version("windows/v1.2.0") == release_version("v1.2.0"), "Windows tag migration preserves numeric ordering.");
     for (const auto value : {"1.2", "1.2.0-beta", "65536.0.0", "1.2.3.4.5", "1.2.3."})
         rejects([&] { release_version(value); }, "Unsupported version accepted.");
     const std::vector<unsigned char> package{'P','K',3,4,1,2,3,4};
@@ -44,6 +47,19 @@ void model_checks() {
     check(!parse_release(prerelease, "example/shuffle", "0.9.0"), "Do not install prereleases.");
     check(!parse_release("{\"tag_name\":\"v1.2.0\",\"assets\":[]}", "example/shuffle", "0.9.0")->installable(), "Missing package is visible but not installable.");
     check(!parse_release(metadata(package, "missing"), "example/shuffle", "0.9.0")->installable(), "Missing digest blocks installation.");
+    const auto namespaced = parse_release(metadata(package, {}, "windows/v1.2.0"), "example/shuffle", "0.9.0");
+    check(namespaced && namespaced->installable(), "Component-tagged Windows package is installable.");
+    auto encoded = metadata(package, {}, "windows/v1.2.0");
+    encoded.replace(encoded.find("download/windows/v"), 18, "download/windows%2Fv");
+    check(parse_release(encoded, "example/shuffle", "0.9.0")->installable(), "Encoded slash in GitHub download tag.");
+    for (const auto& tag : {"android/v1.2.0", "core/v1.2.0", "something-else", "windows/v1.2.0-beta"})
+        check(!parse_release(metadata(package, {}, tag), "example/shuffle", "0.9.0"), "Other components cannot be Windows updates even with a matching package name.");
+    const auto page = parse_release_page("[" + metadata(package, {}, "android/v1.2.0") + "," +
+        metadata(package, {}, "windows/v1.2.0") + ", {\"tag_name\":\"v1.10.0\"}, {\"tag_name\":\"core/v99.0.0\"}]", "example/shuffle", "0.9.0");
+    check(page.count == 4 && page.newest && page.newest->tag == "v1.10.0", "Choose highest Windows version across mixed, unsorted component releases.");
+    check(!parse_release_page("[{\"tag_name\":\"android/v99.0.0\"},{\"tag_name\":\"windows/v99.0.0\",\"draft\":true},{\"tag_name\":\"windows/v98.0.0\",\"prerelease\":true}]", "example/shuffle", "0.9.0").newest,
+        "Other components, drafts and prereleases do not become updates.");
+    rejects([&] { parse_release_page(json, "example/shuffle", "0.9.0"); }, "Release-list endpoint must return an array.");
     rejects([&] { parse_release(json, "different/repo", "0.9.0"); }, "Cross-repository asset accepted.");
     rejects([&] { parse_release("{\"tag_name\":\"v1.2.0\",\"tag_name\":\"v9.0.0\"}", "example/shuffle", "0.9.0"); }, "Ambiguous JSON accepted.");
     rejects([&] { parse_release("{\"tag_name\":\"v1.2.0\",\"body\":\"\\ud800\"}", "example/shuffle", "0.9.0"); }, "Invalid Unicode accepted.");
@@ -51,6 +67,39 @@ void model_checks() {
 }
 void worker_checks() {
     const std::vector<unsigned char> package{'P','K',3,4,1,2,3,4};
+    std::string fullPage;
+    for (int i = 0; i < 100; ++i) fullPage += (i ? "," : "") + std::string("{\"tag_name\":\"android/v99.0.0\"}");
+    int pageRequests = 0;
+    UpdateClient paginated("0.9.0", [&](const auto& url, auto, const auto&, const auto&) {
+        ++pageRequests;
+        check(url == "https://api.github.com/repos/example/shuffle/releases?per_page=100&page=" + std::to_string(pageRequests), "Paginate release metadata within the configured repository.");
+        return json_reply(pageRequests == 1 ? fullPage : metadata(package, {}, "windows/v1.2.0"));
+    });
+    paginated.check("example/shuffle");
+    check(completed(paginated).phase == UpdatePhase::Available && pageRequests == 2 && paginated.state().release->tag == "windows/v1.2.0",
+        "Android releases cannot hide Windows updates on a later page.");
+    const auto withWindows = fullPage.substr(fullPage.find(',') + 1) + "," + metadata(package, {}, "windows/v1.2.0");
+    int unsortedRequests = 0;
+    UpdateClient unsorted("0.9.0", [&](const auto&, auto, const auto&, const auto&) {
+        return json_reply(++unsortedRequests == 1 ? withWindows : "{\"tag_name\":\"v1.10.0\"}");
+    });
+    unsorted.check("example/shuffle");
+    check(completed(unsorted).phase == UpdatePhase::Available && unsortedRequests == 2 && unsorted.state().release->tag == "v1.10.0",
+        "Highest Windows version can be on a later page even after finding a candidate.");
+    int interruptedRequests = 0;
+    UpdateClient interrupted("0.9.0", [&](const auto&, auto, const auto&, const auto&) {
+        return ++interruptedRequests == 1 ? json_reply(withWindows) : HttpReply{404, {}};
+    });
+    interrupted.check("example/shuffle");
+    check(completed(interrupted).phase == UpdatePhase::Error && !interrupted.state().release,
+        "A failed later page cannot offer a candidate from incomplete history.");
+    UpdateClient onlyAndroid("0.9.0", [](const auto&, auto, const auto&, const auto&) { return json_reply("{\"tag_name\":\"android/v99.0.0\"}"); });
+    onlyAndroid.check("example/shuffle");
+    check(completed(onlyAndroid).phase == UpdatePhase::Current && !onlyAndroid.state().release, "Android-only history never offers an APK to Windows.");
+    int boundedRequests = 0;
+    UpdateClient bounded("0.9.0", [&](const auto&, auto, const auto&, const auto&) { ++boundedRequests; return json_reply(fullPage); });
+    bounded.check("example/shuffle");
+    check(completed(bounded).phase == UpdatePhase::Error && boundedRequests == 10, "Incomplete bounded history must not claim latest version.");
     std::atomic<int> calls{0};
     UpdateClient client("0.9.0", [&](const auto& url, auto, const auto&, const auto& progress) {
         ++calls;

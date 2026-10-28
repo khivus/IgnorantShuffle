@@ -31,6 +31,11 @@ jobs:
       - name: Build and test plugin
         shell: pwsh
         run: ./build.ps1 -Architecture ${{ matrix.arch }}
+      - name: Check component versions and publisher offline
+        shell: pwsh
+        run: |
+          ./tests/version_tests.ps1
+          ./tests/publish_tests.ps1
   android:
     runs-on: ubuntu-24.04
     steps:

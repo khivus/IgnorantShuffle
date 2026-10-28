@@ -7,6 +7,8 @@ Version history for the Windows AIMP plugin, newest first. See the
 
 - Read DLL, AIMP plugin name, package and diagnostic versions from `versions/windows.properties`, independently of Android and core.
 - Display and log the bundled core version (0.1.0).
+- Check stable Windows releases across paginated release history, including historical `vX.Y.Z` tags; exclude Android/core releases regardless of version numbers or release dates.
+- Use `windows/vX.Y.Z` release tags. The Windows publisher reads Windows metadata/notes and requires a clean committed checkout.
 
 ## 0.11.0
 

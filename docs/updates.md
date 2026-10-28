@@ -8,7 +8,16 @@ Open **Updates...** at the bottom of the floating panel. **Automatically check f
 
 Checks never start a download or installation. Unchecking the option persists across restarts; **Check now** still works.
 
-Only newer stable releases are offered. Drafts, prereleases, equal versions, and older versions are not offered.
+Only newer stable **Windows** releases are offered: `windows/vX.Y.Z` and historical
+`vX.Y.Z` tags. Android/core versions are ignored. The check reads paginated release
+history, so an Android release cannot hide a Windows update by becoming GitHub's
+general latest release. Drafts, prereleases, equal versions, and older versions
+are not offered. Reaching the 1000-entry scan limit without finding the end of
+history produces an explicit error.
+
+Windows 0.11.0 and earlier only understand the historical tag format. Install the
+first `windows/v...` release manually through AIMP's Plugins page, then subsequent
+Windows releases can be discovered by the updated checker.
 
 ## Download and install
 
@@ -29,7 +38,7 @@ Versions 0.9.0 and 0.10.0 can download successfully without opening AIMP's insta
 
 ## Release source
 
-The default source is [khivus/IgnorantShuffle Releases](https://github.com/khivus/IgnorantShuffle/releases/latest).
+The default source is [khivus/IgnorantShuffle Releases](https://github.com/khivus/IgnorantShuffle/releases).
 
 To change it, enter `owner/repository` or `https://github.com/owner/repository/releases`, then click **Save source** to save and check it. A saved nonempty source overrides the built-in default. Empty preferences from earlier placeholder builds adopt the published repository on startup.
 

@@ -131,6 +131,7 @@ std::string normalize_repository(std::string value) {
     return value;
 }
 std::array<unsigned, 4> release_version(std::string value) {
+    if (value.compare(0, 8, "windows/") == 0) value.erase(0, 8);
     if (!value.empty() && (value[0] == 'v' || value[0] == 'V')) value.erase(0, 1);
     std::array<unsigned, 4> result{}; unsigned count = 0; std::size_t position = 0;
     while (position < value.size() && count < result.size()) {
@@ -147,11 +148,15 @@ std::array<unsigned, 4> release_version(std::string value) {
     if (count < 3 || position != value.size()) throw std::runtime_error("Unsupported release tag.");
     return result;
 }
-std::optional<ReleaseUpdate> parse_release(const std::string& json, const std::string& repository, const std::string& installed) {
-    const auto root = Parser(json).parse();
+namespace {
+std::optional<ReleaseUpdate> release_object(const Json& root, const std::string& repository, const std::string& installed) {
     if (root.kind != Json::Object) throw std::runtime_error("GitHub returned no release object.");
     if (root.at("draft").yes() || root.at("prerelease").yes()) return {};
     ReleaseUpdate release; release.tag = root.at("tag_name").text();
+    // Historical vX.Y.Z tags belong to Windows. Other components have namespaces.
+    if (release.tag.compare(0, 9, "windows/v") != 0 &&
+        (release.tag.empty() || (release.tag[0] != 'v' && release.tag[0] != 'V'))) return {};
+    try { release_version(release.tag); } catch (const std::exception&) { return {}; }
     if (release_version(release.tag) <= release_version(installed)) return {};
     const auto repo = normalize_repository(repository);
     if (repo.empty()) throw std::runtime_error("Update repository is not configured.");
@@ -162,7 +167,8 @@ std::optional<ReleaseUpdate> parse_release(const std::string& json, const std::s
     bool found = false;
     for (const auto& asset : assets.array) {
         const auto name = asset.at("name").text();
-        if (name != "IgnorantShuffle.aimppack" && name != "IgnorantShuffle-" + release.tag + ".aimppack") continue;
+        const auto assetTag = release.tag.compare(0, 8, "windows/") == 0 ? release.tag.substr(8) : release.tag;
+        if (name != "IgnorantShuffle.aimppack" && name != "IgnorantShuffle-" + assetTag + ".aimppack") continue;
         if (found) throw std::runtime_error("Release has ambiguous update packages."); found = true;
         if (asset.at("state").text() != "uploaded") { release.unavailable_reason = "Update package is still uploading."; continue; }
         const auto size = asset.at("size");
@@ -171,7 +177,10 @@ std::optional<ReleaseUpdate> parse_release(const std::string& json, const std::s
         if (!release.size || release.size > maximum_update_size) throw std::runtime_error("Update package exceeds the supported size limit.");
         release.asset_url = asset.at("browser_download_url").text(); release.asset_name = name;
         const auto expected = "https://github.com/" + repo + "/releases/download/" + release.tag + "/" + name;
-        if (lower(release.asset_url) != lower(expected)) throw std::runtime_error("Update asset URL does not match the configured repository and release.");
+        auto encodedTag = release.tag;
+        if (encodedTag.compare(0, 8, "windows/") == 0) encodedTag.replace(7, 1, "%2F");
+        const auto encoded = "https://github.com/" + repo + "/releases/download/" + encodedTag + "/" + name;
+        if (lower(release.asset_url) != lower(expected) && lower(release.asset_url) != lower(encoded)) throw std::runtime_error("Update asset URL does not match the configured repository and release.");
         auto digest = lower(asset.at("digest").text());
         if (digest.size() != 71 || digest.compare(0, 7, "sha256:") || digest.find_first_not_of("0123456789abcdef", 7) != std::string::npos) {
             release.unavailable_reason = "GitHub has not supplied the package SHA256 digest yet."; continue;
@@ -179,5 +188,19 @@ std::optional<ReleaseUpdate> parse_release(const std::string& json, const std::s
         release.sha256 = digest.substr(7); release.unavailable_reason.clear();
     }
     return release;
+}
+}
+std::optional<ReleaseUpdate> parse_release(const std::string& json, const std::string& repository, const std::string& installed) {
+    return release_object(Parser(json).parse(), repository, installed);
+}
+ReleasePage parse_release_page(const std::string& json, const std::string& repository, const std::string& installed) {
+    const auto root = Parser(json).parse();
+    if (root.kind != Json::Array || root.array.size() > 100) throw std::runtime_error("GitHub returned an invalid release page.");
+    ReleasePage page; page.count = root.array.size();
+    for (const auto& item : root.array) {
+        const auto candidate = release_object(item, repository, installed);
+        if (candidate && (!page.newest || release_version(candidate->tag) > release_version(page.newest->tag))) page.newest = candidate;
+    }
+    return page;
 }
 }

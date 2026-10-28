@@ -2,7 +2,7 @@
 
 Weighted smart shuffle for **AIMP 5.40 on Windows**. Give each track a weight to control how often it is chosen, add a cooldown to reduce repeats, and see why the next track was selected.
 
-[Download latest release](https://github.com/khivus/IgnorantShuffle/releases/latest) · [Changelog](CHANGELOG.md) · [MIT License](LICENSE)
+[Windows downloads](https://github.com/khivus/IgnorantShuffle/releases) · [Changelogs](CHANGELOG.md) · [MIT License](LICENSE)
 
 ## Features
 
@@ -16,7 +16,7 @@ Weighted smart shuffle for **AIMP 5.40 on Windows**. Give each track a weight to
 
 ## Quick start
 
-1. Download the **AIMP installer package (.aimppack)** from [Releases](https://github.com/khivus/IgnorantShuffle/releases/latest). It contains both x64 and x86 builds.
+1. Download the **AIMP installer package (.aimppack)** from a **Windows** entry in [Releases](https://github.com/khivus/IgnorantShuffle/releases). It contains both x64 and x86 builds. Historical `v...` releases are also Windows releases.
 2. Open it with AIMP or drop it onto AIMP's main window. Complete installation and restart if asked.
 3. Enable IgnorantShuffle in **Preferences → Plugins** if needed.
 4. Start playback and use **Track weights...** to assign weights. Unconfigured tracks default to **5**; change **Default weight** under **Weight storage...** to customize it.

@@ -1302,7 +1302,7 @@ struct PluginChecks {
         std::atomic<int> requests{0};
         std::atomic<bool> finish_check{false};
         Plugin plugin([&](const auto& url, auto, const auto& canceled, const auto&) {
-            check(url == "https://api.github.com/repos/" + std::string(ignorant::default_update_repository) + "/releases/latest", "Startup uses the configured default release source.");
+            check(url == "https://api.github.com/repos/" + std::string(ignorant::default_update_repository) + "/releases?per_page=100&page=1", "Startup uses the configured default release source.");
             ++requests;
             while (!finish_check.load() && !canceled.load()) Sleep(1);
             return ignorant::HttpReply{404, {}};
@@ -1444,9 +1444,9 @@ struct PluginChecks {
     static void update_settings_checks() {
         std::atomic<int> requests{0};
         Plugin plugin([&](const auto& url, auto, const auto&, const auto&) {
-            check(url.find("api.github.com/repos/example/shuffle/releases/latest") != std::string::npos, "Automatic checks may only fetch release metadata.");
+            check(url.find("api.github.com/repos/example/shuffle/releases?per_page=100&page=") != std::string::npos, "Automatic checks may only fetch release metadata.");
             ++requests;
-            const std::string json = "{\"tag_name\":\"v1.0.0\",\"assets\":[]}";
+            const std::string json = "[{\"tag_name\":\"v1.0.0\",\"assets\":[]}]";
             return ignorant::HttpReply{200, {json.begin(), json.end()}};
         });
         check(plugin.auto_updates_ && plugin.update_repository_ == ignorant::default_update_repository,
@@ -1496,7 +1496,7 @@ struct PluginChecks {
         std::atomic<int> downloads{0}; int launches = 0;
         Plugin plugin([&](const auto& url, auto, const auto&, const auto&) {
             if (url.find("api.github.com") == std::string::npos) { ++downloads; return ignorant::HttpReply{200, bytes}; }
-            const std::string json = "{\"tag_name\":\"v99.0.0\",\"assets\":[{\"name\":\"IgnorantShuffle-v99.0.0.aimppack\",\"state\":\"uploaded\",\"size\":8,\"digest\":\"sha256:" + ignorant::update_sha256(bytes) + "\",\"browser_download_url\":\"https://github.com/example/shuffle/releases/download/v99.0.0/IgnorantShuffle-v99.0.0.aimppack\"}]}";
+            const std::string json = "[{\"tag_name\":\"v99.0.0\",\"assets\":[{\"name\":\"IgnorantShuffle-v99.0.0.aimppack\",\"state\":\"uploaded\",\"size\":8,\"digest\":\"sha256:" + ignorant::update_sha256(bytes) + "\",\"browser_download_url\":\"https://github.com/example/shuffle/releases/download/v99.0.0/IgnorantShuffle-v99.0.0.aimppack\"}]}]";
             return ignorant::HttpReply{200, {json.begin(), json.end()}};
         }, [&](HWND owner, const ignorant::UpdateInstallCommand& command) {
             check(owner == host && !command.arguments.empty(), "Installer receives host and package."); ++launches;
