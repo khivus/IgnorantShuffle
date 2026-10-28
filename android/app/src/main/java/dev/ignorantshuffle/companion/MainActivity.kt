@@ -3,6 +3,7 @@ package dev.ignorantshuffle.companion
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.Context
 import android.os.Bundle
 import android.os.Build
 import android.Manifest
@@ -51,7 +52,11 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         monitor.log("Notification permission result: $granted"); monitor.refreshNotifications()
     }
-    private val export = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+    private val export = registerForActivityResult(object : ActivityResultContracts.CreateDocument("text/plain") {
+        override fun createIntent(context: Context, input: String): Intent = super.createIntent(context, input)
+            // The default MIME preserves the supplied .log extension; text/plain appends .txt.
+            .setType(if (exportKind == "log") "application/octet-stream" else "text/tab-separated-values")
+    }) { uri ->
         if (uri != null) {
             // The document picker can recreate this Activity. Rebuild the text
             // from app state rather than keeping a transient multi-MB string.

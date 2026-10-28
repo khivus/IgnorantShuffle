@@ -3,6 +3,7 @@
 Preview APK, versionCode **5**, bundled core **0.1.0**.
 
 - Show the next roll's weight on Player.
+- Preserve `.log` and `.tsv` extensions in Android's export picker.
 - Open Updates from the Android version button: read release notes, download with progress, then install using Android's installer.
 - Add daily foreground checks, manual checking, preview releases, Not now, Skip this version, cancellation and retry.
 - Keep verified downloads across Activity/process recreation and recheck them before installation. Android/core/Windows update channels remain independent.

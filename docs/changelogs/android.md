@@ -7,6 +7,7 @@ These entries do not imply published GitHub releases.
 ## Unreleased — 0.4.0 (versionCode 5)
 
 - Show the next roll's effective weight on the Player page.
+- Set export MIME types to preserve `.log` and `.tsv` filenames instead of appending `.txt`.
 - Add an update screen with release notes, Download/Install actions, progress/cancel/retry, Not now and Skip this version, inspired by Mihon's update presentation and the Carriex flow.
 - Check daily on foreground or manually; filter Android-only tags, offer optional previews, retain verified downloads, and hand off installation through Android's per-app permission and system installer.
 - Verify size/SHA256, package ID, exact release version, newer version code, Android compatibility, signing key and native ABI before installation. Add HTTPS update networking and user-triggered package installation permissions.
