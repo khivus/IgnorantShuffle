@@ -60,6 +60,20 @@ CooldownPool cooldown_pool(const std::vector<std::string>& tracks, const std::ve
     const std::vector<std::string>& recent, std::size_t cooldown);
 Selection choose_details(const std::vector<double>& weights, double unit);
 std::optional<std::size_t> choose(const std::vector<double>& weights, double unit);
+
+// Stateless adapter for callers without AIMP's native lookahead interface.
+// index always refers to the original input array. Only observed plays belong
+// in recent/played; previewing or rerolling does not consume a track.
+struct Plan {
+    std::optional<std::size_t> index;
+    Selection selection;
+    std::size_t blocked = 0;
+    bool cooldown_fallback = false;
+    std::size_t remaining = 0;
+};
+Plan plan_next(const std::vector<std::string>& keys, const std::vector<double>& weights,
+    const std::vector<std::string>& recent, const std::vector<std::string>& played,
+    std::size_t cooldown, bool finite, const std::string& avoid, double unit);
 template<class Generator>
 std::optional<std::size_t> choose(const std::vector<double>& weights, Generator& generator) {
     return choose(weights, std::generate_canonical<double, 53>(generator));
