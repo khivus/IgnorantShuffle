@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.22)
+project(ignorant_shuffle_android LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../.." ABSOLUTE)
+add_library(ignorant_shuffle SHARED bridge.cpp "${REPO_ROOT}/src/selection.cpp")
+target_include_directories(ignorant_shuffle PRIVATE "${REPO_ROOT}/src")
+target_compile_options(ignorant_shuffle PRIVATE -Wall -Wextra)

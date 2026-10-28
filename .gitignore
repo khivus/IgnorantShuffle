@@ -3,3 +3,10 @@
 /.vs/
 /dist/
 *.user
+**/.gradle/
+**/.kotlin/
+**/.cxx/
+**/build/
+**/.idea/
+**/local.properties
+*.iml
