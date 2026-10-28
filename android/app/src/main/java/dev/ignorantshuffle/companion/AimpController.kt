@@ -44,6 +44,7 @@ class AimpController(private val context: Context) {
     private val preferenceStore = PreferenceStore(context)
     private val model = ShuffleModel(NativePlanner())
     private val journal = DiagnosticJournal(context.filesDir)
+    private val notifications = RollNotifications(context) { log(it) }
     private val runId = UUID.randomUUID().toString().take(8)
     private val power = context.getSystemService(PowerManager::class.java)
     private val wake by lazy {
@@ -66,6 +67,8 @@ class AimpController(private val context: Context) {
     var rollSequence by mutableStateOf(0L); private set
     var rollReason by mutableStateOf("No roll yet"); private set
     var logError by mutableStateOf<String?>(null); private set
+    var notificationStatus by mutableStateOf("Next-roll notifications are off"); private set
+    var notificationsAllowed by mutableStateOf(false); private set
     var automatic by mutableStateOf(false); private set
     var automaticStatus by mutableStateOf("Timed automatic mode is off"); private set
     var status by mutableStateOf("Grant notification access, then start music in AIMP"); private set
@@ -108,6 +111,16 @@ class AimpController(private val context: Context) {
         if (!value.logging) log("Automatic logging disabled by user")
         preferences = value
         if (value.logging) log("App preferences updated: $value")
+        refreshNotifications()
+    }
+
+    fun refreshNotifications() {
+        notificationsAllowed = notifications.allowed()
+        if (!connected || storageError != null) {
+            notifications.clear()
+            notificationStatus = if (preferences.notifyRoll) "Waiting for a connected AIMP session" else "Next-roll notifications are off"
+        } else notificationStatus = notifications.render(preferences, preview, preview.track?.let(::weight) ?: 0.0,
+            settings, automatic, rollSequence)
     }
 
     private val environment = object : BroadcastReceiver() {
@@ -165,6 +178,8 @@ class AimpController(private val context: Context) {
         native = null; callback = null; connected = false; actions = 0
         model.disconnect(); tracks = emptyList(); playback = Playback(); preview = Choice(null); canPrevious = false
         status = reason
+        notifications.clear()
+        notificationStatus = if (preferences.notifyRoll) "Waiting for a connected AIMP session" else "Next-roll notifications are off"
         log(reason)
     }
 
@@ -235,6 +250,7 @@ class AimpController(private val context: Context) {
             publishedSequence = model.choiceSequence; rollSequence = publishedSequence; rollReason = reason
             log("ROLL #$rollSequence reason=$reason; source=${playback.track}; choice=$preview; settings=$settings; targetWeight=${preview.track?.let(::weight)}")
         }
+        refreshNotifications()
     }
 
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
@@ -336,6 +352,7 @@ class AimpController(private val context: Context) {
         automatic = true
         log("USER ENABLED timed shuffle; lead=${EndTiming.LEAD_MS}ms; CPU protection while playing; no queue insertion")
         read()
+        refreshNotifications()
     }
 
     private fun disableAutomatic(reason: String) {
@@ -343,6 +360,7 @@ class AimpController(private val context: Context) {
         if (automatic) log(reason)
         automatic = false; automaticStatus = reason
         cpu.update(false)
+        refreshNotifications()
     }
 
     private fun timing() = TimingSnapshot(playback.track?.key, playback.state, playback.position,

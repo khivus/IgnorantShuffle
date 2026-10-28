@@ -4,6 +4,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Bundle
+import android.os.Build
+import android.Manifest
+import android.content.pm.PackageManager
 import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,6 +26,9 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     private val monitor get() = (application as ShuffleApplication).controller
     private var exportText = ""
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        monitor.log("Notification permission result: $granted"); monitor.refreshNotifications()
+    }
     private val export = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         if (uri != null) {
             val text = exportText
@@ -60,11 +66,11 @@ class MainActivity : ComponentActivity() {
                 ShuffleScreen(monitor, ::openSettings, ::openAimp, ::copySummary,
                     { exportText = monitor.report(true); export.launch("IgnorantShuffle-log.txt") },
                     { exportText = monitor.exportWeights(); export.launch("IgnorantShuffle-Android.weights.tsv") },
-                    { import.launch(arrayOf("text/*", "application/octet-stream")) })
+                    { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications)
             } }
         }
     }
-    override fun onResume() { super.onResume(); monitor.log("Activity resumed"); monitor.refresh() }
+    override fun onResume() { super.onResume(); monitor.log("Activity resumed"); monitor.refresh(); monitor.refreshNotifications() }
     override fun onStop() { monitor.log("Activity backgrounded"); super.onStop() }
     private fun openSettings() { runCatching { startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.onFailure { monitor.log("Settings error: $it") } }
     private fun openAimp() {
@@ -76,11 +82,16 @@ class MainActivity : ComponentActivity() {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("IgnorantShuffle", monitor.report().take(200_000)))
         monitor.log("Summary copied")
     }
+    private fun requestNotifications() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        else startActivity(Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(AndroidSettings.EXTRA_APP_PACKAGE, packageName))
+    }
 }
 
 @Composable
 private fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () -> Unit, copy: () -> Unit,
-    exportLog: () -> Unit, exportWeights: () -> Unit, importWeights: () -> Unit) {
+    exportLog: () -> Unit, exportWeights: () -> Unit, importWeights: () -> Unit, requestNotifications: () -> Unit) {
     var search by rememberSaveable { mutableStateOf("") }
     var editing by remember { mutableStateOf<Track?>(null) }
     var default by remember(m.settings) { mutableStateOf(m.settings.defaultWeight.toString()) }
@@ -151,6 +162,27 @@ private fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () 
                     OutlinedButton(onClick = exportWeights) { Text("Export weights") }
                 }
                 Text("Weights are saved locally. Android keys include exposed ID + title/artist. Library edits can require reassignment; Windows file paths are not mapped automatically.")
+                Row {
+                    Switch(m.preferences.notifyRoll, {
+                        m.changePreferences(m.preferences.copy(notifyRoll = it))
+                        if (it && !m.notificationsAllowed) requestNotifications()
+                    })
+                    Text("Next-roll notification", Modifier.padding(start = 8.dp, top = 12.dp))
+                }
+                Text(m.notificationStatus)
+                if (m.preferences.notifyRoll && !m.notificationsAllowed) TextButton(onClick = requestNotifications) { Text("Allow notifications / Android settings") }
+                val stats = m.preferences.stats
+                listOf("Artist" to stats.artist, "Weight" to stats.weight, "Chance" to stats.chance,
+                    "Pool counts" to stats.pool, "Cooldown" to stats.cooldown, "Remaining" to stats.remaining, "Mode" to stats.mode).forEachIndexed { index, item ->
+                    Row { Checkbox(item.second, { enabled ->
+                        val next = when (index) {
+                            0 -> stats.copy(artist = enabled); 1 -> stats.copy(weight = enabled); 2 -> stats.copy(chance = enabled)
+                            3 -> stats.copy(pool = enabled); 4 -> stats.copy(cooldown = enabled)
+                            5 -> stats.copy(remaining = enabled); else -> stats.copy(mode = enabled)
+                        }
+                        m.changePreferences(m.preferences.copy(stats = next))
+                    }); Text("Notification: ${item.first}", Modifier.padding(top = 12.dp)) }
+                }
                 HorizontalDivider()
                 Text("AIMP queue · ${m.tracks.size} entries", style = MaterialTheme.typography.titleMedium)
                 if (m.connected && m.tracks.isEmpty()) Text("AIMP exposes no selectable queue. Start music or choose another playlist in AIMP, then refresh.")
