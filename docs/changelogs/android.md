@@ -4,6 +4,12 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.4.1 (versionCode 6)
+
+- Move the updater out of the crowded title row into a full-width tap target with wrapping text.
+- Label versions as `App v0.4.1 · Core v0.1.0` and show a clear `Tap to check updates` hint underneath. Tapping checks for updates, or opens an existing update/download.
+- Save the automatic shuffle toggle across relaunches, default it to enabled, and restore it when AIMP reconnects. Explicit off choices remain off; commands still require valid playback timing.
+
 ## 0.4.0 (versionCode 5)
 
 - Show the next roll's effective weight on the Player page.

@@ -81,8 +81,12 @@ Purple, Rose and Green. Choices apply and save immediately, without rerolling.
 
 ## Timed playback and screen-off protection
 
-**Experimental timed automatic mode** is off by default and on every process start.
-When explicitly enabled it switches before the estimated track end using the lead
+**Experimental timed automatic mode** is enabled by default. Its toggle is saved
+across relaunches, including an explicit off choice. Older installs without a
+saved choice adopt the enabled default. It resumes when notification access and
+an AIMP session with valid track timing are available; it does not start AIMP or
+unpause music. Errors still stop the current timed run and appear in diagnostics.
+When enabled it switches before the estimated track end using the lead
 configured in **Shuffle > Automatic switch timing**. The default is **300ms**;
 choose **0–5000ms**, with 0/50/100/300 presets. Smaller values preserve more of
 the ending but give AIMP more opportunity to advance first. Zero means the

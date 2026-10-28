@@ -42,9 +42,9 @@ internal fun UpdatesScreen(updates: AppUpdates, install: () -> Unit, browser: ()
                         UpdatePhase.CHECKING -> "Checking for updates"
                         else -> "Keep IgnorantShuffle updated"
                     }, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    if (release != null) Text("Android ${release.version}${if (release.preview) " · Preview" else ""}",
+                    if (release != null) Text("App v${release.version}${if (release.preview) " · Preview" else ""}",
                         style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-                    Text("Installed Android ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Core ${remember { ShuffleNative.coreVersion() }}",
+                    Text("Installed App v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Core v${remember { ShuffleNative.coreVersion() }}",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(updates.notice, style = MaterialTheme.typography.bodyMedium)
                     if (updates.phase == UpdatePhase.DOWNLOADING) {

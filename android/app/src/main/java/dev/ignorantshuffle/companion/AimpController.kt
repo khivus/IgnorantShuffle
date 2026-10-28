@@ -94,6 +94,9 @@ class AimpController(private val context: Context) {
         events = journal.tail()
         runCatching { preferenceStore.load() }.onSuccess { preferences = it }
             .onFailure { log("Preference read failed; using defaults: $it") }
+        automatic = preferences.automatic
+        automaticStatus = if (automatic) "Waiting for a connected AIMP session" else "Timed automatic mode is off"
+        log("Restored automatic preference: ${preferences.automatic}")
         log("PROCESS START; IgnorantShuffle Android ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}); Core ${ShuffleNative.coreVersion()}; Android ${Build.VERSION.RELEASE}; ${Build.MANUFACTURER} ${Build.MODEL}")
         try {
             val loaded = store.load()
@@ -175,6 +178,8 @@ class AimpController(private val context: Context) {
         }
         c.registerCallback(cb, handler)
         native = c; callback = cb; connected = true
+        automatic = preferences.automatic
+        automaticStatus = if (automatic) "Waiting for playable track timing" else "Timed automatic mode is off"
         status = "Connected to AIMP; ${matches.size} session(s)"
         log(status)
         val aimpVersion = runCatching { context.packageManager.getPackageInfo("com.aimp.player", 0).versionName }.getOrNull()
@@ -183,10 +188,12 @@ class AimpController(private val context: Context) {
     }
 
     private fun detach(reason: String) {
-        disableAutomatic("Timed mode stopped: $reason")
         if (pending) finish("INCONCLUSIVE: $reason")
+        disableAutomatic(if (preferences.automatic) "Timed mode waiting for AIMP: $reason" else "Timed automatic mode is off")
         native?.let { c -> callback?.let { cb -> runCatching { c.unregisterCallback(cb) } } }
         native = null; callback = null; connected = false; actions = 0
+        // Disconnect cancels work, not the user's saved on/off choice.
+        automatic = preferences.automatic
         model.disconnect(); tracks = emptyList(); playback = Playback(); preview = Choice(null); canPrevious = false
         status = reason
         notifications.clear()
@@ -392,8 +399,12 @@ class AimpController(private val context: Context) {
     }
 
     fun changeAutomatic(enabled: Boolean) = guarded {
+        if (enabled) check(connected && permission && storageError == null && !pending && !folder.blocked) { "Connect AIMP and finish loading/current commands first" }
+        val saved = preferences.copy(automatic = enabled)
+        preferenceStore.save(saved)
+        preferences = saved
+        log("USER saved timed automatic preference=$enabled")
         if (!enabled) { disableAutomatic("Timed automatic mode is off"); return@guarded }
-        check(connected && permission && storageError == null && !pending && !folder.blocked) { "Connect AIMP and finish loading/current commands first" }
         automatic = true
         log("USER ENABLED timed shuffle; lead=${preferences.leadMs}ms; CPU protection while playing; no queue insertion")
         read()
@@ -414,7 +425,7 @@ class AimpController(private val context: Context) {
     private fun scheduleTimer() {
         handler.removeCallbacks(endTimer); scheduled = null
         sustainCpu()
-        if (!automatic || pending || folder.blocked) return
+        if (!automatic || !connected || !permission || storageError != null || pending || folder.blocked) return
         val delay = EndTiming.delayMillis(timing(), SystemClock.elapsedRealtime(), preferences.leadMs)
         if (delay == null) {
             automaticStatus = "Waiting for PLAYING state with a known track, position, speed and duration"
@@ -430,7 +441,8 @@ class AimpController(private val context: Context) {
     private fun sustainCpu() {
         // AIMP can briefly report PAUSED/BUFFERING during the requested handoff.
         // Keep the bounded command-confirmation window awake through that state.
-        cpu.update(CpuProtection.needed(automatic, pending, timing(), SystemClock.elapsedRealtime(), preferences.leadMs))
+        val ready = automatic && connected && permission && storageError == null && !folder.blocked
+        cpu.update(CpuProtection.needed(ready, pending, timing(), SystemClock.elapsedRealtime(), preferences.leadMs))
     }
 
     private val endTimer = Runnable {

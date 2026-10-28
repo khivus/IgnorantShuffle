@@ -9,7 +9,8 @@ data class RollStats(val artist: Boolean = true, val weight: Boolean = true, val
     val pool: Boolean = false, val cooldown: Boolean = false, val remaining: Boolean = false, val mode: Boolean = false)
 data class AppPreferences(val logging: Boolean = true, val theme: ThemeMode = ThemeMode.SYSTEM,
     val accent: Accent = Accent.ORANGE, val notifyRoll: Boolean = false, val stats: RollStats = RollStats(),
-    val notificationVisibility: RollVisibility = RollVisibility.ALWAYS, val leadMs: Long = EndTiming.LEAD_MS)
+    val notificationVisibility: RollVisibility = RollVisibility.ALWAYS, val leadMs: Long = EndTiming.LEAD_MS,
+    val automatic: Boolean = true)
 
 enum class RollVisibility(val label: String) {
     ALWAYS("Always while connected"), PLAYING_OR_PAUSED("Playing or paused"), PLAYING_ONLY("Playing only");

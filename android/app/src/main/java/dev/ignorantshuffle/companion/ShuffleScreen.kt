@@ -47,15 +47,21 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                         style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Column(horizontalAlignment = Alignment.End) {
-                TextButton(onClick = updates::open, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp)) {
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("Android ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall)
-                        Text(if (updates.release != null) "Update available" else "Updates", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-                Text("Core ${remember { ShuffleNative.coreVersion() }}", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Surface(
+            onClick = { if (updates.release != null || updates.busy) updates.open() else updates.check(true) },
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow
+        ) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("App v${BuildConfig.VERSION_NAME} · Core v${remember { ShuffleNative.coreVersion() }}",
+                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Text(when {
+                    updates.busy -> "Update in progress · tap to view"
+                    updates.downloaded != null -> "Update ready · tap to view"
+                    updates.release != null -> "Update available · tap to view"
+                    else -> "Tap to check updates"
+                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
         }
         PrimaryScrollableTabRow(selectedTabIndex = pager.currentPage, edgePadding = 12.dp,
