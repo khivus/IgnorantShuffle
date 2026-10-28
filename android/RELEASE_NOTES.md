@@ -1,15 +1,14 @@
-# IgnorantShuffle Android v0.3.0
+# IgnorantShuffle Android v0.4.0
 
-Preview APK, versionCode **4**, bundled core **0.1.0**.
+Preview APK, versionCode **5**, bundled core **0.1.0**.
 
-- Configure automatic-switch timing from 0 to 5000 ms; the default remains 300 ms.
-- Share the main music folder's global TSV with Windows using real relative paths and explicit links for ambiguous AIMP entries. Shared mode is preferred by default after choosing a folder.
-- Reload synchronized weights, migrate missing local values, and protect saves with verified temporary files and backup/rollback.
-- Hide next-roll notifications while paused/stopped, or keep them visible while paused.
-- Use Player, Shuffle, Playlist, Alerts, Theme and Logs tabs in that order.
-- Export logs with a dated `.log` filename and date/time header.
+- Show the next roll's weight on Player.
+- Open Updates from the Android version button: read release notes, download with progress, then install using Android's installer.
+- Add daily foreground checks, manual checking, preview releases, Not now, Skip this version, cancellation and retry.
+- Keep verified downloads across Activity/process recreation and recheck them before installation. Android/core/Windows update channels remain independent.
+- Update checks use GitHub HTTPS. Downloading and opening the installer require user actions; music-folder control has no backend.
 
-Release tag: `android/v0.3.0`. Assets: `IgnorantShuffle-Android-v0.3.0-debug.apk`
+Release tag: `android/v0.4.0`. Assets: `IgnorantShuffle-Android-v0.4.0-debug.apk`
 and `SHA256SUMS-Android.txt`, built with `tools/build-android.ps1`.
 
 Copy the APK to the phone and open it in a file manager. Keep the signing key used

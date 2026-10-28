@@ -4,7 +4,14 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
-## Unreleased — 0.3.0 (versionCode 4)
+## Unreleased — 0.4.0 (versionCode 5)
+
+- Show the next roll's effective weight on the Player page.
+- Add an update screen with release notes, Download/Install actions, progress/cancel/retry, Not now and Skip this version, inspired by Mihon's update presentation and the Carriex flow.
+- Check daily on foreground or manually; filter Android-only tags, offer optional previews, retain verified downloads, and hand off installation through Android's per-app permission and system installer.
+- Verify size/SHA256, package ID, exact release version, newer version code, Android compatibility, signing key and native ABI before installation. Add HTTPS update networking and user-triggered package installation permissions.
+
+## 0.3.0 (versionCode 4)
 
 - Prefer a selected music folder's Windows-compatible global TSV; index actual files, match unique tags and provide manual links for ambiguous queue entries.
 - Reload synchronized weights on foreground/manual refresh, copy missing local values without replacing shared exclusions, and verify saves with temporary files and backup/rollback on a background worker.

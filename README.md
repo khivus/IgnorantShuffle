@@ -52,6 +52,7 @@ queue extension. See [the platform design](docs/android-design.md) for the bound
 | [Building](docs/building.md) | Windows toolchain, official AIMP SDK, build commands, and DLL paths. |
 | [Testing](docs/testing.md) | Automated coverage and checks that still need a live AIMP session. |
 | [Releasing](docs/releasing.md) | Package layout, release assets, updater requirements, and publishing. |
+| [Android updates](docs/android-updates.md) | Release-note screen, download/install flow, Android tags and signing requirements. |
 
 Both x64 and x86 builds have automated coverage for shuffle behavior, storage, logging, the AIMP adapter, and updates. See [Testing](docs/testing.md) for verification limits.
 

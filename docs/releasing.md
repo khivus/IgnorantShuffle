@@ -100,6 +100,10 @@ partial publication without replacing assets. It never publishes Android/core.
 3. Verify playback on a phone. Use the same signing key as previous installs. CI debug APKs have a temporary key and cannot generally update local builds.
 4. Commit the intended changes. When ready to publish, create an annotated `android/vX.Y.Z` tag at that commit and a GitHub release named **IgnorantShuffle Android vX.Y.Z**. Use Android's release notes and attach only its APK and `SHA256SUMS-Android.txt`.
 
+Android's in-app updater recognizes those Android tags and APK names, requires
+GitHub's completed SHA256 asset digest, and checks the installed signing key and
+newer version code. See the [Android updater release contract](android-updates.md#release-contract).
+
 The current build helper produces a debug-signed preview, explicitly named
 `IgnorantShuffle-Android-vX.Y.Z-debug.apk`. It does not configure a production
 signing key or publish. Preserve the preview key for updates, or establish stable

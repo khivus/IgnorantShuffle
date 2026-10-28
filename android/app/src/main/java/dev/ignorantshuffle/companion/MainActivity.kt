@@ -16,11 +16,26 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.LaunchedEffect
+import androidx.core.content.FileProvider
+import android.net.Uri
 import java.io.ByteArrayOutputStream
 
 class MainActivity : ComponentActivity() {
     private val monitor get() = (application as ShuffleApplication).controller
+    private val updates get() = (application as ShuffleApplication).updates
     private var exportKind = "log"
+    private var installAfterPermission = false
+    private val installAccess = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (installAfterPermission) {
+            if (packageManager.canRequestPackageInstalls()) {
+                if (!updates.busy) { installAfterPermission = false; updates.prepareInstall() }
+            } else {
+                installAfterPermission = false
+                updates.installProblem("Installation permission was not granted. Tap Install update to try again")
+            }
+        }
+    }
     private val musicFolder = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { reply ->
         val uri = reply.data?.data
         if (reply.resultCode == RESULT_OK && uri != null) {
@@ -70,23 +85,50 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         exportKind = savedInstanceState?.getString("exportKind") ?: "log"
+        installAfterPermission = savedInstanceState?.getBoolean("installAfterPermission") ?: false
         enableEdgeToEdge()
         setContent {
             ShuffleTheme(monitor.preferences, window) { Surface(Modifier.fillMaxSize()) {
                 ShuffleScreen(monitor, ::openSettings, ::openAimp, ::copySummary,
                     { exportKind = "log"; export.launch(LogExport.filename()) },
                     { exportKind = "weights"; export.launch("IgnorantShuffle-Android.weights.tsv") },
-                    { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications, ::chooseMusicFolder)
+                    { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications, ::chooseMusicFolder, updates)
+                if (updates.visible) UpdatesScreen(updates, updates::prepareInstall, ::openUpdateRelease)
+                LaunchedEffect(updates.installRequest) {
+                    updates.takeInstallRequest()?.let { file ->
+                        if (!packageManager.canRequestPackageInstalls()) {
+                            updates.installProblem("Allow installs from IgnorantShuffle in Android settings, then return")
+                            installAfterPermission = true
+                            runCatching { installAccess.launch(Intent(AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
+                                .onFailure { installAfterPermission = false; updates.installProblem("Cannot open installation settings: ${it.message}") }
+                        } else runCatching {
+                            val uri = FileProvider.getUriForFile(this@MainActivity, "$packageName.updates", file)
+                            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply { clipData = ClipData.newRawUri("Android update", uri) })
+                            updates.installerOpened()
+                        }.onFailure { updates.installProblem("Cannot open Android's installer: ${it.message}") }
+                    }
+                }
+                LaunchedEffect(updates.phase) {
+                    if (installAfterPermission && updates.phase == UpdatePhase.READY && packageManager.canRequestPackageInstalls()) {
+                        installAfterPermission = false; updates.prepareInstall()
+                    }
+                }
             } }
         }
     }
-    override fun onResume() { super.onResume(); monitor.log("Activity resumed"); monitor.refresh(); monitor.refreshNotifications(); monitor.reloadSharedWeights() }
+    override fun onResume() { super.onResume(); monitor.log("Activity resumed"); monitor.refresh(); monitor.refreshNotifications(); monitor.reloadSharedWeights(); updates.onForeground() }
     override fun onStop() { monitor.log("Activity backgrounded"); super.onStop() }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("exportKind", exportKind)
+        outState.putBoolean("installAfterPermission", installAfterPermission)
         super.onSaveInstanceState(outState)
     }
     private fun openSettings() { runCatching { startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.onFailure { monitor.log("Settings error: $it") } }
+    private fun openUpdateRelease() {
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updates.release?.pageUrl ?: AndroidReleases.releasesUrl))) }
+            .onFailure { updates.installProblem("Cannot open release page: ${it.message}") }
+    }
     private fun chooseMusicFolder() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
             Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)

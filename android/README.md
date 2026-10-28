@@ -39,6 +39,21 @@ Use Smart Next/Previous in the companion for weighted selection. Headset, AIMP,
 and lock-screen Next remain under AIMP's own control. Queue editing is not used.
 The first version cannot provide Windows's native pre-playback queue hook.
 
+## App updates
+
+Tap **Android version / Updates** at the top right for release notes, Download,
+Install, progress/cancel/retry, Not now and Skip this version. Checks run daily
+when the app comes to the foreground, or manually. Preview inclusion is optional
+(on by default for this debug preview). Only `android/v...` releases are considered;
+Windows and core releases are ignored. No Android release is offered until its
+tagged GitHub release and compatible APK asset have been published.
+
+Downloads and installation are user-triggered. APK size/checksum, version,
+package, signing key and native ABI are checked. A verified download is cached
+across restarts. Android may ask to allow installation from IgnorantShuffle, then
+shows its installer. No installation success is assumed just from opening it.
+See [update behavior, release requirements and phone checks](../docs/android-updates.md).
+
 ## Shared music-folder file
 
 Shared weights are configured under **Shuffle > Music-folder weights**. Choose
@@ -129,7 +144,10 @@ retesting is necessary to establish the fix on a particular device/OEM.
 
 Logs are private, bounded, and exportable through Android's file picker. Imports
 merge transactionally. Audio files are read inside the system-picked folder grant;
-no broad storage/media, network, accessibility, or root permission is requested.
+no broad storage/media, accessibility, or root permission is requested.
+INTERNET supports GitHub update checks/downloads and REQUEST_INSTALL_PACKAGES
+supports user-approved updates; disable automatic checks in Updates for offline
+use. No music files or weights are sent to GitHub.
 WAKE_LOCK is used for timed CPU protection, and
 POST_NOTIFICATIONS is optional. Only AIMP session information is used; notification
 contents are not inspected. No AIMP APK modification is performed.
@@ -168,3 +186,6 @@ new APK has been tested on a phone.
     audible transitions, and notification visibility during play/pause/stop.
 11. Export the full `.log` and report what you heard. Actual JNI loading, service
    survival and AIMP response cannot be established by desktop tests.
+12. Open Updates and test manual/daily checks, previews and Skip. With a newer
+    same-key Android release, test download cancellation/retry, rotation, cache
+    restoration, install-permission denial/grant and canceled/completed installation.

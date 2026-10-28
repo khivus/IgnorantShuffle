@@ -26,7 +26,10 @@ import androidx.compose.runtime.setValue
 import java.time.ZonedDateTime
 import java.util.UUID
 
-class ShuffleApplication : Application() { val controller by lazy { AimpController(this) } }
+class ShuffleApplication : Application() {
+    val controller by lazy { AimpController(this) }
+    val updates by lazy { AppUpdates(this) { controller.log(it) } }
+}
 class SessionAccessService : NotificationListenerService() {
     private val controller get() = (application as ShuffleApplication).controller
     override fun onListenerConnected() { super.onListenerConnected(); controller.log("Notification listener connected"); controller.refresh() }
@@ -469,6 +472,7 @@ class AimpController(private val context: Context) {
     fun savedEvents(): List<String> = journal.contents().lineSequence().filter(String::isNotBlank).toList()
     fun report(full: Boolean = false): String = buildString {
         appendLine("Diagnostic export: ${ZonedDateTime.now()}")
+        appendLine((context.applicationContext as ShuffleApplication).updates.snapshot())
         appendLine("IgnorantShuffle Android ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}); Core ${ShuffleNative.coreVersion()}\n$status\n$settings\n$playback\nPreview: $preview\nResult: $result")
         appendLine("Preferences: $preferences; log error: ${journal.failure}; roll=$rollSequence reason=$rollReason")
         appendLine("Scheduled: $scheduled; screen=${power.isInteractive}; idle=${power.isDeviceIdleMode}")

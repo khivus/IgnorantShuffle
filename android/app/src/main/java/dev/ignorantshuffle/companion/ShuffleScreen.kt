@@ -29,7 +29,7 @@ private val pages = listOf("Player", "Shuffle", "Playlist", "Alerts", "Theme", "
 @Composable
 internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () -> Unit, copy: () -> Unit,
     exportLog: () -> Unit, exportWeights: () -> Unit, importWeights: () -> Unit, requestNotifications: () -> Unit,
-    chooseMusicFolder: () -> Unit) {
+    chooseMusicFolder: () -> Unit, updates: AppUpdates) {
     val pager = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Track?>(null) }
@@ -47,8 +47,16 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                         style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Text("Android ${BuildConfig.VERSION_NAME}\nCore ${remember { ShuffleNative.coreVersion() }}",
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = updates::open, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp)) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("Android ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall)
+                        Text(if (updates.release != null) "Update available" else "Updates", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                Text("Core ${remember { ShuffleNative.coreVersion() }}", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         PrimaryScrollableTabRow(selectedTabIndex = pager.currentPage, edgePadding = 12.dp,
             containerColor = MaterialTheme.colorScheme.background) {

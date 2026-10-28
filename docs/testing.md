@@ -43,6 +43,12 @@ Core tests exercise weighted selection without replacement over 10,000 complete 
 
 ### Updater
 
+Android updater tests cover component-tag isolation, numeric versions,
+preview/skip/daily policy, asset/URL/digest validation, wrong package/signing-key/
+version/Android requirements, truncated/corrupt/oversized downloads, cancellation,
+and actual HTTP streaming plus rejected redirects against localhost. Android's
+system installer and permission page require the [phone checks](android-updates.md#phone-checks).
+
 Shared-folder checks also exercise a single UTF-8 TSV fixture in Windows and
 Android, conservative/ambiguous file matching, source preservation after queue
 additions, provider renames that change document IDs, failed temporary verification,
