@@ -41,9 +41,9 @@ The first version cannot provide Windows's native pre-playback queue hook.
 
 ## Swipeable categories and appearance
 
-Swipe left/right or tap the tabs: **Player**, **Tracks**, **Shuffle**, **Alerts**,
+Swipe left/right or tap the tabs: **Player**, **Shuffle**, **Playlist**, **Alerts**,
 **Theme**, **Logs**. Each category scrolls independently. Player contains the
-current song, committed next roll and playback controls; Tracks contains search
+current song, committed next roll and playback controls; Playlist contains search
 and weight editing; Shuffle contains default weight/cooldown/finite-pass rules.
 
 Theme offers System, Light and Dark, plus AIMP orange (default), Blue, Teal,
@@ -52,7 +52,13 @@ Purple, Rose and Green. Choices apply and save immediately, without rerolling.
 ## Timed playback and screen-off protection
 
 **Experimental timed automatic mode** is off by default and on every process start.
-When explicitly enabled it switches about **300ms before the estimated track end**.
+When explicitly enabled it switches before the estimated track end using the lead
+configured in **Shuffle > Automatic switch timing**. The default is **300ms**;
+choose **0–5000ms**, with 0/50/100/300 presets. Smaller values preserve more of
+the ending but give AIMP more opportunity to advance first. Zero means the
+estimated end, not a guarantee of a seamless transition. The timer and handoff
+validation use the same captured lead. Compare the timer/observed-result log when
+trying smaller leads on your phone.
 It may clip the ending, miss a switch if Android delays the handler, or differ from
 AIMP crossfade timing. It uses no queue insertion or audio foreground service.
 To keep Handler deadlines from being deferred by CPU sleep, a partial CPU wake

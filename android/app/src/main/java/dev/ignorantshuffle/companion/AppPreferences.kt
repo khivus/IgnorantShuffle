@@ -8,4 +8,14 @@ enum class Accent(val argb: Long, val label: String) {
 data class RollStats(val artist: Boolean = true, val weight: Boolean = true, val chance: Boolean = true,
     val pool: Boolean = false, val cooldown: Boolean = false, val remaining: Boolean = false, val mode: Boolean = false)
 data class AppPreferences(val logging: Boolean = true, val theme: ThemeMode = ThemeMode.SYSTEM,
-    val accent: Accent = Accent.ORANGE, val notifyRoll: Boolean = false, val stats: RollStats = RollStats())
+    val accent: Accent = Accent.ORANGE, val notifyRoll: Boolean = false, val stats: RollStats = RollStats(),
+    val notificationVisibility: RollVisibility = RollVisibility.ALWAYS, val leadMs: Long = EndTiming.LEAD_MS)
+
+enum class RollVisibility(val label: String) {
+    ALWAYS("Always while connected"), PLAYING_OR_PAUSED("Playing or paused"), PLAYING_ONLY("Playing only");
+    fun allows(state: Int): Boolean = when (this) {
+        ALWAYS -> true
+        PLAYING_OR_PAUSED -> state == 3 || state == 2
+        PLAYING_ONLY -> state == 3
+    }
+}

@@ -62,7 +62,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             ShuffleTheme(monitor.preferences, window) { Surface(Modifier.fillMaxSize()) {
                 ShuffleScreen(monitor, ::openSettings, ::openAimp, ::copySummary,
-                    { exportKind = "log"; export.launch("IgnorantShuffle-log.txt") },
+                    { exportKind = "log"; export.launch(LogExport.filename()) },
                     { exportKind = "weights"; export.launch("IgnorantShuffle-Android.weights.tsv") },
                     { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications)
             } }

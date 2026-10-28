@@ -6,7 +6,7 @@ belongs to its component; it does not need to match either of the others.
 | Component | Single version source | Current development version | Release tag |
 | --- | --- | --- | --- |
 | Windows AIMP plugin | [windows.properties](../versions/windows.properties) | 0.11.1 | `windows/v0.11.1` |
-| Android companion | [android.properties](../versions/android.properties) | 0.2.1, code 3 | `android/v0.2.1` |
+| Android companion | [android.properties](../versions/android.properties) | 0.3.0, code 4 | `android/v0.3.0` |
 | Shared C++ selection core | [core.properties](../versions/core.properties) | 0.1.0 | `core/v0.1.0` |
 
 These are source/build versions, not a statement that a release has been published.

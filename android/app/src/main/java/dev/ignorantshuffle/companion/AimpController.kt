@@ -107,11 +107,14 @@ class AimpController(private val context: Context) {
     }
 
     fun changePreferences(value: AppPreferences) = guarded {
+        if (value.leadMs != preferences.leadMs) check(!pending) { "Wait for the pending playback command" }
+        val timingChanged = value.leadMs != preferences.leadMs
         preferenceStore.save(value)
         if (!value.logging) log("Automatic logging disabled by user")
         preferences = value
         if (value.logging) log("App preferences updated: $value")
         refreshNotifications()
+        if (timingChanged) { log("Automatic switch lead changed to ${value.leadMs}ms"); scheduleTimer() }
     }
 
     fun refreshNotifications() {
@@ -120,7 +123,7 @@ class AimpController(private val context: Context) {
             notifications.clear()
             notificationStatus = if (preferences.notifyRoll) "Waiting for a connected AIMP session" else "Next-roll notifications are off"
         } else notificationStatus = notifications.render(preferences, preview, preview.track?.let(::weight) ?: 0.0,
-            settings, automatic, rollSequence)
+            settings, automatic, rollSequence, playback.state)
     }
 
     private val environment = object : BroadcastReceiver() {
@@ -321,7 +324,7 @@ class AimpController(private val context: Context) {
         if (pending) return@guarded
         val c = native ?: error("No AIMP session")
         read(); check(granted())
-        if (expectedSource != null && !EndTiming.due(timing(), expectedSource, SystemClock.elapsedRealtime())) {
+        if (expectedSource != null && !EndTiming.due(timing(), expectedSource, SystemClock.elapsedRealtime(), preferences.leadMs)) {
             log("Timed pause cancelled: source/timing changed during revalidation"); return@guarded
         }
         check(supportsBasic(play)) { "AIMP does not advertise this command" }
@@ -353,7 +356,7 @@ class AimpController(private val context: Context) {
         if (!enabled) { disableAutomatic("Timed automatic mode is off"); return@guarded }
         check(connected && permission && storageError == null && !pending) { "Connect AIMP and finish the current command first" }
         automatic = true
-        log("USER ENABLED timed shuffle; lead=${EndTiming.LEAD_MS}ms; CPU protection while playing; no queue insertion")
+        log("USER ENABLED timed shuffle; lead=${preferences.leadMs}ms; CPU protection while playing; no queue insertion")
         read()
         refreshNotifications()
     }
@@ -373,14 +376,14 @@ class AimpController(private val context: Context) {
         handler.removeCallbacks(endTimer); scheduled = null
         sustainCpu()
         if (!automatic || pending) return
-        val delay = EndTiming.delayMillis(timing(), SystemClock.elapsedRealtime())
+        val delay = EndTiming.delayMillis(timing(), SystemClock.elapsedRealtime(), preferences.leadMs)
         if (delay == null) {
             automaticStatus = "Waiting for PLAYING state with a known track, position, speed and duration"
             return
         }
         scheduled = ScheduledRoll(requireNotNull(playback.track).key, preview, model.choiceSequence,
-            SystemClock.elapsedRealtime() + delay, SystemClock.uptimeMillis() + delay)
-        automaticStatus = "Timed switch in approximately ${delay / 1000}s; clips about ${EndTiming.LEAD_MS}ms. AIMP/Android timing can differ."
+            SystemClock.elapsedRealtime() + delay, SystemClock.uptimeMillis() + delay, preferences.leadMs)
+        automaticStatus = "Timed switch in approximately ${delay / 1000}s; lead ${preferences.leadMs}ms. AIMP/Android timing can differ."
         log("TIMER armed roll=$rollSequence target=${preview.track}; delay=$delay; scheduled=$scheduled; sample=${timing()}")
         handler.postDelayed(endTimer, delay)
     }
@@ -388,7 +391,7 @@ class AimpController(private val context: Context) {
     private fun sustainCpu() {
         // AIMP can briefly report PAUSED/BUFFERING during the requested handoff.
         // Keep the bounded command-confirmation window awake through that state.
-        cpu.update(CpuProtection.needed(automatic, pending, timing(), SystemClock.elapsedRealtime()))
+        cpu.update(CpuProtection.needed(automatic, pending, timing(), SystemClock.elapsedRealtime(), preferences.leadMs))
     }
 
     private val endTimer = Runnable {
@@ -429,6 +432,7 @@ class AimpController(private val context: Context) {
     val passCount get() = model.played.size
     fun savedEvents(): List<String> = journal.contents().lineSequence().filter(String::isNotBlank).toList()
     fun report(full: Boolean = false): String = buildString {
+        appendLine("Diagnostic export: ${ZonedDateTime.now()}")
         appendLine("IgnorantShuffle Android ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}); Core ${ShuffleNative.coreVersion()}\n$status\n$settings\n$playback\nPreview: $preview\nResult: $result")
         appendLine("Preferences: $preferences; log error: ${journal.failure}; roll=$rollSequence reason=$rollReason")
         appendLine("Scheduled: $scheduled; screen=${power.isInteractive}; idle=${power.isDeviceIdleMode}")

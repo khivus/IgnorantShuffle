@@ -20,8 +20,11 @@ class RollNotifications(private val context: Context, private val event: (String
 
     fun clear() { manager.cancel(ID); last = null }
     fun render(preferences: AppPreferences, choice: Choice, weight: Double, settings: Settings,
-        automatic: Boolean, sequence: Long): String {
+        automatic: Boolean, sequence: Long, playbackState: Int): String {
         if (!preferences.notifyRoll) { clear(); return "Next-roll notifications are off" }
+        if (!preferences.notificationVisibility.allows(playbackState)) {
+            clear(); return "Hidden for current playback state (${preferences.notificationVisibility.label})"
+        }
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Next weighted roll", NotificationManager.IMPORTANCE_LOW).apply {
             description = "Quiet preview of the companion's next weighted selection"
             setSound(null, null); enableVibration(false)

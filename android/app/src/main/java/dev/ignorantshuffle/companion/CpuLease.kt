@@ -26,14 +26,14 @@ class CpuLease(private val handle: LeaseHandle, private val schedule: (Runnable,
 }
 
 data class ScheduledRoll(val source: String, val choice: Choice, val sequence: Long,
-    val elapsedDeadline: Long, val uptimeDeadline: Long)
+    val elapsedDeadline: Long, val uptimeDeadline: Long, val leadMs: Long = EndTiming.LEAD_MS)
 
 object HandoffPolicy {
     fun valid(roll: ScheduledRoll, sample: TimingSnapshot, currentSequence: Long, now: Long): Boolean =
-        roll.sequence == currentSequence && EndTiming.due(sample, roll.source, now)
+        roll.sequence == currentSequence && EndTiming.due(sample, roll.source, now, roll.leadMs)
 }
 
 object CpuProtection {
-    fun needed(automatic: Boolean, pending: Boolean, sample: TimingSnapshot, now: Long): Boolean =
-        automatic && (pending || EndTiming.delayMillis(sample, now) != null)
+    fun needed(automatic: Boolean, pending: Boolean, sample: TimingSnapshot, now: Long, leadMs: Long = EndTiming.LEAD_MS): Boolean =
+        automatic && (pending || EndTiming.delayMillis(sample, now, leadMs) != null)
 }

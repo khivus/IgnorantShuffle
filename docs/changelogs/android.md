@@ -4,7 +4,14 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
-## Unreleased — 0.2.1 (versionCode 3)
+## Unreleased — 0.3.0 (versionCode 4)
+
+- Customize the automatic switch lead from 0 to 5000 ms, including 0/50/100/300 ms presets; retain the selected lead in each captured handoff plan.
+- Choose notification visibility: always, playing or paused, or playing only.
+- Rename Tracks to Playlist and order tabs Player, Shuffle, Playlist, Alerts, Theme, Logs.
+- Export timestamped `.log` filenames with an export date/time header; event lines retain date/time and timezone.
+
+## 0.2.1 (versionCode 3)
 
 - Read the app version and install/update code from `versions/android.properties`, independently of Windows and core.
 - Display and export the app version, version code and bundled core version (0.1.0); read core metadata from the native library.

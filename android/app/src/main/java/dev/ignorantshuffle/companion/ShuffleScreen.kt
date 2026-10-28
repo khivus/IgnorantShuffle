@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-private val pages = listOf("Player", "Tracks", "Shuffle", "Alerts", "Theme", "Logs")
+private val pages = listOf("Player", "Shuffle", "Playlist", "Alerts", "Theme", "Logs")
 
 @Composable
 internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () -> Unit, copy: () -> Unit,
@@ -58,8 +58,8 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
         HorizontalPager(pager, modifier = Modifier.weight(1f).fillMaxWidth(), beyondViewportPageCount = 1) { page ->
             when (page) {
                 0 -> PlayerPage(m, settings, openAimp) { editing = it }
-                1 -> TracksPage(m, importWeights, exportWeights) { editing = it }
-                2 -> ShufflePage(m)
+                1 -> ShufflePage(m)
+                2 -> PlaylistPage(m, importWeights, exportWeights) { editing = it }
                 3 -> AlertsPage(m, requestNotifications)
                 4 -> ThemePage(m)
                 else -> LogsPage(m, copy, exportLog)
@@ -136,7 +136,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
         }
         item {
             Section {
-                Toggle("Timed automatic shuffle", "Experimental · switches about 300 ms early", m.automatic,
+                Toggle("Timed automatic shuffle", "Experimental · ${m.preferences.leadMs} ms before estimated end", m.automatic,
                     enabled = m.automatic || ready, onChange = m::changeAutomatic)
                 Text(m.automaticStatus, style = MaterialTheme.typography.bodySmall)
                 Text("CPU protection supports screen-off timing and uses more battery. It releases on pause, disable or disconnect. Headset Next keeps AIMP's own order.",
@@ -155,12 +155,12 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
 }
 
 @Composable
-private fun TracksPage(m: AimpController, import: () -> Unit, export: () -> Unit, edit: (Track) -> Unit) {
+private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Unit, edit: (Track) -> Unit) {
     var search by rememberSaveable { mutableStateOf("") }
     val visible = remember(search, m.tracks) { m.tracks.filter { search.isBlank() || it.title.contains(search, true) || it.artist.contains(search, true) } }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(16.dp))
-        Intro("Your tracks", "${m.tracks.size} entries exposed by AIMP")
+        Intro("Playlist", "${m.tracks.size} entries exposed by AIMP")
         OutlinedTextField(search, { search = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
             label = { Text("Search title or artist") }, singleLine = true, shape = RoundedCornerShape(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -196,8 +196,26 @@ private fun ShufflePage(m: AimpController) {
     var cooldown by rememberSaveable(m.settings.cooldown) { mutableStateOf(m.settings.cooldown.toString()) }
     var finite by rememberSaveable(m.settings.finite) { mutableStateOf(m.settings.finite) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var lead by rememberSaveable(m.preferences.leadMs) { mutableStateOf(m.preferences.leadMs.toString()) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Intro("Shuffle rules", "Shared selection rules with the Windows plugin") }
+        item {
+            Section("Automatic switch timing") {
+                OutlinedTextField(lead, { lead = it }, label = { Text("Lead before track end (ms)") },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0, 50, 100, 300).forEach { ms ->
+                        FilterChip(selected = lead == ms.toString(), onClick = { lead = ms.toString() }, label = { Text("$ms") })
+                    }
+                }
+                Text("0–5000 ms; default 300. Smaller values preserve more of the ending but may let AIMP advance first. Try 100, then 50 or 0; compare exported timing logs.", style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = {
+                    val ms = lead.toLongOrNull()
+                    if (ms == null || ms !in 0..5000) error = "Enter 0–5000 ms"
+                    else { error = null; m.changePreferences(m.preferences.copy(leadMs = ms)) }
+                }, enabled = !m.pending) { Text("Apply timing") }
+            }
+        }
         item {
             Section("Weights & cooldown") {
                 OutlinedTextField(default, { default = it }, label = { Text("Default weight") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -242,6 +260,12 @@ private fun AlertsPage(m: AimpController, permission: () -> Unit) {
                 })
                 Text(m.notificationStatus, style = MaterialTheme.typography.bodySmall)
                 if (m.preferences.notifyRoll && !m.notificationsAllowed) OutlinedButton(onClick = permission) { Text("Allow / Android notification settings") }
+                Text("Show notification when:", style = MaterialTheme.typography.titleSmall)
+                RollVisibility.entries.forEach { visibility ->
+                    FilterChip(selected = m.preferences.notificationVisibility == visibility,
+                        onClick = { m.changePreferences(m.preferences.copy(notificationVisibility = visibility)) },
+                        label = { Text(visibility.label) }, modifier = Modifier.fillMaxWidth())
+                }
             }
         }
         item {

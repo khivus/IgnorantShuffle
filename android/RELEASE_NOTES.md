@@ -1,12 +1,13 @@
-# IgnorantShuffle Android v0.2.1
+# IgnorantShuffle Android v0.3.0
 
-Preview APK, versionCode **3**, bundled core **0.1.0**.
+Preview APK, versionCode **4**, bundled core **0.1.0**.
 
-- Version Android independently of Windows and core.
-- Show both Android and bundled core versions in the app and exported diagnostics.
-- Generate APK update metadata from `versions/android.properties`.
+- Configure automatic-switch timing from 0 to 5000 ms; the default remains 300 ms.
+- Hide next-roll notifications while paused/stopped, or keep them visible while paused.
+- Use Player, Shuffle, Playlist, Alerts, Theme and Logs tabs in that order.
+- Export logs with a dated `.log` filename and date/time header.
 
-Release tag: `android/v0.2.1`. Assets: `IgnorantShuffle-Android-v0.2.1-debug.apk`
+Release tag: `android/v0.3.0`. Assets: `IgnorantShuffle-Android-v0.3.0-debug.apk`
 and `SHA256SUMS-Android.txt`, built with `tools/build-android.ps1`.
 
 Copy the APK to the phone and open it in a file manager. Keep the signing key used
