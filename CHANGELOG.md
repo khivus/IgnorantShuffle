@@ -2,6 +2,12 @@
 
 Version history for IgnorantShuffle, newest first.
 
+## Unreleased — Android companion preview
+
+- Add an installable Kotlin/Compose companion with shared C++ selection rules, local weights, Smart Next/Previous, stable next preview/reroll, cooldown and finite passes.
+- Add opt-in timed automatic playback with visible timing limitations, source revalidation, and bounded command verification. Queue insertion/append is not used.
+- Split portable selection rules from Windows weight-file I/O without changing the Windows playback adapter.
+
 ## 0.11.0
 
 - Start the first update check immediately in the background. Startup no longer shows a missing release source while waiting to check; disabling automatic checks shows the correct status.

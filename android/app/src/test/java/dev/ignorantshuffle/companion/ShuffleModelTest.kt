@@ -36,6 +36,12 @@ class ShuffleModelTest {
         model.confirmPlaying(a); model.confirmPlaying(a); model.confirmPlaying(b)
         assertEquals(listOf(a.key, b.key), model.recent)
     }
+    @Test fun confirmedSameTrackRestartCountsAsANewStart() {
+        val model = model(); model.confirmPlaying(a); model.confirmPlaying(a, restarted = true)
+        assertEquals(listOf(a.key, a.key), model.recent)
+        model.confirmPlaying(a)
+        assertEquals(2, model.recent.size)
+    }
     @Test fun previousThenNextUsesListeningHistory() {
         val model = model(); model.confirmPlaying(a); model.confirmPlaying(b)
         val previous = model.previous()!!; assertEquals(a.key, previous.track!!.key)

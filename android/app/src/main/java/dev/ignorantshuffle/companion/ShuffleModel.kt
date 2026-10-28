@@ -74,9 +74,9 @@ class ShuffleModel(private val planner: Planner) {
         if (changed) preview = null
     }
 
-    fun confirmPlaying(track: Track) {
+    fun confirmPlaying(track: Track, restarted: Boolean = false) {
         val key = track.key
-        if (key == currentKey) return
+        if (key == currentKey && !restarted) return
         val target = navigation
         if (target != null && timeline.getOrNull(target) == key) cursor = target
         else {

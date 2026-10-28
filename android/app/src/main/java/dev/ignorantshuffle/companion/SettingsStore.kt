@@ -9,7 +9,7 @@ class SettingsStore(context: Context) {
     private val file = AtomicFile(File(context.filesDir, "weights-settings.json"))
 
     fun load(): Pair<Settings, Map<String, Double>> {
-        if (!file.baseFile.exists()) return Settings() to emptyMap()
+        if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return Settings() to emptyMap()
         val json = JSONObject(file.openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
         require(json.getInt("version") == 1) { "Unsupported settings version" }
         val settings = Settings(json.getDouble("default"), json.getInt("cooldown"), json.getBoolean("finite"))

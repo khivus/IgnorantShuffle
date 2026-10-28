@@ -130,6 +130,16 @@ private fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () 
                 OutlinedButton(onClick = m::reroll, enabled = ready && next.track != null) { Text("Reroll next") }
                 Text("AIMP's own Next/headset buttons keep AIMP's order. These companion buttons use the weighted choice.")
                 HorizontalDivider()
+                Text("Experimental timed automatic mode", style = MaterialTheme.typography.titleMedium)
+                Text("Switches about 300 ms BEFORE the estimated end. It can clip endings, miss transitions while the phone sleeps, or differ from AIMP crossfade timing. Headset Next still follows AIMP. No seamless playback guarantee.")
+                Row {
+                    Switch(checked = m.automatic, onCheckedChange = m::changeAutomatic,
+                        enabled = m.automatic || ready)
+                    Text("Enable timed shuffle", Modifier.padding(start = 8.dp, top = 12.dp))
+                }
+                Text(m.automaticStatus)
+                Text("Off on startup and connection loss. Pause cancels the pending timer; resuming AIMP reschedules it. Failed commands stop timed mode. With no eligible tracks it requests Pause at the estimated end.")
+                HorizontalDivider()
                 Text("Shuffle settings", style = MaterialTheme.typography.titleMedium)
                 OutlinedTextField(default, { default = it }, label = { Text("Default weight (0 excludes)") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(cooldown, { cooldown = it }, label = { Text("Cooldown: other track starts (0–10000)") }, modifier = Modifier.fillMaxWidth())

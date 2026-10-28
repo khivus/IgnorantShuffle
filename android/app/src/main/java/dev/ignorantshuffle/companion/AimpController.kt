@@ -30,10 +30,6 @@ class SessionAccessService : NotificationListenerService() {
     override fun onDestroy() { controller.stop("Notification listener destroyed"); super.onDestroy() }
 }
 
-data class Playback(val state: Int = 0, val title: String = "No track", val artist: String = "",
-    val position: Long = -1, val duration: Long = -1, val speed: Float = 0f, val updatedAt: Long = 0,
-    val track: Track? = null)
-
 private data class Pending(val label: String, val target: String?, val before: Playback)
 
 class AimpController(private val context: Context) {
@@ -48,6 +44,9 @@ class AimpController(private val context: Context) {
     private var listening = false
     private var operation: Pending? = null
     private var actions = 0L
+    private var armedKey: String? = null
+    var automatic by mutableStateOf(false); private set
+    var automaticStatus by mutableStateOf("Timed automatic mode is off"); private set
     var status by mutableStateOf("Grant notification access, then start music in AIMP"); private set
     var permission by mutableStateOf(false); private set
     var connected by mutableStateOf(false); private set
@@ -121,6 +120,7 @@ class AimpController(private val context: Context) {
     }
 
     private fun detach(reason: String) {
+        disableAutomatic("Timed mode stopped: $reason")
         if (pending) finish("INCONCLUSIVE: $reason")
         native?.let { c -> callback?.let { cb -> runCatching { c.unregisterCallback(cb) } } }
         native = null; callback = null; connected = false; actions = 0
@@ -137,7 +137,7 @@ class AimpController(private val context: Context) {
 
     private fun uri(value: String?): String? = value?.takeIf { it.isNotBlank() && !Uri.parse(it).scheme.isNullOrBlank() }
 
-    private fun read() {
+    private fun read(rearm: Boolean = true) {
         val c = native ?: return
         val state = c.playbackState
         val metadata = c.metadata
@@ -170,18 +170,18 @@ class AimpController(private val context: Context) {
         if (next.title != playback.title || next.state != playback.state || next.track?.key != playback.track?.key)
             log("Observed state=${next.state}; title=${next.title}; id=$mediaId; queueId=${current?.queueId}; position=${next.position}; actions=0x${actions.toString(16)}")
         playback = next
-        if (next.state == PlaybackState.STATE_PLAYING && current != null) model.confirmPlaying(current)
+        if (next.state == PlaybackState.STATE_PLAYING && current != null) {
+            val op = operation
+            val restarted = op != null && op.target == current.key && op.before.track?.key == current.key &&
+                op.before.position >= 3000 && next.position in 0..999
+            model.confirmPlaying(current, restarted)
+        }
         operation?.let { op ->
-            val verified = when (op.label) {
-                "Play" -> op.before.state != 3 && next.state == 3
-                "Pause" -> op.before.state != 2 && next.state == 2
-                else -> next.state == 3 && next.track?.key == op.target &&
-                    (op.before.track?.key != op.target || op.before.state != 3 ||
-                        (op.before.position >= 3000 && next.position in 0..999))
-            }
+            val verified = PlaybackEvidence.confirmed(op.label, op.target, op.before, next)
             if (verified) finish("OBSERVED: ${op.label} matched subsequent playback")
         }
         updatePreview()
+        if (rearm) scheduleTimer()
     }
 
     private fun updatePreview() {
@@ -196,7 +196,7 @@ class AimpController(private val context: Context) {
         check(storageError == null) { "Saved settings could not be read; existing data is preserved" }
         store.save(value, weights)
         settings = value; model.configure(value, weights)
-        updatePreview(); log("Settings changed: $value")
+        updatePreview(); scheduleTimer(); log("Settings changed: $value")
     }
 
     fun setWeight(track: Track, text: String, inherit: Boolean = false) = guarded {
@@ -208,29 +208,32 @@ class AimpController(private val context: Context) {
             require(number != null && number.isFinite() && number >= 0) { "Enter a finite nonnegative weight" }
             next[track.key] = number
         }
-        store.save(settings, next); weights = next; model.configure(settings, next); updatePreview()
+        store.save(settings, next); weights = next; model.configure(settings, next); updatePreview(); scheduleTimer()
         log("Weight ${track.title}: ${next[track.key] ?: "inherited"}")
     }
 
     fun importWeights(text: String) = guarded {
         check(!pending && storageError == null)
         val next = weights + WeightTransfer.parse(text)
-        store.save(settings, next); weights = next; model.configure(settings, next); updatePreview()
+        store.save(settings, next); weights = next; model.configure(settings, next); updatePreview(); scheduleTimer()
         log("Imported weight overrides transactionally")
     }
 
     fun exportWeights() = WeightTransfer.write(weights)
-    fun newPass() = guarded { model.newPass(); updatePreview(); log("Started a new finite pass; current track counted") }
-    fun reroll() = guarded { if (!pending) { preview = model.next(true); log("Rerolled preview; no progress consumed") } }
+    fun newPass() = guarded { model.newPass(); updatePreview(); scheduleTimer(); log("Started a new finite pass; current track counted") }
+    fun reroll() = guarded { if (!pending) { preview = model.next(true); scheduleTimer(); log("Rerolled preview; no progress consumed") } }
     fun smartNext() = guarded { if (!pending) playChoice(model.next()) }
     fun smartPrevious() = guarded { if (!pending) model.previous()?.let(::playChoice) }
     fun play(track: Track) = guarded { if (!pending) playChoice(Choice(track)) }
 
-    private fun playChoice(choice: Choice) {
+    private fun playChoice(choice: Choice, expectedSource: String? = null) {
         check(storageError == null) { "Storage error; playback selection disabled" }
         val target = choice.track ?: run { result = "No eligible tracks / finite pass complete"; return }
         read() // Revalidate against fresh AIMP state immediately before sending.
         if (pending) return
+        if (expectedSource != null && !EndTiming.due(timing(), expectedSource, SystemClock.elapsedRealtime())) {
+            log("Timed choice cancelled: source/timing changed during revalidation"); scheduleTimer(); return
+        }
         val fresh = tracks.firstOrNull { it.key == target.key } ?: error("Queue changed; choose again")
         val c = native ?: error("No AIMP session")
         check(granted()) { "Notification access was revoked" }
@@ -245,10 +248,13 @@ class AimpController(private val context: Context) {
         }
     }
 
-    fun basic(play: Boolean) = guarded {
+    fun basic(play: Boolean, expectedSource: String? = null) = guarded {
         if (pending) return@guarded
         val c = native ?: error("No AIMP session")
         read(); check(granted())
+        if (expectedSource != null && !EndTiming.due(timing(), expectedSource, SystemClock.elapsedRealtime())) {
+            log("Timed pause cancelled: source/timing changed during revalidation"); return@guarded
+        }
         check(supportsBasic(play)) { "AIMP does not advertise this command" }
         begin(if (play) "Play" else "Pause", null)
         if (play) c.transportControls.play() else c.transportControls.pause()
@@ -261,6 +267,7 @@ class AimpController(private val context: Context) {
         if (pending) finish("INCONCLUSIVE after 8 seconds; no confirming playback. No retry sent.")
     }
     private fun begin(label: String, key: String?) {
+        handler.removeCallbacks(endTimer); armedKey = null
         operation = Pending(label, key, playback); pending = true
         result = "Waiting for AIMP: $label"
         log("COMMAND $label; target=$key")
@@ -269,6 +276,55 @@ class AimpController(private val context: Context) {
     private fun finish(message: String) {
         handler.removeCallbacks(timeout); operation = null; pending = false; model.cancelRequest()
         result = message; log("RESULT $message")
+        if (!message.startsWith("OBSERVED:")) disableAutomatic("Timed mode stopped after unconfirmed command")
+    }
+
+    fun changeAutomatic(enabled: Boolean) = guarded {
+        if (!enabled) { disableAutomatic("Timed automatic mode is off"); return@guarded }
+        check(connected && permission && storageError == null && !pending) { "Connect AIMP and finish the current command first" }
+        automatic = true
+        log("USER ENABLED experimental timed shuffle; lead=${EndTiming.LEAD_MS}ms; no wake lock or queue insertion")
+        read()
+    }
+
+    private fun disableAutomatic(reason: String) {
+        handler.removeCallbacks(endTimer); armedKey = null
+        if (automatic) log(reason)
+        automatic = false; automaticStatus = reason
+    }
+
+    private fun timing() = TimingSnapshot(playback.track?.key, playback.state, playback.position,
+        playback.duration, playback.speed, playback.updatedAt)
+
+    private fun scheduleTimer() {
+        handler.removeCallbacks(endTimer); armedKey = null
+        if (!automatic || pending) return
+        val delay = EndTiming.delayMillis(timing(), SystemClock.elapsedRealtime())
+        if (delay == null) {
+            automaticStatus = "Waiting for PLAYING state with a known track, position, speed and duration"
+            return
+        }
+        armedKey = playback.track?.key
+        automaticStatus = "Timed switch in approximately ${delay / 1000}s; clips about ${EndTiming.LEAD_MS}ms. AIMP/Android timing can differ."
+        handler.postDelayed(endTimer, delay)
+    }
+
+    private val endTimer = Runnable {
+        val expected = armedKey
+        armedKey = null
+        guarded {
+            if (automatic && !pending && expected != null) {
+                read(rearm = false)
+                if (EndTiming.due(timing(), expected, SystemClock.elapsedRealtime())) {
+                    log("Timed deadline reached for $expected; fresh source identity checked")
+                    val choice = model.next()
+                    if (choice.track == null) {
+                        disableAutomatic("No eligible tracks / finite pass complete; requesting Pause at estimated end")
+                        basic(false, expected)
+                    } else playChoice(choice, expected)
+                } else scheduleTimer() // Paused, sought, delayed or changed source: respect AIMP's latest state.
+            }
+        }
     }
 
     private inline fun guarded(action: () -> Unit) {
@@ -276,8 +332,10 @@ class AimpController(private val context: Context) {
         catch (e: Exception) {
             if (pending) finish("EXCEPTION: ${e.message}")
             result = e.message ?: e.toString(); log("ERROR: $e")
+            disableAutomatic("Timed mode stopped after an error")
             if (e is SecurityException) stop("Session access denied; check notification access")
         } catch (e: LinkageError) {
+            disableAutomatic("Timed mode stopped: native library unavailable")
             result = "Native shuffle library unavailable: $e"; storageError = result; log(result)
         }
     }
@@ -286,6 +344,7 @@ class AimpController(private val context: Context) {
     fun report(full: Boolean = false): String = buildString {
         appendLine("IgnorantShuffle Android 0.1.0\n$status\n$settings\n$playback\nPreview: $preview\nResult: $result")
         appendLine("Queue: ${tracks.size}; explicit weights: ${weights.size}; current-pass starts: ${model.played.size}")
+        appendLine("Timed mode: $automatic; $automaticStatus")
         appendLine("Immediate companion controls; AIMP's own next-track selection is independent.")
         if (full) listOf(File(context.filesDir, "events.previous.log"), logFile).filter { it.exists() }
             .forEach { appendLine(it.readText(Charsets.UTF_8)) }

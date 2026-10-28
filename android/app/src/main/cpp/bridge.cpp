@@ -29,7 +29,7 @@ Java_dev_ignorantshuffle_companion_ShuffleNative_plan(JNIEnv* env, jobject,
     try {
         if (!weights || cooldown < 0 || cooldown > 10000) throw std::invalid_argument("Invalid plan inputs");
         std::vector<double> numbers(env->GetArrayLength(weights));
-        env->GetDoubleArrayRegion(weights, 0, static_cast<jsize>(numbers.size()), numbers.data());
+        if (!numbers.empty()) env->GetDoubleArrayRegion(weights, 0, static_cast<jsize>(numbers.size()), numbers.data());
         if (env->ExceptionCheck()) return nullptr;
         const auto choice = ignorant::plan_next(strings(env, keys), numbers, strings(env, recent),
             strings(env, played), static_cast<std::size_t>(cooldown), finite, string(env, avoid), unit);
