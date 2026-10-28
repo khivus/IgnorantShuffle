@@ -117,5 +117,21 @@ the updated Windows checker filters component tags independently.
 2. Run shared tests and both platform builds as described in [Testing](testing.md).
 3. Commit the intended changes. When ready to publish, create an annotated `core/vX.Y.Z` tag and a release named **IgnorantShuffle Core vX.Y.Z**, using core's release notes. Source archives include the whole repository; no app APK/DLL is attached to a core release. Do not mark it Latest.
 
-Android/core publication is manual; the Windows publishing script must not be
-used for either. No release or tag is created by the build or metadata tests.
+The Android preview publisher validates the APK version, checksum and pinned
+public signing-certificate fingerprint:
+
+```powershell
+.\tools\publish-android.ps1             # local preflight only
+.\tools\publish-android.ps1 -Publish    # push main/tag and publish Android preview
+```
+
+It uses the existing khivus Git Credential Manager account, requires a clean main
+branch and matching origin, and refuses a diverged remote or conflicting tag.
+Uploads go to a draft and are checked against GitHub's digests before publishing
+as a prerelease with `make_latest=false`. Public download hashes are then verified.
+It never publishes Windows assets. `android/signing-certificate.sha256` contains
+only the public certificate fingerprint; retain the corresponding private key
+outside Git. Do not replace the pin to work around a mismatched CI/debug key.
+
+Core publication remains manual; the Windows publishing script must not be used
+for Android/core. Build and metadata checks create no release or tag.

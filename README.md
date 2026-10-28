@@ -1,8 +1,10 @@
 # IgnorantShuffle
 
-Weighted smart shuffle for **AIMP 5.40 on Windows**. Give each track a weight to control how often it is chosen, add a cooldown to reduce repeats, and see why the next track was selected.
+Weighted smart shuffle for **AIMP 5.40 on Windows**, with an **Android companion**
+preview. Give each track a weight to control how often it is chosen, add a cooldown
+to reduce repeats, and see why the next track was selected.
 
-[Windows downloads](https://github.com/khivus/IgnorantShuffle/releases) · [Changelogs](CHANGELOG.md) · [MIT License](LICENSE)
+[Windows downloads](https://github.com/khivus/IgnorantShuffle/releases) · [Android preview](https://github.com/khivus/IgnorantShuffle/releases/tag/android%2Fv0.4.0) · [Changelogs](CHANGELOG.md) · [MIT License](LICENSE)
 
 ## Features
 
@@ -15,7 +17,7 @@ Weighted smart shuffle for **AIMP 5.40 on Windows**. Give each track a weight to
 - A shared global music-folder file preferred by default, with relative paths compatible with the Android companion. [Set up both devices](docs/shared-music-folder.md).
 - Automatic update checks, with downloads and installation started only when you choose.
 
-## Quick start
+## Windows quick start
 
 1. Download the **AIMP installer package (.aimppack)** from a **Windows** entry in [Releases](https://github.com/khivus/IgnorantShuffle/releases). It contains both x64 and x86 builds. Historical `v...` releases are also Windows releases.
 2. Open it with AIMP or drop it onto AIMP's main window. Complete installation and restart if asked.

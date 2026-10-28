@@ -4,7 +4,7 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
-## Unreleased — 0.4.0 (versionCode 5)
+## 0.4.0 (versionCode 5)
 
 - Show the next roll's effective weight on the Player page.
 - Set export MIME types to preserve `.log` and `.tsv` filenames instead of appending `.txt`.
