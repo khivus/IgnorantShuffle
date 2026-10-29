@@ -19,6 +19,12 @@ try {
     foreach ($component in 'windows', 'android', 'core') {
         $bundle = Get-ReleaseBundle $component $fixture
         if ($bundle.Names.Count -ne 7 -or -not $bundle.Latest -or $bundle.Preview -or $bundle.Tag -cne "v$($bundle.Release.Version)") { throw 'Release channel, stable tag or asset set mismatch.' }
+        # Old Windows versions accept only the bare alias or a package matching
+        # the release tag. Keep exactly one match even if bundle == app version.
+        foreach ($oldTag in @($bundle.Tag, "v$($bundle.Windows.Version)")) {
+            $oldMatches = @($bundle.Names | Where-Object { $_ -ceq 'IgnorantShuffle.aimppack' -or $_ -ceq "IgnorantShuffle-$oldTag.aimppack" })
+            if ($oldMatches.Count -ne 1) { throw 'Older Windows updaters would see ambiguous installers.' }
+        }
         foreach ($version in $bundle.Windows.Version, $bundle.Android.Version, $bundle.Core.Version) {
             if (-not $bundle.Title.Contains("v$version") -or -not $bundle.Notes.Contains("v$version")) { throw 'A component version is missing from the title/notes.' }
         }

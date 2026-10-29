@@ -52,6 +52,11 @@ void model_checks() {
     alias.insert(alias.size() - 2, "," + generic);
     const auto aliased = parse_release(alias, "example/shuffle", "1.1.0");
     check(aliased && aliased->asset_name == versionedName, "Prefer the app-versioned installer over the identical legacy alias.");
+    auto explicitWindows = alias;
+    for (auto pos = explicitWindows.find(versionedName); pos != std::string::npos; pos = explicitWindows.find(versionedName))
+        explicitWindows.replace(pos, versionedName.size(), "IgnorantShuffle-Windows-v1.2.0.aimppack");
+    const auto explicitRelease = parse_release(explicitWindows, "example/shuffle", "1.1.0");
+    check(explicitRelease && explicitRelease->version == "1.2.0" && explicitRelease->asset_name == "IgnorantShuffle-Windows-v1.2.0.aimppack", "Component filename keeps bundle version independent and legacy alias unambiguous.");
     check(!parse_release(json, "example/shuffle", "1.2.0"), "Equal version must not update.");
     check(!parse_release(json, "example/shuffle", "2.0.0"), "Never downgrade.");
     auto prerelease = json; prerelease.replace(prerelease.find("\"prerelease\":false"), 18, "\"prerelease\":true");

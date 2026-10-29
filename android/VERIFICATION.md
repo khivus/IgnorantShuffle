@@ -1,3 +1,21 @@
+# Android 0.5.0 / combined 0.13.0 verification — 2026-10-29
+
+- 107 Kotlin/JVM tests passed, including combined bundle/APK version selection,
+  playback audit outcomes/cancellation/timeouts, persisted debug preferences and
+  basic Markdown parsing.
+- Android debug APK built for arm64-v8a, armeabi-v7a and x86_64. Lint completed
+  with 0 errors (19 warnings and 2 hints). APK signature verified; the release
+  preflight also checks the existing pinned signer, app/version/code and hashes.
+- Windows 0.12.1 built for x64 and Win32; all six CTest groups passed on both.
+  Offline version/publisher/bundle checks passed, including the legacy alias,
+  complete cross-platform asset set, checksums and unchanged-app update rejection.
+- No phone/emulator UI, actual AIMP playback, Android notification presentation,
+  or live installer/restart check was performed. Debug outcomes use observed media
+  session state; they do not prove which audio reached the speakers.
+- No push, remote tag change or release publication was performed.
+
+The following section records an earlier build and its limitations.
+
 # Android 0.2.0 verification — 2026-10-28
 
 - Windows/C++ selection sources are unchanged in this update. The earlier shared-core

@@ -8,9 +8,9 @@ Open **Updates...** at the bottom of the floating panel. **Automatically check f
 
 Checks never start a download or installation. Unchecking the option persists across restarts; **Check now** still works.
 
-New releases use stable **`vMAJOR.MINOR.PATCH`** bundle tags, matching the Windows
-bundle version from `versions/release.properties`. The Windows app version comes
-from `IgnorantShuffle-vVERSION.aimppack`; unchanged packages are not offered again.
+New releases use stable **`vMAJOR.MINOR.PATCH`** bundle tags, using the combined
+version from `versions/release.properties`. The Windows app version comes
+from `IgnorantShuffle-Windows-vVERSION.aimppack`; unchanged packages are not offered again.
 An identical `IgnorantShuffle.aimppack` alias supports older updaters.
 Legacy `windows/vX.Y.Z` tags remain readable by recent builds.
 Android/core component tags are ignored. The check reads paginated release

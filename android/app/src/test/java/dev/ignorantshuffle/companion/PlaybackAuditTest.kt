@@ -59,4 +59,11 @@ class PlaybackAuditTest {
         assertNull(audit.observe(playing(wrong), 1800))
         assertTrue(audit.observe(playing(target), 2000)!!.matched)
     }
+    @Test fun manualChangesFarFromTheTimedDeadlineDoNotStartAHandoffAudit() {
+        val plan = ScheduledRoll(source.key, Choice(target), 4, 10000, 10000, 300)
+        assertFalse(PlaybackAudit.handoffDue(plan, playing(wrong), 5000))
+        assertTrue(PlaybackAudit.handoffDue(plan, playing(wrong), 9500))
+        assertFalse(PlaybackAudit.handoffDue(plan, before, 10000))
+        assertFalse(PlaybackAudit.handoffDue(plan.copy(choice = Choice(null)), playing(wrong), 10000))
+    }
 }

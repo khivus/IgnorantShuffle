@@ -55,8 +55,9 @@ tests, lint, native builds, and real-phone playback checks. Platform limitations
 belong in the UI and release notes, not implicit assumptions in the shared rules.
 
 Android updates are application-scoped and independent of the playback controller.
-Only Android-tagged public GitHub releases are inspected, with optional preview
-inclusion. Network/file verification runs on a separate worker; downloads and
+Stable combined releases identify Android using the APK's app-specific version;
+legacy Android-tagged releases remain readable, with optional preview inclusion.
+Network/file verification runs on a separate worker; downloads and
 installer handoff require user actions. The app validates hash, identity, version,
 signing key and ABI and uses a narrow private APK FileProvider. Daily foreground
 checks can be disabled. See [Android updates](android-updates.md).

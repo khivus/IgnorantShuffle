@@ -20,7 +20,7 @@ $files += @{ Source = $licenseFile; Entry = 'aimp_ignorant_shuffle/LICENSE' }
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $output = [IO.Directory]::CreateDirectory($OutputDirectory).FullName
-$package = Join-Path $output "IgnorantShuffle-v$version.aimppack"
+$package = Join-Path $output "IgnorantShuffle-Windows-v$version.aimppack"
 $stream = [IO.File]::Open($package, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
 try {
     $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create, $true)

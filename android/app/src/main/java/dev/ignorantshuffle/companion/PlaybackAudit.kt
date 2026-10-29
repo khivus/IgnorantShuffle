@@ -4,6 +4,11 @@ data class PlaybackAuditResult(val matched: Boolean, val message: String)
 
 /** Bounded, observation-only check. Never retries or changes a selection. */
 class PlaybackAudit {
+    companion object {
+        fun handoffDue(plan: ScheduledRoll?, playback: Playback, now: Long): Boolean =
+            plan?.choice?.track != null && playback.state == 3 && playback.track != null &&
+                playback.track.key != plan.source && now >= plan.elapsedDeadline - 1000
+    }
     private data class Expected(val before: Playback, val target: Track, val sequence: Long, val started: Long)
     private var expected: Expected? = null
     private var wrongKey: String? = null

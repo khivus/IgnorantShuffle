@@ -165,7 +165,7 @@ std::optional<ReleaseUpdate> release_object(const Json& root, const std::string&
     release.unavailable_reason = "The release has no IgnorantShuffle.aimppack asset yet.";
     const auto& assets = root.at("assets");
     if (assets.kind != Json::Array) return release_version(release.version) > release_version(installed) ? std::optional<ReleaseUpdate>(release) : std::nullopt;
-    const std::regex packageName("IgnorantShuffle-v((0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*))[.]aimppack");
+    const std::regex packageName("IgnorantShuffle-(?:Windows-)?v((0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*))[.]aimppack");
     const Json* versioned = nullptr;
     for (const auto& asset : assets.array) {
         std::smatch match;

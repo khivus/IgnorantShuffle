@@ -262,9 +262,8 @@ class AimpController(private val context: Context) {
         // AIMP can cross the deadline before our timed dispatch runs. Audit the
         // captured roll too, so an unexpected natural next track is visible.
         val plan = scheduled
-        if (preferences.debugPlayback && !audit.active && automatic && plan?.choice?.track != null &&
-            next.state == PlaybackState.STATE_PLAYING && next.track != null && next.track.key != plan.source) {
-            armAudit(playback, requireNotNull(plan.choice.track), plan.sequence)
+        if (preferences.debugPlayback && !audit.active && automatic && PlaybackAudit.handoffDue(plan, next, SystemClock.elapsedRealtime())) {
+            armAudit(playback, requireNotNull(plan?.choice?.track), requireNotNull(plan).sequence)
         }
         playback = next
         observeAudit()
@@ -516,8 +515,7 @@ class AimpController(private val context: Context) {
                         basic(false, planned.source)
                     } else playChoice(choice, planned)
                 } else {
-                    if (preferences.debugPlayback && !audit.active && planned.choice.track != null &&
-                        playback.state == PlaybackState.STATE_PLAYING && playback.track != null && playback.track?.key != planned.source) {
+                    if (preferences.debugPlayback && !audit.active && PlaybackAudit.handoffDue(planned, playback, SystemClock.elapsedRealtime())) {
                         armAudit(beforeHandoff, requireNotNull(planned.choice.track), planned.sequence)
                         observeAudit()
                     }

@@ -70,7 +70,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Remote main is ahead/diverged; reconcile before publication.' }
     $tags = @(Invoke-Git -Arguments @('tag', '--list', $tag))
     if ($tags -contains $tag) {
-        if ((Invoke-Git -Arguments @('rev-parse', "$tag^{}")).Trim() -ne $commit) { throw 'Existing component tag points to another commit.' }
+        if ((Invoke-Git -Arguments @('rev-parse', "$tag^{}")).Trim() -ne $commit) { throw 'Existing release tag points to another commit.' }
     } else { Invoke-Git -Arguments @('tag', '-a', $tag, '-m', $bundle.Title, $commit) }
     Invoke-Git -Arguments @('push', 'origin', 'main')
     Invoke-Git -Arguments @('push', 'origin', "refs/tags/$tag")

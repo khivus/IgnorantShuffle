@@ -14,7 +14,7 @@ function Get-ReleaseBundle {
     $tag = $release.Tag
     $encodedTag = [Uri]::EscapeDataString($tag)
     $url = "https://github.com/khivus/IgnorantShuffle/releases/download/$encodedTag"
-    $packageName = "IgnorantShuffle-v$($windows.Version).aimppack"
+    $packageName = "IgnorantShuffle-Windows-v$($windows.Version).aimppack"
     $apkName = "IgnorantShuffle-Android-v$($android.Version)-debug.apk"
     $names = @($packageName, 'aimp_ignorant_shuffle-x64.dll', 'aimp_ignorant_shuffle-x86.dll',
         'SHA256SUMS.txt', $apkName, 'SHA256SUMS-Android.txt', 'IgnorantShuffle.aimppack')

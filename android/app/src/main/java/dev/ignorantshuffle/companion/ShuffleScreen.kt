@@ -168,9 +168,9 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
             Text(m.result, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 4.dp))
             m.storageError?.let { Text("Saved data/native error: $it", color = MaterialTheme.colorScheme.error) }
             if (m.folder.blocked) Text(m.folder.error ?: m.folder.status, color = MaterialTheme.colorScheme.error)
-            Row {
-                TextButton(onClick = openAimp) { Text("Open AIMP") }
-                TextButton(onClick = m::refresh, enabled = !m.pending) { Text("Refresh connection") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionButton(onClick = openAimp, modifier = Modifier.weight(1f)) { Text("Open AIMP") }
+                ActionButton(onClick = m::refresh, enabled = !m.pending, modifier = Modifier.weight(1f)) { Text("Refresh connection") }
             }
         }
     }
@@ -202,7 +202,7 @@ private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Un
                         Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilledTonalButton(onClick = { edit(track) }, enabled = !m.pending && m.storageError == null && !m.folder.blocked) { Text("Weight ${m.weight(track)}") }
-                            TextButton(onClick = { m.play(track) }, enabled = m.ready() && track.selectable) { Text("Play now") }
+                            ActionButton(onClick = { m.play(track) }, enabled = m.ready() && track.selectable) { Text("Play now") }
                         }
                         Text(m.weightSource(track), style = MaterialTheme.typography.labelSmall)
                         if (m.folder.active) {

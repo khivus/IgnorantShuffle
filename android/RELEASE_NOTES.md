@@ -9,17 +9,16 @@
 - Add opt-in playback debug checks under Logs, with expected/observed track details, an in-app issue banner and a separate notification on failure.
 - Render basic Markdown in release notes: headings, emphasis, links, lists, code, quotes and scrollable download tables.
 
-- Give the updater its own full-width area, so it no longer gets squeezed beside the app title.
-- Show **App v0.4.1** and **Core v0.1.0**, with **Tap to check updates** underneath. Existing updates and downloads open directly without restarting the download.
-- Save the automatic shuffle toggle across relaunches. It defaults to enabled for new and older installs without a saved choice; an explicit off choice remains off.
-- Restore the saved mode when AIMP reconnects. Missing access, unavailable timing, blocked storage and errors still prevent timed commands.
+Bundled shuffle core: **0.1.0**. Existing automatic shuffle preferences, weights
+and playback rules remain in place.
 
 Requires Android 8.0 / API 26+. This preview retains the signing key and application
-ID used by 0.4.0, so the in-app updater can install it while preserving settings
-and weights. In 0.4.0, open Updates and leave **Include preview releases** enabled.
-After installation, the full-width version area opens or checks Updates.
+ID used by 0.4.x. Older Android versions that only recognize `android/v...` tags
+need one manual APK update; subsequent stable bundles are discovered using the
+Android version in the APK filename. Updating the same app preserves settings
+and weights. Tap **Updates** in the header; Core version details are in that screen.
 
-Validation: **89 Android tests passed**, lint has no errors, and the APK signature
+Validation: **107 Android tests passed**, lint has no errors, and the APK signature
 matches the pinned update key. The phone's update installer and narrow-screen
 layout still need physical-device verification. Timed playback remains experimental;
 AIMP/headset/lock-screen Next continues to follow AIMP's own order.

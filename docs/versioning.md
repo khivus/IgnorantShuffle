@@ -28,6 +28,9 @@ The identical `IgnorantShuffle.aimppack` alias lets older Windows updaters find
 the package under the combined tag. A selection-rule change bumps
 the core; when either app ships that new core, bump that app's version as well.
 Every release includes freshly verified binaries for both applications.
+Keep the combined version at least as high as the Windows version so older
+updaters can compare it to their installed plugin version. The publisher checks
+this and refuses a combined version older than the last published stable bundle.
 
 Both apps compile the core from the same repository checkout. They report their
 own version and the exact bundled core version in the UI and diagnostics. Core

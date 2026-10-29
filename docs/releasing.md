@@ -8,7 +8,8 @@ keeps its version; it is still included in the download set.
 
 | Included file | Purpose |
 | --- | --- |
-| `IgnorantShuffle-vWINDOWS.aimppack` | AIMP installer with x64 and x86 DLLs and license. |
+| `IgnorantShuffle-Windows-vWINDOWS.aimppack` | AIMP installer with x64 and x86 DLLs and license. |
+| `IgnorantShuffle.aimppack` | Identical alias recognized by older Windows updaters. |
 | `aimp_ignorant_shuffle-x64.dll` | Manual install for 64-bit AIMP. |
 | `aimp_ignorant_shuffle-x86.dll` | Manual install for 32-bit AIMP. |
 | `SHA256SUMS.txt` | Windows package and DLL checksums. |

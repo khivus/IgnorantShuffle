@@ -87,7 +87,7 @@ class AppUpdates(private val context: Context, private val event: (String) -> Un
     fun onForeground() { if (restoring) foregroundPending = true else check(false) }
     fun open() { visible = true }
     fun dismiss(skip: Boolean = false) {
-        if (skip) release?.let { prefs.edit().putString("skipped", it.tag).apply() }
+        if (skip) release?.let { prefs.edit().putString("skipped", it.tag).putString("skippedVersion", it.version).apply() }
         visible = false
     }
     fun preferences(auto: Boolean = automatic, preview: Boolean = previews) {
@@ -135,7 +135,8 @@ class AppUpdates(private val context: Context, private val event: (String) -> Un
                         UpdatePhase.READY -> "Verified update is ready to install"
                         else -> "Android ${found?.version} is available"
                     }
-                    if (found != null && UpdateSchedule.prompt(found.tag, prefs.getString("skipped", null), manual)) visible = true
+                    if (found != null && UpdateSchedule.prompt(found.version, prefs.getString("skippedVersion", null), manual) &&
+                        UpdateSchedule.prompt(found.tag, prefs.getString("skipped", null), manual)) visible = true
                     event("UPDATE check result: $notice; tag=${found?.tag}; installable=${found?.asset != null}")
                 }
             } catch (e: Exception) { failure(token, canceled, e) }

@@ -95,6 +95,9 @@ class AndroidUpdatesTest {
         rejects { AndroidReleases.page(entries.toString(), "0.4.0", false, true) }
     }
     @Test fun skippedVersionCanStillBeCheckedManually() {
+        assertFalse(UpdateSchedule.prompt("0.5.0", "0.5.0", false)) // Same APK in another combined bundle.
+        assertTrue(UpdateSchedule.prompt("0.5.0", "0.5.0", true))
+        assertTrue(UpdateSchedule.prompt("0.5.1", "0.5.0", false))
         assertFalse(UpdateSchedule.prompt("android/v0.5.0", "android/v0.5.0", false))
         assertTrue(UpdateSchedule.prompt("android/v0.5.0", "android/v0.5.0", true))
         assertTrue(UpdateSchedule.prompt("android/v0.6.0", "android/v0.5.0", false))
