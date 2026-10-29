@@ -1,4 +1,5 @@
 #include "update_model.h"
+#include <regex>
 #include <algorithm>
 #include <cctype>
 #include <map>
@@ -157,18 +158,28 @@ std::optional<ReleaseUpdate> release_object(const Json& root, const std::string&
     if (release.tag.compare(0, 9, "windows/v") != 0 &&
         (release.tag.empty() || (release.tag[0] != 'v' && release.tag[0] != 'V'))) return {};
     try { release_version(release.tag); } catch (const std::exception&) { return {}; }
-    if (release_version(release.tag) <= release_version(installed)) return {};
+    release.version = release.tag.compare(0, 8, "windows/") == 0 ? release.tag.substr(9) : release.tag.substr(1);
     const auto repo = normalize_repository(repository);
     if (repo.empty()) throw std::runtime_error("Update repository is not configured.");
     release.page_url = "https://github.com/" + repo + "/releases/tag/" + release.tag;
     release.unavailable_reason = "The release has no IgnorantShuffle.aimppack asset yet.";
     const auto& assets = root.at("assets");
-    if (assets.kind != Json::Array) return release;
+    if (assets.kind != Json::Array) return release_version(release.version) > release_version(installed) ? std::optional<ReleaseUpdate>(release) : std::nullopt;
+    const std::regex packageName("IgnorantShuffle-v((0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*))[.]aimppack");
+    const Json* versioned = nullptr;
+    for (const auto& asset : assets.array) {
+        std::smatch match;
+        const auto name = asset.at("name").text();
+        if (!std::regex_match(name, match, packageName)) continue;
+        try { release_version(match[1].str()); } catch (const std::exception&) { continue; }
+        if (versioned) throw std::runtime_error("Release has ambiguous versioned update packages.");
+        versioned = &asset; release.version = match[1].str();
+    }
+    if (release_version(release.version) <= release_version(installed)) return {};
     bool found = false;
     for (const auto& asset : assets.array) {
         const auto name = asset.at("name").text();
-        const auto assetTag = release.tag.compare(0, 8, "windows/") == 0 ? release.tag.substr(8) : release.tag;
-        if (name != "IgnorantShuffle.aimppack" && name != "IgnorantShuffle-" + assetTag + ".aimppack") continue;
+        if (versioned ? &asset != versioned : name != "IgnorantShuffle.aimppack") continue;
         if (found) throw std::runtime_error("Release has ambiguous update packages."); found = true;
         if (asset.at("state").text() != "uploaded") { release.unavailable_reason = "Update package is still uploading."; continue; }
         const auto size = asset.at("size");
@@ -199,7 +210,7 @@ ReleasePage parse_release_page(const std::string& json, const std::string& repos
     ReleasePage page; page.count = root.array.size();
     for (const auto& item : root.array) {
         const auto candidate = release_object(item, repository, installed);
-        if (candidate && (!page.newest || release_version(candidate->tag) > release_version(page.newest->tag))) page.newest = candidate;
+        if (candidate && (!page.newest || release_version(candidate->version) > release_version(page.newest->version))) page.newest = candidate;
     }
     return page;
 }

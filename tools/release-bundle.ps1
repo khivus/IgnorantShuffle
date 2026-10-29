@@ -9,13 +9,15 @@ function Get-ReleaseBundle {
     $windows = Get-ComponentVersion windows $RepositoryRoot
     $android = Get-ComponentVersion android $RepositoryRoot
     $core = Get-ComponentVersion core $RepositoryRoot
-    $tag = (Get-ComponentVersion $Component $RepositoryRoot).Tag
+    $release = Get-ComponentVersion release $RepositoryRoot
+    if ([version]$release.Version -lt [version]$windows.Version) { throw 'Combined release version must not trail Windows (legacy updater compatibility).' }
+    $tag = $release.Tag
     $encodedTag = [Uri]::EscapeDataString($tag)
     $url = "https://github.com/khivus/IgnorantShuffle/releases/download/$encodedTag"
     $packageName = "IgnorantShuffle-v$($windows.Version).aimppack"
     $apkName = "IgnorantShuffle-Android-v$($android.Version)-debug.apk"
     $names = @($packageName, 'aimp_ignorant_shuffle-x64.dll', 'aimp_ignorant_shuffle-x86.dll',
-        'SHA256SUMS.txt', $apkName, 'SHA256SUMS-Android.txt')
+        'SHA256SUMS.txt', $apkName, 'SHA256SUMS-Android.txt', 'IgnorantShuffle.aimppack')
     $bodies = @{}
     foreach ($entry in @(
         @{ Key='windows'; Path='RELEASE_NOTES.md'; Heading="# IgnorantShuffle Windows v$($windows.Version)" },
@@ -32,7 +34,7 @@ function Get-ReleaseBundle {
         })
         $bodies[$entry.Key] = [regex]::Replace($body, '(?m)^## ', '### ')
     }
-    $title = "IgnorantShuffle - Windows v$($windows.Version) / Android v$($android.Version) / Core v$($core.Version)"
+    $title = "IgnorantShuffle $tag - Windows v$($windows.Version) / Android v$($android.Version) / Core v$($core.Version)"
     $notes = @"
 # $title
 
@@ -54,6 +56,7 @@ Every release includes both applications. Component versions advance independent
 | [Windows DLL x86]($url/aimp_ignorant_shuffle-x86.dll) | Manual installation for 32-bit AIMP. |
 | [Android SHA256]($url/SHA256SUMS-Android.txt) | Verify the APK. |
 | [Windows SHA256]($url/SHA256SUMS.txt) | Verify the installer or DLLs. |
+| [Legacy Windows installer]($url/IgnorantShuffle.aimppack) | Compatibility alias for older Windows updaters; identical to the versioned installer. |
 | [Source including core](https://github.com/khivus/IgnorantShuffle/archive/refs/tags/$encodedTag.zip) | Entire repository at this release. |
 
 ## Android v$($android.Version)
@@ -68,8 +71,8 @@ $($bodies.windows)
 
 $($bodies.core)
 "@
-    [pscustomobject]@{ Windows=$windows; Android=$android; Core=$core; Tag=$tag; Title=$title;
-        Names=$names; Notes=$notes.TrimEnd() + "`n"; Preview=($Component -eq 'android'); Latest=($Component -eq 'windows') }
+    [pscustomobject]@{ Windows=$windows; Android=$android; Core=$core; Release=$release; Tag=$tag; Title=$title;
+        Names=$names; Notes=$notes.TrimEnd() + "`n"; Preview=$false; Latest=$true }
 }
 
 function Test-ReleaseChecksums {
@@ -79,7 +82,7 @@ function Test-ReleaseChecksums {
         if (-not (Test-Path -LiteralPath (Join-Path $dist $name) -PathType Leaf)) { throw "Missing release asset: $name. Build both platforms before publication." }
     }
     foreach ($group in @(
-        @{ Manifest='SHA256SUMS.txt'; Files=@($Bundle.Names[0], $Bundle.Names[1], $Bundle.Names[2]) },
+        @{ Manifest='SHA256SUMS.txt'; Files=@($Bundle.Names[0], $Bundle.Names[1], $Bundle.Names[2], $Bundle.Names[6]) },
         @{ Manifest='SHA256SUMS-Android.txt'; Files=@($Bundle.Names[4]) }
     )) {
         $manifest = @(Get-Content -LiteralPath (Join-Path $dist $group.Manifest))
@@ -89,6 +92,8 @@ function Test-ReleaseChecksums {
             if ($manifest -cnotcontains "$hash  $name") { throw "Release checksum mismatch: $name" }
         }
     }
+    if ((Get-FileHash -LiteralPath (Join-Path $dist $Bundle.Names[0])).Hash -cne
+        (Get-FileHash -LiteralPath (Join-Path $dist $Bundle.Names[6])).Hash) { throw 'Legacy installer alias differs from the versioned package.' }
 }
 
 function Test-ReleaseArtifacts {

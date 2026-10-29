@@ -602,7 +602,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             auto state = monitor_state();
             const auto update = updater_.state();
             state.update_status = update.phase == ignorant::UpdatePhase::Available && update.release
-                ? L"Update " + from_utf8(update.release->tag) + L" available"
+                ? L"Windows v" + from_utf8(update.release->version) + L" available"
                 : update_status(update);
             const auto summary = "playing=" + context_id(playing_) + " current=\"" + utf8(state.current_track) +
                 "\" next=\"" + utf8(state.next_track) + "\" cooldown=\"" + utf8(state.cooldown_status) + "\" detail=\"" + utf8(state.decision) + '"';

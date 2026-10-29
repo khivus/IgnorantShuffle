@@ -41,6 +41,17 @@ void model_checks() {
     auto json = metadata(package);
     const auto release = parse_release(json, "example/shuffle", "0.9.0");
     check(release && release->installable() && release->size == package.size(), "Valid release asset detection.");
+    const auto bundle = parse_release(metadata(package, {}, "v9.0.0"), "example/shuffle", "1.1.0");
+    check(bundle && bundle->version == "1.2.0" && bundle->installable(), "Combined release number is independent of Windows package version.");
+    check(!parse_release(metadata(package, {}, "v9.0.0"), "example/shuffle", "1.2.0"), "An unchanged Windows package in a newer bundle must not be offered again.");
+    auto alias = metadata(package, {}, "v9.0.0");
+    const auto assetStart = alias.find("{\"name\":");
+    auto generic = alias.substr(assetStart, alias.size() - assetStart - 2);
+    const std::string versionedName = "IgnorantShuffle-v1.2.0.aimppack";
+    for (auto pos = generic.find(versionedName); pos != std::string::npos; pos = generic.find(versionedName)) generic.replace(pos, versionedName.size(), "IgnorantShuffle.aimppack");
+    alias.insert(alias.size() - 2, "," + generic);
+    const auto aliased = parse_release(alias, "example/shuffle", "1.1.0");
+    check(aliased && aliased->asset_name == versionedName, "Prefer the app-versioned installer over the identical legacy alias.");
     check(!parse_release(json, "example/shuffle", "1.2.0"), "Equal version must not update.");
     check(!parse_release(json, "example/shuffle", "2.0.0"), "Never downgrade.");
     auto prerelease = json; prerelease.replace(prerelease.find("\"prerelease\":false"), 18, "\"prerelease\":true");

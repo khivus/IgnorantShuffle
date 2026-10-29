@@ -5,9 +5,10 @@ belongs to its component; it does not need to match either of the others.
 
 | Component | Single version source | Current development version | Release tag |
 | --- | --- | --- | --- |
-| Windows AIMP plugin | [windows.properties](../versions/windows.properties) | 0.12.0 | `windows/v0.12.0` |
-| Android companion | [android.properties](../versions/android.properties) | 0.4.1, code 6 | `android/v0.4.1` |
-| Shared C++ selection core | [core.properties](../versions/core.properties) | 0.1.0 | `core/v0.1.0` |
+| Combined release | [release.properties](../versions/release.properties) | 0.13.0 | `v0.13.0` |
+| Windows AIMP plugin | [windows.properties](../versions/windows.properties) | 0.12.1 | Included in the same stable bundle |
+| Android companion | [android.properties](../versions/android.properties) | 0.4.1, code 6 | Included in the same stable bundle |
+| Shared C++ selection core | [core.properties](../versions/core.properties) | 0.1.0 | Included in the same stable bundle |
 
 These are source/build versions, not a statement that a release has been published.
 The core's first explicit version is 0.1.0. Earlier Windows `vX.Y.Z` releases keep
@@ -18,12 +19,15 @@ properties files. Increment patch for compatible fixes, minor for compatible
 features, and major for breaking contracts. During 0.x development, document
 breaking changes explicitly and advance the minor version.
 
-Only bump components whose shipped behavior or public contract changes. An
-Android UI change does not require a Windows or core bump. A Windows adapter
-change does not require an Android or core bump. A selection-rule change bumps
+Release tags are always `vMAJOR.MINOR.PATCH`, with no component prefix or preview
+suffix. Advance `versions/release.properties` for every release, regardless of
+which app changes. Windows, Android and core versions remain independent and only
+advance when changed. Updaters compare versions in their app's asset filenames;
+a newer bundle with the same app version does not trigger another update.
+The identical `IgnorantShuffle.aimppack` alias lets older Windows updaters find
+the package under the combined tag. A selection-rule change bumps
 the core; when either app ships that new core, bump that app's version as well.
-An unmodified app keeps its version when another component changes. Its current
-binary is still included in every new release alongside the changed component.
+Every release includes freshly verified binaries for both applications.
 
 Both apps compile the core from the same repository checkout. They report their
 own version and the exact bundled core version in the UI and diagnostics. Core
@@ -48,16 +52,16 @@ Read all component metadata without building:
 
 ```powershell
 . .\tools\component-version.ps1
-'windows', 'android', 'core' | ForEach-Object { Get-ComponentVersion $_ }
+'release', 'windows', 'android', 'core' | ForEach-Object { Get-ComponentVersion $_ }
 ```
 
 Use the component-specific changelogs and release instructions linked from the
 [changelog index](../CHANGELOG.md) and [release guide](releasing.md). Tags identify
-the released component; each tag still captures the entire repository, including
+the stable bundle; each tag captures the entire repository, including
 the bundled core source/version. Record the core version in app release notes.
 
 Every release includes the Android APK, Windows installer and both Windows DLLs,
-checksums, and a table of all three component versions. Component tags continue
-to drive independent updater channels; if both apps have new versions, publish
-both component tags with the same complete artifact set. The core ships inside
-each app and in the source snapshot.
+checksums, and a table of all three component versions. Publish one stable tag
+for the complete bundle. Android reads its version from the APK filename rather
+than the bundle tag. Legacy component tags remain historical; do not create more.
+The core ships inside each app and in the source snapshot.

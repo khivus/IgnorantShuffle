@@ -6,7 +6,7 @@
 
 namespace ignorant {
 struct ReleaseUpdate {
-    std::string tag, page_url, asset_url, asset_name, sha256, unavailable_reason;
+    std::string tag, version, page_url, asset_url, asset_name, sha256, unavailable_reason;
     std::uint64_t size = 0;
     bool installable() const { return !asset_url.empty() && !sha256.empty() && unavailable_reason.empty(); }
 };

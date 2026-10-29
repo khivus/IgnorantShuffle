@@ -10,7 +10,7 @@ function Rejects([scriptblock]$Action) {
 }
 try {
     foreach ($folder in 'versions', 'android', 'docs', 'dist') { [IO.Directory]::CreateDirectory((Join-Path $fixture $folder)) | Out-Null }
-    foreach ($component in 'windows', 'android', 'core') {
+    foreach ($component in 'windows', 'android', 'core', 'release') {
         Copy-Item -LiteralPath (Join-Path $projectRoot "versions\$component.properties") -Destination (Join-Path $fixture "versions\$component.properties")
     }
     foreach ($path in 'RELEASE_NOTES.md', 'android\RELEASE_NOTES.md', 'docs\core-release-notes.md') {
@@ -18,7 +18,7 @@ try {
     }
     foreach ($component in 'windows', 'android', 'core') {
         $bundle = Get-ReleaseBundle $component $fixture
-        if ($bundle.Names.Count -ne 6 -or $bundle.Latest -ne ($component -eq 'windows') -or $bundle.Preview -ne ($component -eq 'android')) { throw 'Release channel or asset set mismatch.' }
+        if ($bundle.Names.Count -ne 7 -or -not $bundle.Latest -or $bundle.Preview -or $bundle.Tag -cne "v$($bundle.Release.Version)") { throw 'Release channel, stable tag or asset set mismatch.' }
         foreach ($version in $bundle.Windows.Version, $bundle.Android.Version, $bundle.Core.Version) {
             if (-not $bundle.Title.Contains("v$version") -or -not $bundle.Notes.Contains("v$version")) { throw 'A component version is missing from the title/notes.' }
         }
@@ -28,8 +28,9 @@ try {
             if (-not $bundle.Notes.Contains($expected)) { throw "Download table omits $name for $component" }
             [IO.File]::WriteAllText((Join-Path $fixture "dist\$name"), "fixture $name")
         }
+        Copy-Item -LiteralPath (Join-Path $fixture "dist\$($bundle.Names[0])") -Destination (Join-Path $fixture "dist\$($bundle.Names[6])") -Force
         foreach ($group in @(
-            @{ Manifest='SHA256SUMS.txt'; Files=@($bundle.Names[0], $bundle.Names[1], $bundle.Names[2]) },
+            @{ Manifest='SHA256SUMS.txt'; Files=@($bundle.Names[0], $bundle.Names[1], $bundle.Names[2], $bundle.Names[6]) },
             @{ Manifest='SHA256SUMS-Android.txt'; Files=@($bundle.Names[4]) }
         )) {
             $lines = foreach ($name in $group.Files) {
@@ -38,7 +39,7 @@ try {
             [IO.File]::WriteAllText((Join-Path $fixture "dist\$($group.Manifest)"), ($lines -join "`n") + "`n")
         }
         Test-ReleaseChecksums $bundle $fixture
-        foreach ($index in 0, 1, 2, 4) {
+        foreach ($index in 0, 1, 2, 4, 6) {
             $path = Join-Path $fixture ('dist\' + $bundle.Names[$index])
             $original = [IO.File]::ReadAllText($path)
             [IO.File]::WriteAllText($path, 'tampered')

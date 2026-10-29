@@ -39,13 +39,20 @@ object AndroidReleases {
             val item = json.getJSONObject(i)
             if (item.optBoolean("draft")) continue
             val tag = item.optString("tag_name")
-            if (!tag.startsWith("android/v")) continue
-            val version = tag.removePrefix("android/v")
+            val assets = item.optJSONArray("assets") ?: JSONArray()
+            val legacy = tag.startsWith("android/v")
+            val stable = tag.startsWith("v") && AppVersion.parse(tag.drop(1)) != null
+            if (!legacy && !stable) continue
+            // Bundle tags identify the Windows-compatible release; APK names identify Android.
+            val apkPattern = Regex("IgnorantShuffle-Android-v([0-9]+\\.[0-9]+\\.[0-9]+)(?:-debug|-release)?\\.apk")
+            val versions = (0 until assets.length()).mapNotNull {
+                apkPattern.matchEntire(assets.getJSONObject(it).optString("name"))?.groupValues?.get(1)
+            }.distinct()
+            val version = if (legacy) tag.removePrefix("android/v") else versions.singleOrNull() ?: continue
             val number = AppVersion.parse(version) ?: continue
             if (item.optBoolean("prerelease") && !previews) continue
             count++
             if (number <= current) continue
-            val assets = item.optJSONArray("assets") ?: JSONArray()
             val names = if (debugBuild) listOf("IgnorantShuffle-Android-v$version-debug.apk", "IgnorantShuffle-Android-v$version.apk", "IgnorantShuffle-Android-v$version-release.apk")
                 else listOf("IgnorantShuffle-Android-v$version.apk", "IgnorantShuffle-Android-v$version-release.apk")
             val candidates = (0 until assets.length()).map { assets.getJSONObject(it) }.filter { it.optString("name") in names }

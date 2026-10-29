@@ -1,4 +1,9 @@
-# IgnorantShuffle Windows v0.12.0
+# IgnorantShuffle Windows v0.12.1
+
+## Update compatibility
+
+- Restore stable `vMAJOR.MINOR.PATCH` bundle tags so older Windows plugins can discover and install updates again.
+- Every stable bundle includes Windows, Android and core versions plus downloads for both apps.
 
 Prefers shared music-folder weights for **AIMP 5.40 on Windows**, using the same root TSV as Android.
 Bundled shuffle core: **0.1.0**.

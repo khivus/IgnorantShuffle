@@ -1,7 +1,7 @@
 # Shared local metadata reader; importing this file has no side effects.
 function Get-ComponentVersion {
     param(
-        [Parameter(Mandatory)][ValidateSet('windows', 'android', 'core')][string]$Component,
+        [Parameter(Mandatory)][ValidateSet('windows', 'android', 'core', 'release')][string]$Component,
         [string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot)
     )
     $path = Join-Path $RepositoryRoot "versions\$Component.properties"
@@ -21,5 +21,5 @@ function Get-ComponentVersion {
         }
         $code = $parsedCode
     }
-    [pscustomobject]@{ Component = $Component; Version = $version; VersionCode = $code; Tag = "$Component/v$version" }
+    [pscustomobject]@{ Component = $Component; Version = $version; VersionCode = $code; Tag = "v$version" }
 }

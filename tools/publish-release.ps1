@@ -56,6 +56,13 @@ try {
     $remoteRepo = Invoke-GitHub "/repos/$repository"
     if ($remoteRepo.full_name -ine $repository -or $remoteRepo.private) { throw 'Unexpected/private target repository.' }
     Write-Output "Authenticated account: $($account.login)"
+    $latestPublished = $null
+    try { $latestPublished = Invoke-GitHub "/repos/$repository/releases/latest" }
+    catch { if (-not $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 404) { throw } }
+    if ($latestPublished -and $latestPublished.tag_name -cmatch '^v(\d+\.\d+\.\d+)$' -and
+        $latestPublished.tag_name -cne $tag -and [version]$Matches[1] -ge [version]$bundle.Release.Version) {
+        throw 'Advance versions/release.properties beyond the latest stable bundle before publishing.'
+    }
     $gitEnvironment = @{ GIT_CONFIG_COUNT='1'; GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'; GIT_CONFIG_VALUE_0=$gitHeader; GIT_TERMINAL_PROMPT='0' }
     foreach ($key in $gitEnvironment.Keys) { Set-PublishEnvironment $key $gitEnvironment[$key] }
     Invoke-Git -Arguments @('fetch', 'origin', 'main')

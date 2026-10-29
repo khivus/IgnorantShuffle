@@ -34,9 +34,20 @@ class AndroidUpdatesTest {
         listOf("v1.2.3", "1.2", "1.2.3.4", "01.2.3", "1.2.3-beta", "999999999999.0.0").forEach { assertNull(AppVersion.parse(it)) }
     }
     @Test fun onlyAndroidTagsCanBeOfferedRegardlessOfLatestReleaseOrder() {
-        val result = page(release("windows/v99.0.0"), release("core/v98.0.0"), release("v97.0.0"), release())
+        val result = page(release("windows/v99.0.0"), release("core/v98.0.0"), release("v97.0.0").put("assets", JSONArray()), release())
         assertEquals(4, result.count); assertEquals(1, result.androidCount)
         assertEquals("android/v0.5.0", result.newest!!.tag)
+    }
+    @Test fun stableBundleUsesApkVersionInsteadOfWindowsTag() {
+        val bundle = release().put("tag_name", "v0.12.1")
+        val apk = bundle.getJSONArray("assets").getJSONObject(0)
+        apk.put("browser_download_url", apk.getString("browser_download_url").replace("android%2Fv0.5.0", "v0.12.1"))
+        val result = page(bundle).newest!!
+        assertEquals("v0.12.1", result.tag)
+        assertEquals("0.5.0", result.version)
+        assertNotNull(result.asset)
+        assertNull(page(bundle.put("prerelease", true)).newest)
+        assertNull(page(bundle.put("prerelease", false).put("tag_name", "v0.12.1-beta")).newest)
     }
     @Test fun highestVersionWinsWithoutDependingOnPublishOrder() {
         assertEquals("0.10.0", page(release("android/v0.9.0"), release("android/v0.10.0"), release()).newest!!.version)

@@ -3,6 +3,10 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## 0.12.1
+
+- Restore stable `vMAJOR.MINOR.PATCH` bundle tags, allowing Windows 0.11.0 and earlier to discover new releases again.
+
 ## 0.12.0
 
 - Prefer the main music folder's global TSV by default, ready to synchronize relative-path weights with Android. Use profile weights until a root is selected and respect existing explicit storage choices.

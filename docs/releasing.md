@@ -18,25 +18,28 @@ keeps its version; it is still included in the download set.
 
 ## Versions and tags
 
-Follow [versioning](versioning.md): only bump changed components. Each distributed
+Follow [versioning](versioning.md): advance `versions/release.properties` for every
+release and bump only the changed app/core versions. Each distributed
 Android update also needs a strictly larger `versionCode`. Update the relevant
 changelog and component release notes; their first heading must match metadata:
 
 | Component | Notes | Tag |
 | --- | --- | --- |
-| Windows | [RELEASE_NOTES.md](../RELEASE_NOTES.md), `# IgnorantShuffle Windows vX.Y.Z` | `windows/vX.Y.Z` |
-| Android | [android/RELEASE_NOTES.md](../android/RELEASE_NOTES.md), `# IgnorantShuffle Android vX.Y.Z` | `android/vX.Y.Z` |
-| Core | [core-release-notes.md](core-release-notes.md), `# IgnorantShuffle Core vX.Y.Z` | `core/vX.Y.Z` |
+| Bundle | `versions/release.properties` | `vMAJOR.MINOR.PATCH` |
+| Windows | [RELEASE_NOTES.md](../RELEASE_NOTES.md), `# IgnorantShuffle Windows vX.Y.Z` | Same bundle tag |
+| Android | [android/RELEASE_NOTES.md](../android/RELEASE_NOTES.md), `# IgnorantShuffle Android vX.Y.Z` | Same bundle tag |
+| Core | [core-release-notes.md](core-release-notes.md), `# IgnorantShuffle Core vX.Y.Z` | Same bundle tag |
 
 Component notes contain changes and testing details. The publisher combines them
 with a version table and direct download links to **all** assets in that release.
 No manual download-table edits are needed.
 
-Tags select updater channels. Android checks `android/v...`; Windows checks
-`windows/v...` and historical `v...`. If both applications have new versions,
-publish both component tags at the same commit with the same complete artifact
-set. An Android-only change needs only a new Android tag, still containing both
-applications. Never move old tags or replace published assets.
+Only publish stable `vMAJOR.MINOR.PATCH` tags. All entry points publish the same
+bundle using the combined release version, with GitHub prerelease off and Latest on.
+Both apps discover their independent version from the corresponding download
+filename. `IgnorantShuffle.aimppack` is an identical compatibility alias for older
+Windows updaters. Never move old
+tags or replace published assets. The component-prefixed tags remain historical.
 
 ## Build and verify both applications
 
@@ -77,27 +80,27 @@ architectures, installer contents, Android package/version/code and the pinned
 signing key. It writes the exact combined notes to `dist/release-notes-COMPONENT.md`
 for review. Missing or stale companion assets stop the release.
 
-Commit the intended changes, then publish only newly versioned component tags:
+Commit the intended changes, then publish the new stable bundle once:
 
 ```powershell
 .\tools\publish-release.ps1 -Component windows -Publish
-.\tools\publish-android.ps1 -Publish
-# For a newly versioned core: .\tools\publish-release.ps1 -Component core -Publish
+# publish-android.ps1 is an alias for publishing this same complete bundle.
 ```
 
 The shared publisher requires a clean `main` checkout and the matching
 `khivus/IgnorantShuffle` origin. It uses the existing khivus Git Credential Manager
 account, keeps credentials in memory, refuses a diverged remote or conflicting
-tag, and pushes main and the component tag. It never stages or commits files.
+tag, and pushes main and the stable bundle tag. It never stages or commits files.
 
-All six assets upload to a draft and must match GitHub's sizes and SHA256 digests
+All seven assets upload to a draft and must match GitHub's sizes and SHA256 digests
 before publication. Public downloads are then fetched and hashed again. Existing
 published assets are never overwritten; matching draft uploads can be resumed.
 
-Android entries are prereleases. Stable Windows entries receive GitHub's Latest
-label; Android/core entries preserve it. Both entries clearly label the bundled
-Android build as a preview. This keeps existing component updaters compatible.
-Windows 0.11.0 and earlier need a manual install of the first `windows/v...` release.
+Every new entry is stable and receives GitHub's Latest label. The notes still
+label the Android companion's maturity as a preview. Plain tags restore update
+discovery for Windows 0.11.0 and earlier without a manual migration. Older Android
+builds that only recognize `android/v...` need one manual APK update to learn the
+stable bundle format.
 
 The Windows update repository defaults to `khivus/IgnorantShuffle`; override it with
 `build.ps1 -Architecture Both -UpdateRepository owner/repository` or CMake's

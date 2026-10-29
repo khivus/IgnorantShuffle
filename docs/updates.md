@@ -8,16 +8,19 @@ Open **Updates...** at the bottom of the floating panel. **Automatically check f
 
 Checks never start a download or installation. Unchecking the option persists across restarts; **Check now** still works.
 
-Only newer stable **Windows** releases are offered: `windows/vX.Y.Z` and historical
-`vX.Y.Z` tags. Android/core versions are ignored. The check reads paginated release
+New releases use stable **`vMAJOR.MINOR.PATCH`** bundle tags, matching the Windows
+bundle version from `versions/release.properties`. The Windows app version comes
+from `IgnorantShuffle-vVERSION.aimppack`; unchanged packages are not offered again.
+An identical `IgnorantShuffle.aimppack` alias supports older updaters.
+Legacy `windows/vX.Y.Z` tags remain readable by recent builds.
+Android/core component tags are ignored. The check reads paginated release
 history, so an Android release cannot hide a Windows update by becoming GitHub's
 general latest release. Drafts, prereleases, equal versions, and older versions
 are not offered. Reaching the 1000-entry scan limit without finding the end of
 history produces an explicit error.
 
-Windows 0.11.0 and earlier only understand the historical tag format. Install the
-first `windows/v...` release manually through AIMP's Plugins page, then subsequent
-Windows releases can be discovered by the updated checker.
+Windows 0.11.0 and earlier understand the restored plain tag format and can
+discover new stable bundles directly.
 
 ## Download and install
 

@@ -61,14 +61,14 @@ bool UpdateClient::check(const std::string& value) {
                 if (reply.status == 404 && page == 1) { missing = true; break; }
                 if (reply.status != 200) throw std::runtime_error(reply.status == 403 || reply.status == 429 ? "GitHub rate limit or access restriction. Try again later." : "GitHub update check failed (HTTP " + std::to_string(reply.status) + ").");
                 const auto entries = parse_release_page(std::string(reply.body.begin(), reply.body.end()), repository, installed_);
-                if (entries.newest && (!release || release_version(entries.newest->tag) > release_version(release->tag))) release = entries.newest;
+                if (entries.newest && (!release || release_version(entries.newest->version) > release_version(release->version))) release = entries.newest;
                 if (entries.count < 100) break;
                 if (page == 10) throw std::runtime_error("Release scan reached 1000 entries; Windows update check could not finish.");
             }
             std::lock_guard<std::mutex> lock(mutex_);
             state_.release = release;
             state_.phase = missing ? UpdatePhase::Idle : release ? UpdatePhase::Available : UpdatePhase::Current;
-            state_.message = missing ? "Repository or release is not published yet." : release ? ("Windows update " + release->tag + " available." + (release->unavailable_reason.empty() ? "" : " " + release->unavailable_reason)) : "No newer stable Windows release is available.";
+            state_.message = missing ? "Repository or release is not published yet." : release ? ("Windows v" + release->version + " available (release " + release->tag + ")." + (release->unavailable_reason.empty() ? "" : " " + release->unavailable_reason)) : "No newer stable Windows release is available.";
         } catch (const std::exception& error) { failure(error.what()); }
     });
     return true;

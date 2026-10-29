@@ -13,10 +13,10 @@ $repoRoot = $projectRoot
 . (Join-Path $projectRoot 'tools\release-bundle.ps1')
 foreach ($component in 'windows', 'android', 'core') {
     $bundle = Get-ReleaseBundle $component
-    if ($bundle.Names.Count -ne 6 -or @($bundle.Names | Where-Object { $_ -match '[/\\]' }).Count) {
+    if ($bundle.Names.Count -ne 7 -or @($bundle.Names | Where-Object { $_ -match '[/\\]' }).Count) {
         throw 'Every component release must include both platforms with flat asset names.'
     }
-    if ($bundle.Tag -cne (Get-ComponentVersion $component).Tag) { throw 'Wrong component tag.' }
+    if ($bundle.Tag -cne (Get-ComponentVersion release).Tag -or $bundle.Preview -or -not $bundle.Latest) { throw 'Every entry point must publish the same stable bundle tag.' }
 }
 if ($tree.Extent.Text -match "Invoke-Git -Arguments @\('(add|commit)'") { throw 'Publisher must not stage or commit unrelated components.' }
 $notes = [IO.File]::ReadAllText((Join-Path $projectRoot 'RELEASE_NOTES.md'))

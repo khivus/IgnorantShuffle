@@ -40,12 +40,12 @@ uploaded; playback, local files and shuffle rules do not require a backend.
 
 ## Release contract
 
-- Publish a GitHub release on `khivus/IgnorantShuffle` tagged `android/vX.Y.Z`.
-  Bare `v...`, `windows/...` and `core/...` tags are ignored. Release version
-  numbers use the strict stable three-part format from Android's version file;
-  a preview is indicated by GitHub's prerelease flag.
+- Publish a stable GitHub release on `khivus/IgnorantShuffle` tagged
+  `vMAJOR.MINOR.PATCH`, from `versions/release.properties`. Android reads its own
+  version from the APK filename, independently of the combined release version.
+  Historical `android/v...` releases remain readable for migration.
 - Every release includes both Android and Windows assets and all component
-  versions. The tag selects the updater channel; unchanged components retain
+  versions. The tag identifies the whole bundle; unchanged components retain
   their own versions. See [publishing](releasing.md).
 - Attach `IgnorantShuffle-Android-vX.Y.Z-debug.apk` for the debug preview,
   `IgnorantShuffle-Android-vX.Y.Z.apk`, or `...-release.apk`. Debug installs prefer
@@ -54,10 +54,10 @@ uploaded; playback, local files and shuffle rules do not require a backend.
 - Wait for asset state `uploaded` and GitHub's `sha256:` digest. Keep APKs at most
   100 MB. The installed and downloaded signing keys must match; CI's temporary
   debug key cannot update a locally signed debug installation.
-- The APK's version name must equal the tag's version, with a larger versionCode.
+- The APK's version name must equal its filename version, with a larger versionCode.
   Include a compatible `libignorant_shuffle.so` ABI. Keep the same application ID.
-- Mark previews as prereleases and reserve the repository's Latest label for
-  Windows. Android scans paginated release history (up to 1000 entries), so that
+- New bundles are stable and receive the repository's Latest label.
+  Android scans paginated release history (up to 1000 entries), so that
   label does not determine its result. An incomplete scan reports an error.
 
 A tag alone is insufficient: it needs a published release and usable APK asset.

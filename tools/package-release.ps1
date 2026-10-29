@@ -55,7 +55,9 @@ $rawDlls = @(
     @{ Source = $files[1].Source; Name = 'aimp_ignorant_shuffle-x64.dll' }
 )
 foreach ($dll in $rawDlls) { Copy-Item -LiteralPath $dll.Source -Destination (Join-Path $output $dll.Name) -Force }
-$releaseFiles = @($package) + @($rawDlls | ForEach-Object { Join-Path $output $_.Name })
+$legacy = Join-Path $output 'IgnorantShuffle.aimppack'
+Copy-Item -LiteralPath $package -Destination $legacy -Force
+$releaseFiles = @($package) + @($rawDlls | ForEach-Object { Join-Path $output $_.Name }) + @($legacy)
 $lines = foreach ($releaseFile in $releaseFiles) {
     (Get-FileHash -LiteralPath $releaseFile -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($releaseFile)
 }
