@@ -11,6 +11,7 @@ These entries do not imply published GitHub releases.
 - Move update access into the header, freeing the full-width version card's space.
 - Discover Android versions from APK filenames in stable combined releases.
 - Add saved opt-in playback debug checks for companion selections and timed handoffs, including mismatches and eight-second timeouts. Report failures in a persistent app banner and separate notification; retain messages when Android blocks notifications.
+- Render release-note headings, emphasis, clickable HTTP(S) links, inline/fenced code, lists, quotes and horizontally scrollable tables without executing HTML.
 
 ## 0.4.1 (versionCode 6)
 

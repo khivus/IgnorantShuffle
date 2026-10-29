@@ -11,10 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -99,26 +96,5 @@ private fun UpdateToggle(title: String, description: String, value: Boolean, ena
             Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(value, change, enabled = enabled)
-    }
-}
-
-@Composable
-private fun ReleaseNotes(notes: String) {
-    // Small text-only Markdown presentation; release content is never executed in a WebView.
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        notes.lines().filter(String::isNotBlank).take(300).forEach { raw ->
-            val line = raw.trim()
-            val heading = line.startsWith('#')
-            val text = when { heading -> line.trimStart('#', ' '); line.startsWith("- ") || line.startsWith("* ") -> "• ${line.drop(2)}"; else -> line }
-            Text(buildAnnotatedString {
-                var end = 0
-                Regex("\\*\\*(.+?)\\*\\*").findAll(text).forEach { match ->
-                    append(text.substring(end, match.range.first))
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(match.groupValues[1]) }
-                    end = match.range.last + 1
-                }
-                append(text.substring(end))
-            }, style = if (heading) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
-        }
     }
 }

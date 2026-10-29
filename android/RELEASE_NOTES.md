@@ -7,6 +7,7 @@
 - Move update access and the app version into the header to leave more room for playback.
 - Read Android update versions from APK filenames in stable combined releases.
 - Add opt-in playback debug checks under Logs, with expected/observed track details, an in-app issue banner and a separate notification on failure.
+- Render basic Markdown in release notes: headings, emphasis, links, lists, code, quotes and scrollable download tables.
 
 - Give the updater its own full-width area, so it no longer gets squeezed beside the app title.
 - Show **App v0.4.1** and **Core v0.1.0**, with **Tap to check updates** underneath. Existing updates and downloads open directly without restarting the download.

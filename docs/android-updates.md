@@ -40,6 +40,11 @@ uploaded; playback, local files and shuffle rules do not require a backend.
 
 ## Release contract
 
+The in-app release page supports basic Markdown: headings, bold/italic text,
+clickable HTTP(S) links, inline/fenced code, lists, quotes, dividers and horizontally
+scrollable tables. HTML stays literal text. Very long notes are bounded with a
+link to the complete release available below the notes.
+
 - Publish a stable GitHub release on `khivus/IgnorantShuffle` tagged
   `vMAJOR.MINOR.PATCH`, from `versions/release.properties`. Android reads its own
   version from the APK filename, independently of the combined release version.
