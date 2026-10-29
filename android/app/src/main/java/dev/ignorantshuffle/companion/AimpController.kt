@@ -50,6 +50,8 @@ class AimpController(private val context: Context) {
     val folder = FolderWeightsController(context, ::log, ::folderChanged)
     private val journal = DiagnosticJournal(context.filesDir)
     private val notifications = RollNotifications(context) { log(it) }
+    private val issueNotifications = PlaybackIssueNotifications(context)
+    private val audit = PlaybackAudit()
     private val runId = UUID.randomUUID().toString().take(8)
     private val power = context.getSystemService(PowerManager::class.java)
     private val wake by lazy {
@@ -74,6 +76,9 @@ class AimpController(private val context: Context) {
     var logError by mutableStateOf<String?>(null); private set
     var notificationStatus by mutableStateOf("Next-roll notifications are off"); private set
     var notificationsAllowed by mutableStateOf(false); private set
+    var debugNotificationsAllowed by mutableStateOf(false); private set
+    var debugIssue by mutableStateOf<String?>(null); private set
+    var debugStatus by mutableStateOf("Playback debug mode is off"); private set
     var automatic by mutableStateOf(false); private set
     var automaticStatus by mutableStateOf("Timed automatic mode is off"); private set
     var status by mutableStateOf("Grant notification access, then start music in AIMP"); private set
@@ -117,9 +122,16 @@ class AimpController(private val context: Context) {
     fun changePreferences(value: AppPreferences) = guarded {
         if (value.leadMs != preferences.leadMs) check(!pending) { "Wait for the pending playback command" }
         val timingChanged = value.leadMs != preferences.leadMs
+        val debugChanged = value.debugPlayback != preferences.debugPlayback
         preferenceStore.save(value)
         if (!value.logging) log("Automatic logging disabled by user")
         preferences = value
+        if (debugChanged) {
+            audit.cancel(); handler.removeCallbacks(auditPoll)
+            debugStatus = if (value.debugPlayback) "Waiting for the next selected track" else "Playback debug mode is off"
+            if (!value.debugPlayback) dismissDebugIssue()
+            sustainCpu()
+        }
         if (value.logging) log("App preferences updated: $value")
         refreshNotifications()
         if (timingChanged) { log("Automatic switch lead changed to ${value.leadMs}ms"); scheduleTimer() }
@@ -127,6 +139,7 @@ class AimpController(private val context: Context) {
 
     fun refreshNotifications() {
         notificationsAllowed = notifications.allowed()
+        debugNotificationsAllowed = if (preferences.debugPlayback) issueNotifications.allowed() else false
         if (!connected || storageError != null || folder.blocked) {
             notifications.clear()
             notificationStatus = if (preferences.notifyRoll) "Waiting for a connected AIMP session" else "Next-roll notifications are off"
@@ -188,6 +201,8 @@ class AimpController(private val context: Context) {
     }
 
     private fun detach(reason: String) {
+        audit.cancel(); handler.removeCallbacks(auditPoll)
+        debugStatus = if (preferences.debugPlayback) "Waiting for a connected AIMP session" else "Playback debug mode is off"
         if (pending) finish("INCONCLUSIVE: $reason")
         disableAutomatic(if (preferences.automatic) "Timed mode waiting for AIMP: $reason" else "Timed automatic mode is off")
         native?.let { c -> callback?.let { cb -> runCatching { c.unregisterCallback(cb) } } }
@@ -244,7 +259,15 @@ class AimpController(private val context: Context) {
         actions = state?.actions ?: 0
         if (next.title != playback.title || next.state != playback.state || next.track?.key != playback.track?.key)
             log("Observed state=${next.state}; title=${next.title}; id=$mediaId; queueId=${current?.queueId}; position=${next.position}; actions=0x${actions.toString(16)}")
+        // AIMP can cross the deadline before our timed dispatch runs. Audit the
+        // captured roll too, so an unexpected natural next track is visible.
+        val plan = scheduled
+        if (preferences.debugPlayback && !audit.active && automatic && plan?.choice?.track != null &&
+            next.state == PlaybackState.STATE_PLAYING && next.track != null && next.track.key != plan.source) {
+            armAudit(playback, requireNotNull(plan.choice.track), plan.sequence)
+        }
         playback = next
+        observeAudit()
         if (next.state == PlaybackState.STATE_PLAYING && current != null) {
             val op = operation
             val restarted = op != null && op.target == current.key && op.before.track?.key == current.key &&
@@ -357,6 +380,7 @@ class AimpController(private val context: Context) {
         val transport = c.transportControls
         log("DISPATCH roll=${planned?.sequence ?: rollSequence}; source=${playback.track}; target=$fresh; choice=$choice")
         model.requested(choice)
+        if (preferences.debugPlayback) armAudit(playback, fresh, planned?.sequence ?: rollSequence)
         begin("Play ${fresh.title}", fresh.key)
         when {
             fresh.mediaId != null && actions and PlaybackState.ACTION_PLAY_FROM_MEDIA_ID != 0L -> transport.playFromMediaId(fresh.mediaId, null)
@@ -442,7 +466,38 @@ class AimpController(private val context: Context) {
         // AIMP can briefly report PAUSED/BUFFERING during the requested handoff.
         // Keep the bounded command-confirmation window awake through that state.
         val ready = automatic && connected && permission && storageError == null && !folder.blocked
-        cpu.update(CpuProtection.needed(ready, pending, timing(), SystemClock.elapsedRealtime(), preferences.leadMs))
+        cpu.update((preferences.debugPlayback && audit.active && connected && permission) ||
+            CpuProtection.needed(ready, pending, timing(), SystemClock.elapsedRealtime(), preferences.leadMs))
+    }
+
+    fun dismissDebugIssue() { debugIssue = null; issueNotifications.clear() }
+
+    private fun armAudit(before: Playback, target: Track, sequence: Long) {
+        audit.arm(before, target, sequence, SystemClock.elapsedRealtime())
+        debugStatus = "Checking roll #$sequence: ${target.title}"
+        log("DEBUG EXPECT roll=$sequence source=${before.track?.key} target=${target.key} title=${target.title}")
+        handler.removeCallbacks(auditPoll); handler.postDelayed(auditPoll, 250)
+    }
+
+    private fun observeAudit() {
+        val result = audit.observe(playback, SystemClock.elapsedRealtime()) ?: return
+        handler.removeCallbacks(auditPoll)
+        debugStatus = result.message
+        log("DEBUG ${if (result.matched) "MATCH" else "ISSUE"}: ${result.message}")
+        if (!result.matched) {
+            debugIssue = result.message
+            debugNotificationsAllowed = issueNotifications.show(result.message, preferences.accent)
+            if (!debugNotificationsAllowed) log("DEBUG issue notification blocked; issue remains visible in the app")
+        }
+        sustainCpu()
+    }
+
+    private val auditPoll = object : Runnable {
+        override fun run() {
+            if (!preferences.debugPlayback || !audit.active || !connected) return
+            guarded { read(rearm = false) }
+            if (audit.active) handler.postDelayed(this, 250)
+        }
     }
 
     private val endTimer = Runnable {
@@ -451,6 +506,7 @@ class AimpController(private val context: Context) {
         guarded {
             if (automatic && !pending && planned != null) {
                 log("TIMER fired roll=${planned.sequence}; elapsedLate=${SystemClock.elapsedRealtime() - planned.elapsedDeadline}ms; uptimeLate=${SystemClock.uptimeMillis() - planned.uptimeDeadline}ms")
+                val beforeHandoff = playback
                 read(rearm = false)
                 if (HandoffPolicy.valid(planned, timing(), model.choiceSequence, SystemClock.elapsedRealtime())) {
                     log("Timed deadline reached for ${planned.source}; captured roll=${planned.sequence}")
@@ -460,6 +516,11 @@ class AimpController(private val context: Context) {
                         basic(false, planned.source)
                     } else playChoice(choice, planned)
                 } else {
+                    if (preferences.debugPlayback && !audit.active && planned.choice.track != null &&
+                        playback.state == PlaybackState.STATE_PLAYING && playback.track != null && playback.track?.key != planned.source) {
+                        armAudit(beforeHandoff, requireNotNull(planned.choice.track), planned.sequence)
+                        observeAudit()
+                    }
                     log("HANDOFF CANCELLED: planned=$planned; actual=$playback; currentRoll=${model.choiceSequence}. AIMP/manual playback left unchanged.")
                     scheduleTimer()
                 }
@@ -487,6 +548,7 @@ class AimpController(private val context: Context) {
         appendLine((context.applicationContext as ShuffleApplication).updates.snapshot())
         appendLine("IgnorantShuffle Android ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}); Core ${ShuffleNative.coreVersion()}\n$status\n$settings\n$playback\nPreview: $preview\nResult: $result")
         appendLine("Preferences: $preferences; log error: ${journal.failure}; roll=$rollSequence reason=$rollReason")
+        appendLine("Playback debug: $debugStatus; issue=$debugIssue; notificationAllowed=$debugNotificationsAllowed")
         appendLine("Scheduled: $scheduled; screen=${power.isInteractive}; idle=${power.isDeviceIdleMode}")
         appendLine("CPU held=${wake.isHeld}; powerSave=${power.isPowerSaveMode}; batteryExempt=${power.isIgnoringBatteryOptimizations(context.packageName)}")
         appendLine("Music folder: ${folder.config}; busy=${folder.busy}; error=${folder.error}; ${folder.status}")

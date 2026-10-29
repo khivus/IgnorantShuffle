@@ -28,4 +28,9 @@ class PreferenceJsonTest {
         assertFalse(PreferenceJson.decode("""{"automatic":false}""").automatic)
         assertTrue(PreferenceJson.decode("{}").automatic)
     }
+    @Test fun debugModeIsOptInAndPersistsWithOtherSettings() {
+        assertFalse(PreferenceJson.decode("{}").debugPlayback)
+        val enabled = AppPreferences(debugPlayback = true, logging = false)
+        assertEquals(enabled, PreferenceJson.decode(PreferenceJson.encode(enabled)))
+    }
 }

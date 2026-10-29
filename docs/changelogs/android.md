@@ -10,6 +10,7 @@ These entries do not imply published GitHub releases.
 - Label the next-roll playback action Play and keep reroll and weight controls compact.
 - Move update access into the header, freeing the full-width version card's space.
 - Discover Android versions from APK filenames in stable combined releases.
+- Add saved opt-in playback debug checks for companion selections and timed handoffs, including mismatches and eight-second timeouts. Report failures in a persistent app banner and separate notification; retain messages when Android blocks notifications.
 
 ## 0.4.1 (versionCode 6)
 

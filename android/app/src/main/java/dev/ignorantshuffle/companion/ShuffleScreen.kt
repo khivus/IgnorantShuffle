@@ -60,6 +60,15 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                 }
             }
         }
+        m.debugIssue?.let { issue ->
+            Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(issue, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                    TextButton(onClick = m::dismissDebugIssue) { Text("Dismiss") }
+                }
+            }
+        }
         PrimaryScrollableTabRow(selectedTabIndex = pager.currentPage, edgePadding = 12.dp,
             containerColor = MaterialTheme.colorScheme.background) {
             pages.forEachIndexed { index, title ->
@@ -73,7 +82,7 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                 2 -> PlaylistPage(m, importWeights, exportWeights) { editing = it }
                 3 -> AlertsPage(m, requestNotifications)
                 4 -> ThemePage(m)
-                else -> LogsPage(m, copy, exportLog)
+                else -> LogsPage(m, copy, exportLog, requestNotifications)
             }
         }
     }
@@ -359,7 +368,7 @@ private fun ThemePage(m: AimpController) {
 }
 
 @Composable
-private fun LogsPage(m: AimpController, copy: () -> Unit, export: () -> Unit) {
+private fun LogsPage(m: AimpController, copy: () -> Unit, export: () -> Unit, permission: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var group by rememberSaveable { mutableStateOf("All") }
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
@@ -375,6 +384,15 @@ private fun LogsPage(m: AimpController, copy: () -> Unit, export: () -> Unit) {
     }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Intro("Automatic diagnostics", "Persistent logs · newest events first")
+        Toggle("Playback debug mode", "Check selected tracks against actual playback; warn here and by notification", m.preferences.debugPlayback,
+            onChange = {
+                m.changePreferences(m.preferences.copy(debugPlayback = it))
+                if (it && !m.debugNotificationsAllowed) permission()
+            })
+        if (m.preferences.debugPlayback) {
+            Text(m.debugStatus, style = MaterialTheme.typography.bodySmall)
+            if (!m.debugNotificationsAllowed) TextButton(onClick = permission) { Text("Allow debug notifications") }
+        }
         Toggle("Log automatically", "Enabled by default · retains two files of about 2MB", m.preferences.logging,
             onChange = { m.changePreferences(m.preferences.copy(logging = it)) })
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

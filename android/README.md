@@ -41,6 +41,17 @@ The first version cannot provide Windows's native pre-playback queue hook.
 
 ## App updates
 
+Enable **Logs > Playback debug mode** to check each companion selection and
+captured timed handoff against AIMP's observed PLAYING track. A stable mismatch
+or missing confirmation after eight seconds produces a persistent in-app banner
+and a separate debug notification (allow notifications when asked). This also
+works when next-roll notifications or file logging are off. The debug check never
+retries or changes playback. Disconnecting or turning debug off cancels checks.
+External manual track changes during a timed handoff can also produce a warning.
+
+Debug details and expected/observed identities appear in diagnostic exports.
+If Android blocks the debug notification channel, the in-app message still shows.
+
 Tap **Updates** beside the title; the current app version appears underneath.
 This starts a manual check; an existing update or download opens
 without restarting. The update screen offers release notes, Download,
