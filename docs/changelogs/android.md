@@ -4,6 +4,13 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.5.0 (versionCode 7)
+
+- Give available actions and selected chips consistent accent backgrounds, with neutral inactive states.
+- Label the next-roll playback action Play and keep reroll and weight controls compact.
+- Move update access into the header, freeing the full-width version card's space.
+- Discover Android versions from APK filenames in stable combined releases.
+
 ## 0.4.1 (versionCode 6)
 
 - Move the updater out of the crowded title row into a full-width tap target with wrapping text.

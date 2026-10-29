@@ -35,19 +35,20 @@ Grant **IgnorantShuffle — AIMP control** notification access from the app's bu
 then open AIMP and start music. On Android 13+ a sideloaded app may require allowing
 restricted settings in its Android app-info menu before notification access.
 
-Use Smart Next/Previous in the companion for weighted selection. Headset, AIMP,
+Use Play in the next-roll card or Previous in the companion for weighted selection. Headset, AIMP,
 and lock-screen Next remain under AIMP's own control. Queue editing is not used.
 The first version cannot provide Windows's native pre-playback queue hook.
 
 ## App updates
 
-Tap the full-width **App v... / Core v...** area below the title. Its **Tap to
-check updates** hint starts a manual check; an existing update or download opens
+Tap **Updates** beside the title; the current app version appears underneath.
+This starts a manual check; an existing update or download opens
 without restarting. The update screen offers release notes, Download,
 Install, progress/cancel/retry, Not now and Skip this version. Checks run daily
 when the app comes to the foreground, or manually. Preview inclusion is optional
-(on by default for this debug preview). Only `android/v...` releases are considered;
-Windows and core releases are ignored. No Android release is offered until its
+(on by default for this debug preview). Stable combined `vMAJOR.MINOR.PATCH`
+releases identify Android by its APK filename; historical `android/v...` entries
+remain readable. No Android release is offered until its
 tagged GitHub release and compatible APK asset have been published.
 
 Downloads and installation are user-triggered. APK size/checksum, version,

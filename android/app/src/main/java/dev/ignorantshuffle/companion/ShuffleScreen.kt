@@ -40,28 +40,24 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                 Text("IS", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
             }
             Column(Modifier.weight(1f)) {
-                Text("IgnorantShuffle", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("IgnorantShuffle", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Box(Modifier.size(7.dp).background(if (m.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape))
                     Text(if (m.connected) "AIMP connected · ${if (m.automatic) "timed" else "manual"}" else "AIMP not connected",
                         style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        }
-        Surface(
-            onClick = { if (updates.release != null || updates.busy) updates.open() else updates.check(true) },
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-            shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow
-        ) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("App v${BuildConfig.VERSION_NAME} · Core v${remember { ShuffleNative.coreVersion() }}",
-                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                Text(when {
-                    updates.busy -> "Update in progress · tap to view"
-                    updates.downloaded != null -> "Update ready · tap to view"
-                    updates.release != null -> "Update available · tap to view"
-                    else -> "Tap to check updates"
-                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            TextButton(onClick = { if (updates.release != null || updates.busy) updates.open() else updates.check(true) }) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(when {
+                        updates.busy -> "Updating…"
+                        updates.downloaded != null -> "Install ↑"
+                        updates.release != null -> "Update ↑"
+                        else -> "Updates"
+                    }, style = MaterialTheme.typography.labelLarge)
+                    Text("v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
         PrimaryScrollableTabRow(selectedTabIndex = pager.currentPage, edgePadding = 12.dp,
@@ -114,8 +110,8 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
             Section("Connect to AIMP") {
                 Text(m.status)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (!m.permission) Button(onClick = access) { Text("Notification access") }
-                    OutlinedButton(onClick = openAimp) { Text("Open AIMP") }
+                    if (!m.permission) ActionButton(onClick = access) { Text("Notification access") }
+                    ActionButton(onClick = openAimp) { Text("Open AIMP") }
                 }
             }
         }
@@ -126,8 +122,8 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                 Text("${stateText(m.playback.state)} · ${clock(m.playback.position)} / ${clock(m.playback.duration)} reported",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = { m.basic(true) }, enabled = ready && m.supportsBasic(true) && m.playback.state != 3) { Text("Play") }
-                    OutlinedButton(onClick = { m.basic(false) }, enabled = ready && m.supportsBasic(false) && m.playback.state != 2) { Text("Pause") }
+                    ActionButton(onClick = { m.basic(true) }, enabled = ready && m.supportsBasic(true) && m.playback.state != 3) { Text("Play") }
+                    ActionButton(onClick = { m.basic(false) }, enabled = ready && m.supportsBasic(false) && m.playback.state != 2) { Text("Pause") }
                     m.playback.track?.let { track -> TextButton(onClick = { edit(track) }, enabled = !m.pending) { Text("Weight ${m.weight(track)}") } }
                 }
             }
@@ -144,8 +140,8 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                 if (choice.cooldownFallback) Text("Short playlist: cooldown fallback is active.", style = MaterialTheme.typography.bodySmall)
                 if (m.settings.finite) Text("${choice.remaining} remaining in this pass", style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(onClick = m::smartPrevious, enabled = ready && m.canPrevious, modifier = Modifier.weight(1f)) { Text("Previous") }
-                    Button(onClick = m::smartNext, enabled = ready && choice.track != null, modifier = Modifier.weight(1f)) { Text("Smart Next") }
+                    ActionButton(onClick = m::smartPrevious, enabled = ready && m.canPrevious, modifier = Modifier.weight(1f)) { Text("Previous") }
+                    ActionButton(onClick = m::smartNext, enabled = ready && choice.track != null, modifier = Modifier.weight(1f)) { Text("Play") }
                 }
                 TextButton(onClick = m::reroll, enabled = ready && choice.track != null) { Text("Reroll next choice") }
             }
@@ -235,7 +231,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
                 if (m.folder.config.root == null) Text("Choose your main music folder once. Local weights work until a folder is selected.", style = MaterialTheme.typography.bodySmall)
                 Text("File: ${PortableWeights.FILENAME}. Keep the same relative folder/file names on both devices. Reindex after adding or retagging music; link unresolved entries in Playlist.", style = MaterialTheme.typography.bodySmall)
                 val enabled = !m.folder.busy && !m.pending
-                OutlinedButton(onClick = chooseMusicFolder, enabled = enabled) { Text("Choose music folder") }
+                ActionButton(onClick = chooseMusicFolder, enabled = enabled) { Text("Choose music folder") }
                 if (m.folder.config.root != null) {
                     Text("${m.tracks.count { m.folder.match(it).path != null }}/${m.tracks.size} playlist entries linked to files", style = MaterialTheme.typography.bodySmall)
                     Row {
@@ -253,11 +249,11 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(0, 50, 100, 300).forEach { ms ->
-                        FilterChip(selected = lead == ms.toString(), onClick = { lead = ms.toString() }, label = { Text("$ms") })
+                        StateChip(selected = lead == ms.toString(), onClick = { lead = ms.toString() }, label = { Text("$ms") })
                     }
                 }
                 Text("0–5000 ms; default 300. Smaller values preserve more of the ending but may let AIMP advance first. Try 100, then 50 or 0; compare exported timing logs.", style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = {
+                ActionButton(onClick = {
                     val ms = lead.toLongOrNull()
                     if (ms == null || ms !in 0..5000) error = "Enter 0–5000 ms"
                     else { error = null; m.changePreferences(m.preferences.copy(leadMs = ms)) }
@@ -272,7 +268,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
                 Text("0 turns cooldown off. Short lists fall back to positive-weight choices.", style = MaterialTheme.typography.bodySmall)
                 Toggle("Finite pass", "Play each positive identity once, then complete the pass", finite, onChange = { finite = it })
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Button(onClick = {
+                ActionButton(onClick = {
                     val value = Settings(default.toDoubleOrNull() ?: Double.NaN, cooldown.toIntOrNull() ?: -1, finite)
                     runCatching { value.validate() }.onSuccess { error = null; m.configure(value) }.onFailure { error = it.message }
                 }, enabled = !m.pending && m.storageError == null, modifier = Modifier.fillMaxWidth()) { Text("Apply shuffle settings") }
@@ -281,7 +277,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
         if (m.settings.finite) item {
             Section("Current pass") {
                 Text("${m.passCount} identities heard · ${m.preview.remaining} positive tracks remaining")
-                OutlinedButton(onClick = m::newPass, enabled = !m.pending) { Text("Start a new pass") }
+                ActionButton(onClick = m::newPass, enabled = !m.pending) { Text("Start a new pass") }
             }
         }
         item {
@@ -307,10 +303,10 @@ private fun AlertsPage(m: AimpController, permission: () -> Unit) {
                     if (it && !m.notificationsAllowed) permission()
                 })
                 Text(m.notificationStatus, style = MaterialTheme.typography.bodySmall)
-                if (m.preferences.notifyRoll && !m.notificationsAllowed) OutlinedButton(onClick = permission) { Text("Allow / Android notification settings") }
+                if (m.preferences.notifyRoll && !m.notificationsAllowed) ActionButton(onClick = permission) { Text("Allow / Android notification settings") }
                 Text("Show notification when:", style = MaterialTheme.typography.titleSmall)
                 RollVisibility.entries.forEach { visibility ->
-                    FilterChip(selected = m.preferences.notificationVisibility == visibility,
+                    StateChip(selected = m.preferences.notificationVisibility == visibility,
                         onClick = { m.changePreferences(m.preferences.copy(notificationVisibility = visibility)) },
                         label = { Text(visibility.label) }, modifier = Modifier.fillMaxWidth())
                 }
@@ -339,7 +335,7 @@ private fun ThemePage(m: AimpController) {
             Section("Appearance") {
                 ThemeMode.entries.forEach { mode ->
                     val text = when (mode) { ThemeMode.SYSTEM -> "Follow system"; ThemeMode.LIGHT -> "Light"; ThemeMode.DARK -> "Dark" }
-                    FilterChip(selected = m.preferences.theme == mode, onClick = { m.changePreferences(m.preferences.copy(theme = mode)) },
+                    StateChip(selected = m.preferences.theme == mode, onClick = { m.changePreferences(m.preferences.copy(theme = mode)) },
                         label = { Text(text) }, modifier = Modifier.fillMaxWidth())
                 }
             }
@@ -349,7 +345,7 @@ private fun ThemePage(m: AimpController) {
                 Accent.entries.chunked(2).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         row.forEach { accent ->
-                            FilterChip(selected = m.preferences.accent == accent,
+                            StateChip(selected = m.preferences.accent == accent,
                                 onClick = { m.changePreferences(m.preferences.copy(accent = accent)) },
                                 label = { Text(accent.label) }, modifier = Modifier.weight(1f),
                                 leadingIcon = { Box(Modifier.size(14.dp).background(Color(accent.argb), CircleShape)) })
@@ -382,17 +378,17 @@ private fun LogsPage(m: AimpController, copy: () -> Unit, export: () -> Unit) {
         Toggle("Log automatically", "Enabled by default · retains two files of about 2MB", m.preferences.logging,
             onChange = { m.changePreferences(m.preferences.copy(logging = it)) })
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = export) { Text("Export full log") }
-            OutlinedButton(onClick = copy) { Text("Copy summary") }
+            ActionButton(onClick = export) { Text("Export full log") }
+            ActionButton(onClick = copy) { Text("Copy summary") }
         }
         m.logError?.let { Text("Log storage error: $it", color = MaterialTheme.colorScheme.error) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(saved == null, { saved = null }, label = { Text("Live") })
-            FilterChip(saved != null, { saved = m.savedEvents() }, label = { Text("Saved history") })
+            StateChip(saved == null, { saved = null }, label = { Text("Live") })
+            StateChip(saved != null, { saved = m.savedEvents() }, label = { Text("Saved history") })
         }
         OutlinedTextField(query, { query = it }, label = { Text("Search log") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("All", "Rolls", "Commands", "Errors").forEach { name -> FilterChip(group == name, { group = name }, label = { Text(name) }) }
+            listOf("All", "Rolls", "Commands", "Errors").forEach { name -> StateChip(group == name, { group = name }, label = { Text(name) }) }
         }
         Text("${visible.size} / ${source.size} events · ${if (saved == null) "live view" else "saved snapshot; tap Saved history to reload"}. Tap an entry to expand.", style = MaterialTheme.typography.labelSmall)
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
