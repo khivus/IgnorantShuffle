@@ -15,7 +15,7 @@ class ShuffleModelTest {
         override fun choose(tracks: List<Track>, weights: DoubleArray, recent: List<String>, played: List<String>,
             settings: Settings, avoid: String): Choice {
             calls++; this.avoid = avoid; this.recent = recent; this.played = played; numbers = weights
-            return Choice(tracks.firstOrNull())
+            return Choice(tracks.indices.firstOrNull { weights[it] > 0 }?.let(tracks::get))
         }
     }
     private fun model(p: FakePlanner = FakePlanner()) = ShuffleModel(p).also { it.catalog(listOf(a, b)) }
@@ -112,5 +112,62 @@ class ShuffleModelTest {
     @Test fun settingsRejectInvalidValues() {
         assertThrows(IllegalArgumentException::class.java) { Settings(Double.NaN).validate() }
         assertThrows(IllegalArgumentException::class.java) { Settings(cooldown = 10001).validate() }
+        listOf(-1.0, Double.NaN, Double.POSITIVE_INFINITY).forEach { minimum ->
+            assertThrows(IllegalArgumentException::class.java) { Settings(minimumWeight = minimum).validate() }
+        }
+    }
+
+    @Test fun defaultMinimumExcludesOneAndLowerWithoutChangingStoredWeights() {
+        val p = FakePlanner(); val model = model(p)
+        assertEquals(1.0, model.settings.minimumWeight, 0.0)
+        for (excluded in listOf(0.0, 0.5, 1.0)) {
+            model.configure(Settings(), mapOf(a.key to excluded, b.key to 1.25))
+            assertEquals(b, model.next().track)
+            assertArrayEquals(doubleArrayOf(0.0, 1.25), p.numbers, 0.0)
+            assertEquals(excluded, model.weight(a), 0.0)
+        }
+    }
+
+    @Test fun cutoffAppliesToDefaultWeightsAndCanExcludeTheEntirePool() {
+        val p = FakePlanner(); val model = model(p)
+        model.configure(Settings(defaultWeight = 1.0, cooldown = 10), emptyMap())
+        assertNull(model.next().track)
+        assertArrayEquals(doubleArrayOf(0.0, 0.0), p.numbers, 0.0)
+        model.configure(Settings(defaultWeight = 1.0, finite = true), emptyMap())
+        assertNull(model.next().track)
+        assertArrayEquals(doubleArrayOf(0.0, 0.0), p.numbers, 0.0)
+    }
+
+    @Test fun changingCutoffInvalidatesPreviewAndZeroRestoresPositiveWeights() {
+        val p = FakePlanner(); val model = model(p)
+        val weights = mapOf(a.key to 0.5, b.key to 25.0)
+        model.configure(Settings(), weights)
+        assertEquals(b, model.next().track)
+        val sequence = model.choiceSequence
+        model.configure(Settings(minimumWeight = 0.0), weights)
+        assertEquals(a, model.next().track)
+        assertTrue(model.choiceSequence > sequence)
+        assertArrayEquals(doubleArrayOf(0.5, 25.0), p.numbers, 0.0)
+        model.configure(Settings(minimumWeight = 25.0), weights)
+        assertNull(model.next().track)
+    }
+
+    @Test fun historyNavigationSkipsEntriesAtOrBelowTheCutoff() {
+        val model = model(); val c = b.copy(mediaId = "c", title = "C")
+        model.catalog(listOf(a, b, c))
+        model.confirmPlaying(a); model.confirmPlaying(b); model.confirmPlaying(c)
+        model.configure(Settings(), mapOf(b.key to 1.0))
+        val previous = model.previous()!!
+        assertEquals(a, previous.track)
+        model.requested(previous); model.confirmPlaying(a)
+        assertEquals(a, model.next().track) // The below-cutoff forward entry must not be replayed.
+        assertNull(model.next().historyIndex)
+    }
+
+    @Test fun excludedManualPlaybackStillCountsAsObservedHistory() {
+        val model = model(); model.configure(Settings(), mapOf(a.key to 1.0))
+        model.requested(Choice(a)); model.confirmPlaying(a)
+        assertEquals(listOf(a.key), model.recent)
+        assertEquals(b, model.next().track)
     }
 }

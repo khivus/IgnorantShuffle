@@ -89,7 +89,7 @@ existing shared values, including zero. Use **Reload weights** after syncing
 Swipe left/right or tap the tabs: **Player**, **Shuffle**, **Playlist**, **Alerts**,
 **Theme**, **Logs**. Each category scrolls independently. Player contains the
 current song, committed next roll and playback controls; Playlist contains search
-and weight editing; Shuffle contains default weight/cooldown/finite-pass rules.
+and weight editing; Shuffle contains default weight, minimum weight, cooldown and finite-pass rules.
 
 Theme offers System, Light and Dark, plus AIMP orange (default), Blue, Teal,
 Purple, Rose and Green. Choices apply and save immediately, without rerolling.
@@ -123,8 +123,13 @@ estimated end and disables itself. AIMP may already have transitioned if the
 handler is late. Headset and lock-screen Next still follow AIMP's own order.
 
 Weights accept finite nonnegative numbers, including fractions and values above
-10. Zero excludes from weighted choices; manual Play remains available. Defaults,
-overrides, cooldown and finite mode persist privately. Confirmation, not command
+10. **Shuffle > Weights & cooldown > Minimum weight** defaults to **1**: weights
+at or below the minimum stay out of weighted choices, including timed playback,
+rerolls and listening-history navigation. Set the minimum to **0** to allow every
+positive weight. The cutoff also applies to the default weight and shared-folder
+values; stored weights are preserved. Manual **Play now** remains available.
+The minimum, default, overrides, cooldown and finite mode persist privately. Existing
+installs without a saved minimum adopt 1. Confirmation, not command
 dispatch or preview, advances listening history. Failed commands time out without
 automatic retries. A finite pass can be restarted explicitly.
 
@@ -183,12 +188,14 @@ new APK has been tested on a phone.
 ## Phone acceptance checks
 
 1. Grant access, start a short AIMP playlist, and confirm the current/next preview.
-2. Set one track to zero and another to 25. Test Smart Next several times; zero
-   must stay excluded. Test manual Play on the excluded track separately.
+2. With the default minimum 1, set tracks to 0, 1, 1.5 and 25. Use the weighted
+   Play and notification Next track actions; 0 and 1 must stay excluded. Change the
+   minimum to 0 and confirm 1 becomes eligible. Restart and verify the saved minimum.
+   Test manual Play now on an excluded track separately, and an all-excluded pool.
 3. Try cooldown with enough positive tracks, then a short list. Check the visible
    fallback and verify that repeated UI refresh/reroll does not consume a track.
 4. Test Smart Previous followed by Smart Next. Enable finite mode, start a new
-   pass, and verify each positive identity is selected once before completion.
+   pass, and verify each eligible identity is selected once before completion.
 5. Export weights, restart the app, and check saved values. Test an invalid import
    and confirm existing weights stay unchanged. Library edits may create new keys.
 6. On expendable listening material, enable timed mode and let tracks end without

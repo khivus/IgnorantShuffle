@@ -76,6 +76,14 @@ Markdown tests cover headings, links/emphasis, code, tables, inert HTML/unsafe
 links, filename underscores and bounded notes. Actual audio, Android notification
 presentation, layouts and installer prompts still require device verification.
 
+Android notification-action tests cover the committed roll identity, stale roll
+numbers, process restarts, removed/replaced tracks and queue renumbering. Minimum
+weight tests cover the default cutoff of 1, exact/fractional boundaries, default
+weights, an empty eligible pool in cooldown/finite mode, history navigation,
+manual playback, preview invalidation and restoring positive weights with cutoff
+0. Settings tests verify legacy migration, saved cutoff precision and rejection
+of invalid values while retaining existing weights and shuffle rules.
+
 Automated checks cover release parsing, version ordering, placeholder behavior, auto-check timing and opt-out persistence, verified/corrupt downloads, background cancellation, and actual WinHTTP requests against localhost. Installer tests launch a local GUI helper through ShellExecute and verify the exact package argument with spaces and Unicode. Dialog tests cover installation requests, visible retry controls, reuse of the saved package, and preventing repeated launches on timer ticks. Saved packages are checked again before installation, including rejection after tampering. The actual GitHub update and AIMP installer/restart flow require live verification.
 
 ## Live AIMP verification

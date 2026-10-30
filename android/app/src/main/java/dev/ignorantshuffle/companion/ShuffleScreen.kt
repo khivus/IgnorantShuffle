@@ -205,6 +205,8 @@ private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Un
                             ActionButton(onClick = { m.play(track) }, enabled = m.ready() && track.selectable) { Text("Play now") }
                         }
                         Text(m.weightSource(track), style = MaterialTheme.typography.labelSmall)
+                        if (m.weight(track) <= m.settings.minimumWeight)
+                            Text("Excluded from shuffle (weight ≤ ${m.settings.minimumWeight})", style = MaterialTheme.typography.bodySmall)
                         if (m.folder.active) {
                             val match = m.folder.match(track)
                             Text(match.path ?: match.description, style = MaterialTheme.typography.bodySmall)
@@ -224,6 +226,7 @@ private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Un
 @Composable
 private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
     var default by rememberSaveable(m.settings.defaultWeight) { mutableStateOf(m.settings.defaultWeight.toString()) }
+    var minimum by rememberSaveable(m.settings.minimumWeight) { mutableStateOf(m.settings.minimumWeight.toString()) }
     var cooldown by rememberSaveable(m.settings.cooldown) { mutableStateOf(m.settings.cooldown.toString()) }
     var finite by rememberSaveable(m.settings.finite) { mutableStateOf(m.settings.finite) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
@@ -272,27 +275,31 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
         item {
             Section("Weights & cooldown") {
                 OutlinedTextField(default, { default = it }, label = { Text("Default weight") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                Text("0 excludes unconfigured tracks. Fractions and values above 10 are supported.", style = MaterialTheme.typography.bodySmall)
+                Text("Used for tracks without a saved weight. Fractions and values above 10 are supported.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(minimum, { minimum = it }, label = { Text("Minimum weight (exclude at or below)") },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true)
+                Text("Default 1: weights 0–1 do not enter weighted choices. Only weights above the minimum can play. Set 0 to allow every positive weight. Play now stays available.", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(cooldown, { cooldown = it }, label = { Text("Cooldown in track starts") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                Text("0 turns cooldown off. Short lists fall back to positive-weight choices.", style = MaterialTheme.typography.bodySmall)
-                Toggle("Finite pass", "Play each positive identity once, then complete the pass", finite, onChange = { finite = it })
+                Text("0 turns cooldown off. Short lists fall back to choices above the minimum weight.", style = MaterialTheme.typography.bodySmall)
+                Toggle("Finite pass", "Play each eligible identity once, then complete the pass", finite, onChange = { finite = it })
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 ActionButton(onClick = {
-                    val value = Settings(default.toDoubleOrNull() ?: Double.NaN, cooldown.toIntOrNull() ?: -1, finite)
+                    val value = Settings(default.toDoubleOrNull() ?: Double.NaN, cooldown.toIntOrNull() ?: -1, finite,
+                        minimum.toDoubleOrNull() ?: Double.NaN)
                     runCatching { value.validate() }.onSuccess { error = null; m.configure(value) }.onFailure { error = it.message }
                 }, enabled = !m.pending && m.storageError == null, modifier = Modifier.fillMaxWidth()) { Text("Apply shuffle settings") }
             }
         }
         if (m.settings.finite) item {
             Section("Current pass") {
-                Text("${m.passCount} identities heard · ${m.preview.remaining} positive tracks remaining")
+                Text("${m.passCount} identities heard · ${m.preview.remaining} eligible tracks remaining")
                 ActionButton(onClick = m::newPass, enabled = !m.pending) { Text("Start a new pass") }
             }
         }
         item {
             Section("How it behaves") {
                 Text("Preview and reroll do not consume a track. Only observed playback advances history and cooldown.")
-                Text("Weight 0 excludes weighted choices; you can still use Play now on any exposed track.")
+                Text("Weights at or below ${m.settings.minimumWeight} are excluded from weighted choices; you can still use Play now on any exposed track.")
                 Text("Timed mode requests Pause at the estimated end when the pass completes or no eligible tracks remain.")
             }
             Spacer(Modifier.height(8.dp)); Text(m.result, style = MaterialTheme.typography.bodySmall)
@@ -440,7 +447,7 @@ private fun WeightDialog(m: AimpController, track: Track, close: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(onDismissRequest = close, title = { Text(track.title) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("0 excludes weighted choices. Fractions and values above 10 are supported.")
+            Text("Weights at or below ${m.settings.minimumWeight} are excluded from shuffle. Fractions and values above 10 are supported.")
             Text(if (m.folder.active) m.folder.match(track).path?.let { "Saves to shared file: $it" }
                 ?: "No file link: this weight stays local. Link the entry in Playlist to share it." else "Saves to local app storage.",
                 style = MaterialTheme.typography.bodySmall)

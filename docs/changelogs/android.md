@@ -7,6 +7,7 @@ These entries do not imply published GitHub releases.
 ## Unreleased
 
 - Add a Next track action to the next-roll notification that plays the displayed weighted choice through the companion. Ignore outdated actions and hide the action while a playback command awaits confirmation.
+- Add a saved minimum-weight cutoff under Shuffle, defaulting to 1 for new and existing installs. Exclude weights at or below the cutoff from weighted rolls, timed playback and listening-history navigation, while preserving stored weights and manual Play now. Set 0 to allow all positive weights.
 
 ## 0.5.0 (versionCode 7)
 

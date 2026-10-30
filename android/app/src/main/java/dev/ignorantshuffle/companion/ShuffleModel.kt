@@ -12,10 +12,12 @@ data class Track(val queueId: Long, val mediaId: String?, val uri: String?, val 
     val selectable get() = mediaId != null || uri != null || queueId >= 0
 }
 
-data class Settings(val defaultWeight: Double = 5.0, val cooldown: Int = 0, val finite: Boolean = false) {
+data class Settings(val defaultWeight: Double = 5.0, val cooldown: Int = 0, val finite: Boolean = false,
+    val minimumWeight: Double = 1.0) {
     fun validate() {
         require(defaultWeight.isFinite() && defaultWeight >= 0) { "Default weight must be finite and nonnegative" }
         require(cooldown in 0..10000) { "Cooldown must be between 0 and 10000" }
+        require(minimumWeight.isFinite() && minimumWeight >= 0) { "Minimum weight must be finite and nonnegative" }
     }
 }
 
@@ -59,6 +61,7 @@ class ShuffleModel(private val planner: Planner) {
     var choiceSequence: Long = 0; private set
 
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
+    fun eligible(track: Track) = weight(track) > settings.minimumWeight
 
     fun configure(settings: Settings, weights: Map<String, Double>, preservePreview: Boolean = false) {
         settings.validate()
@@ -115,16 +118,19 @@ class ShuffleModel(private val planner: Planner) {
         val old = preview
         if (!reroll && old != null) return old.copy(track = old.track?.let { t -> tracks.firstOrNull { it.key == t.key } })
         if (!reroll && cursor >= 0 && cursor < timeline.lastIndex) {
-            val forward = tracks.firstOrNull { it.key == timeline[cursor + 1] && weight(it) > 0 }
+            val forward = tracks.firstOrNull { it.key == timeline[cursor + 1] && eligible(it) }
             if (forward != null) return Choice(forward, historyIndex = cursor + 1).also { preview = it; choiceSequence++ }
         }
-        return planner.choose(tracks, tracks.map(::weight).toDoubleArray(), recent.toList(), played.toList(),
+        // Apply the eligibility cutoff before native cooldown/finite-pass rules,
+        // while preserving the actual stored weights and their relative chances.
+        val selectionWeights = tracks.map { if (eligible(it)) weight(it) else 0.0 }.toDoubleArray()
+        return planner.choose(tracks, selectionWeights, recent.toList(), played.toList(),
             settings, if (reroll) old?.track?.key.orEmpty() else "").also { preview = it; choiceSequence++ }
     }
 
     fun previous(): Choice? {
         for (index in cursor - 1 downTo 0) {
-            val track = tracks.firstOrNull { it.key == timeline[index] && weight(it) > 0 } ?: continue
+            val track = tracks.firstOrNull { it.key == timeline[index] && eligible(it) } ?: continue
             return Choice(track, historyIndex = index)
         }
         return null
