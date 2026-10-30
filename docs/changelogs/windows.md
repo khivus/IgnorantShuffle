@@ -3,7 +3,7 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
-## Unreleased
+## 0.13.0
 
 - Add a saved Minimum weight in Weight storage, defaulting to 1. Require a finite value greater than 0, including positive fractions; queue weights at or above the minimum remain eligible. Apply the cutoff to effective profile/shared/local/default weights, cooldown, finite passes, next-playlist selection and history navigation. Refresh cached choices immediately and mark excluded weights in the panel and table without changing stored weights or blocking manual playback.
 

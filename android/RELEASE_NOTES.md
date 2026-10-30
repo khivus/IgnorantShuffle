@@ -1,24 +1,28 @@
-# IgnorantShuffle Android v0.5.0
+# IgnorantShuffle Android v0.6.0
 
-## Player and controls
+## Weighted Next from the notification
 
-- Use consistent accent backgrounds for available actions and selected options, with neutral inactive states.
-- Rename Smart Next to Play in the next-roll card.
-- Move update access and the app version into the header to leave more room for playback.
-- Read Android update versions from APK filenames in stable combined releases.
-- Add opt-in playback debug checks under Logs, with expected/observed track details, an in-app issue banner and a separate notification on failure.
-- Render basic Markdown in release notes: headings, emphasis, links, lists, code, quotes and scrollable download tables.
+- Add **Next track** to the optional next-roll notification. It plays the displayed weighted choice directly in AIMP without opening the companion.
+- Use the companion's weighted playback path and confirmation checks. Outdated actions are ignored after the roll changes, the session disconnects or the app process restarts.
+- Hide the action while a playback command awaits confirmation to prevent overlapping commands.
 
-Bundled shuffle core: **0.1.0**. Existing automatic shuffle preferences, weights
-and playback rules remain in place.
+## Minimum eligible weight
 
-Requires Android 8.0 / API 26+. This preview retains the signing key and application
-ID used by 0.4.x. Older Android versions that only recognize `android/v...` tags
-need one manual APK update; subsequent stable bundles are discovered using the
-Android version in the APK filename. Updating the same app preserves settings
-and weights. Tap **Updates** in the header; Core version details are in that screen.
+- Add a saved **Minimum eligible weight** under **Shuffle > Weights & cooldown**, initially **1** for new and existing installs.
+- A track is eligible when **weight >= minimum**. Weight **1** plays with the default minimum; lower weights are excluded. The minimum must be finite and **greater than 0**; positive fractions such as **0.1** are supported.
+- Apply the minimum to default, local and shared weights, weighted rolls, rerolls, timed playback and listening-history navigation. Preserve stored weights and manual **Play now**.
+- Mark excluded playlist entries and show the active minimum in the weight editor.
 
-Validation: **107 Android tests passed**, lint has no errors, and the APK signature
-matches the pinned update key. The phone's update installer and narrow-screen
-layout still need physical-device verification. Timed playback remains experimental;
-AIMP/headset/lock-screen Next continues to follow AIMP's own order.
+Android app version: **0.6.0** (versionCode **8**). Bundled shuffle core:
+**0.1.0** (unchanged). The minimum is a separate per-device setting and is not
+synchronized in shared TSV files.
+
+Requires Android 8.0 / API 26+. This preview retains the existing application ID
+and pinned update signing key. Updating preserves weights and settings. Enable
+**Alerts > Show next-roll notification** and allow notifications to use its button.
+
+Validation: **119 Android tests passed**, lint has no errors, and the APK signature
+matches the pinned update key. All three native ABIs are included. Phone playback,
+notification rendering and the Android update installer still need device
+verification. Timed playback remains experimental; AIMP/headset/lock-screen Next
+continues to follow AIMP's own order.

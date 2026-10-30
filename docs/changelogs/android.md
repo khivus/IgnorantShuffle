@@ -4,7 +4,7 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
-## Unreleased
+## 0.6.0 (versionCode 8)
 
 - Add a Next track action to the next-roll notification that plays the displayed weighted choice through the companion. Ignore outdated actions and hide the action while a playback command awaits confirmation.
 - Add a saved minimum eligible weight under Shuffle, defaulting to 1 for new and existing installs. Weights at or above the minimum are eligible for weighted rolls, timed playback and listening-history navigation; lower weights are excluded. Preserve stored weights and manual Play now. Require a finite minimum greater than 0; positive fractions are supported.
