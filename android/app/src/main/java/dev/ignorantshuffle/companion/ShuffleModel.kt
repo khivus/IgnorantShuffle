@@ -17,7 +17,7 @@ data class Settings(val defaultWeight: Double = 5.0, val cooldown: Int = 0, val 
     fun validate() {
         require(defaultWeight.isFinite() && defaultWeight >= 0) { "Default weight must be finite and nonnegative" }
         require(cooldown in 0..10000) { "Cooldown must be between 0 and 10000" }
-        require(minimumWeight.isFinite() && minimumWeight >= 0) { "Minimum weight must be finite and nonnegative" }
+        require(minimumWeight.isFinite() && minimumWeight > 0) { "Minimum weight must be finite and greater than 0" }
     }
 }
 
@@ -61,7 +61,7 @@ class ShuffleModel(private val planner: Planner) {
     var choiceSequence: Long = 0; private set
 
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
-    fun eligible(track: Track) = weight(track) > settings.minimumWeight
+    fun eligible(track: Track) = weight(track) >= settings.minimumWeight
 
     fun configure(settings: Settings, weights: Map<String, Double>, preservePreview: Boolean = false) {
         settings.validate()

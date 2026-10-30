@@ -10,16 +10,16 @@ class SettingsJsonTest {
         assertEquals(mapOf("low" to 1.0, "high" to 25.0), loaded.second)
     }
 
-    @Test fun savedMinimumSurvivesReloadIncludingExplicitZeroAndFractions() {
+    @Test fun savedMinimumSurvivesReloadIncludingSmallPositiveFractions() {
         val weights = mapOf("excluded" to 0.0, "low" to 1.0, "high" to 25.5)
-        for (minimum in listOf(0.0, 1.0, 2.5, 100.0)) {
+        for (minimum in listOf(1e-9, 0.1, 1.0, 2.5, 100.0)) {
             val settings = Settings(5.0, 7, true, minimum)
             assertEquals(settings to weights, SettingsJson.decode(SettingsJson.encode(settings, weights)))
         }
     }
 
     @Test fun invalidSavedMinimumIsRejected() {
-        for (minimum in listOf("-1", "\"NaN\"", "\"Infinity\"", "null", "\"invalid\"")) {
+        for (minimum in listOf("0", "-0.0", "-1", "\"NaN\"", "\"Infinity\"", "null", "\"invalid\"")) {
             assertThrows(Exception::class.java) {
                 SettingsJson.decode("""{"version":1,"default":5,"cooldown":0,"finite":false,"minimumWeight":$minimum,"weights":{}}""")
             }

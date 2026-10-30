@@ -124,9 +124,11 @@ handler is late. Headset and lock-screen Next still follow AIMP's own order.
 
 Weights accept finite nonnegative numbers, including fractions and values above
 10. **Shuffle > Weights & cooldown > Minimum weight** defaults to **1**: weights
-at or below the minimum stay out of weighted choices, including timed playback,
-rerolls and listening-history navigation. Set the minimum to **0** to allow every
-positive weight. The cutoff also applies to the default weight and shared-folder
+below the minimum stay out of weighted choices; weights at or above it are eligible,
+including timed playback,
+rerolls and listening-history navigation. The minimum must be finite and **greater
+than 0**; positive fractions such as **0.1** are allowed, with no fixed positive
+lower bound. The cutoff also applies to the default weight and shared-folder
 values; stored weights are preserved. Manual **Play now** remains available.
 The minimum, default, overrides, cooldown and finite mode persist privately. Existing
 installs without a saved minimum adopt 1. Confirmation, not command
@@ -189,8 +191,10 @@ new APK has been tested on a phone.
 
 1. Grant access, start a short AIMP playlist, and confirm the current/next preview.
 2. With the default minimum 1, set tracks to 0, 1, 1.5 and 25. Use the weighted
-   Play and notification Next track actions; 0 and 1 must stay excluded. Change the
-   minimum to 0 and confirm 1 becomes eligible. Restart and verify the saved minimum.
+   Play and notification Next track actions; 0 must stay excluded and 1 is eligible.
+   Change the minimum to 1.5 and confirm 1 is excluded while 1.5 is eligible.
+   Try a positive fractional minimum such as 0.1; reject 0 and negative minimums.
+   Restart and verify the saved minimum.
    Test manual Play now on an excluded track separately, and an all-excluded pool.
 3. Try cooldown with enough positive tracks, then a short list. Check the visible
    fallback and verify that repeated UI refresh/reroll does not consume a track.
