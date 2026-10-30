@@ -35,7 +35,8 @@ Grant **IgnorantShuffle — AIMP control** notification access from the app's bu
 then open AIMP and start music. On Android 13+ a sideloaded app may require allowing
 restricted settings in its Android app-info menu before notification access.
 
-Use Play in the next-roll card or Previous in the companion for weighted selection. Headset, AIMP,
+Use Play in the next-roll card, **Next track** in the next-roll notification, or
+Previous in the companion for weighted selection. Headset, AIMP,
 and lock-screen Next remain under AIMP's own control. Queue editing is not used.
 The first version cannot provide Windows's native pre-playback queue hook.
 
@@ -144,7 +145,10 @@ Logging can be disabled; saved logs remain available for viewing/export. Exports
 use `IgnorantShuffle-yyyy-MM-dd_HH-mm-ss.log` with an export date/time header;
 event lines include date, time and timezone.
 
-Alerts can enable a quiet next-roll notification. Artist, weight, chance at roll,
+Alerts can enable a quiet next-roll notification. Its **Next track** button plays
+the displayed weighted choice without opening the app. The action is hidden while
+a playback command is pending; outdated actions are ignored after the roll changes,
+the session disconnects or the app process restarts. Artist, weight, chance at roll,
 pool counts, cooldown, finite-pass remaining count, and playback mode are individually
 selectable. A single notification is updated; it does not own a MediaSession or
 intercept AIMP's controls. Track content is private on the lock screen. On Android
@@ -192,6 +196,8 @@ new APK has been tested on a phone.
    AIMP selection near the end, screen off, AIMP exit/restart, and permission loss.
    Verify it respects manual changes and does not loop or restart unexpectedly.
 7. In Alerts, test notification denial/grant and the individual statistic toggles.
+   Tap **Next track** while playing and paused; AIMP must play the displayed roll.
+   Check repeated taps while waiting for confirmation, rerolls and reconnection.
    Change themes and accents in Theme, rotate the phone, swipe all categories and
    check that saved weights and roll identity do not change just from navigation.
 8. Enable timed mode, record the next roll number/title, turn the screen off for

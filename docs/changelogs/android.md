@@ -4,6 +4,10 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## Unreleased
+
+- Add a Next track action to the next-roll notification that plays the displayed weighted choice through the companion. Ignore outdated actions and hide the action while a playback command awaits confirmation.
+
 ## 0.5.0 (versionCode 7)
 
 - Give available actions and selected chips consistent accent backgrounds, with neutral inactive states.

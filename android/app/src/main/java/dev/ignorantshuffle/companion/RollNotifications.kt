@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.Icon
 import android.os.Build
 
 class RollNotifications(private val context: Context, private val event: (String) -> Unit) {
@@ -20,7 +21,7 @@ class RollNotifications(private val context: Context, private val event: (String
 
     fun clear() { manager.cancel(ID); last = null }
     fun render(preferences: AppPreferences, choice: Choice, weight: Double, settings: Settings,
-        automatic: Boolean, sequence: Long, playbackState: Int): String {
+        automatic: Boolean, sequence: Long, playbackState: Int, actionToken: String, pending: Boolean): String {
         if (!preferences.notifyRoll) { clear(); return "Next-roll notifications are off" }
         if (!preferences.notificationVisibility.allows(playbackState)) {
             clear(); return "Hidden for current playback state (${preferences.notificationVisibility.label})"
@@ -32,7 +33,7 @@ class RollNotifications(private val context: Context, private val event: (String
         if (!allowed()) { clear(); return "Notifications blocked by Android permission/channel settings" }
         val text = RollNotificationText.create(choice, weight, settings, automatic, preferences.stats, sequence)
             ?: run { clear(); return "Waiting for an eligible next roll" }
-        val fingerprint = "$sequence/$text/${preferences.accent}"
+        val fingerprint = "$sequence/$text/${preferences.accent}/$actionToken/$pending"
         if (fingerprint == last) return "Next-roll notification active"
         try {
             val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java),
@@ -44,8 +45,18 @@ class RollNotifications(private val context: Context, private val event: (String
                 .setStyle(Notification.BigTextStyle().bigText(text.body)).setContentIntent(open)
                 .setOnlyAlertOnce(true).setAutoCancel(true).setShowWhen(false)
                 .setColor(preferences.accent.argb.toInt()).setVisibility(Notification.VISIBILITY_PRIVATE)
-                .setPublicVersion(public).setCategory(Notification.CATEGORY_STATUS).build()
-            manager.notify(ID, notification); last = fingerprint
+                .setPublicVersion(public).setCategory(Notification.CATEGORY_STATUS)
+            if (!pending) {
+                val next = PendingIntent.getBroadcast(context, 0,
+                    Intent(context, RollActionReceiver::class.java).setAction(RollActionReceiver.NEXT)
+                        .putExtra(RollActionReceiver.TOKEN, actionToken)
+                        .putExtra(RollActionReceiver.SEQUENCE, sequence)
+                        .putExtra(RollActionReceiver.TRACK, requireNotNull(choice.track).key),
+                    PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                notification.addAction(Notification.Action.Builder(
+                    Icon.createWithResource(context, android.R.drawable.ic_media_next), "Next track", next).build())
+            }
+            manager.notify(ID, notification.build()); last = fingerprint
             event("Notification updated for roll #$sequence")
             return "Next-roll notification active"
         } catch (e: SecurityException) { event("Notification permission denied: $e"); return "Notification permission denied" }

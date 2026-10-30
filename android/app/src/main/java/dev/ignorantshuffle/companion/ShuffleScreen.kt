@@ -307,7 +307,7 @@ private fun AlertsPage(m: AimpController, permission: () -> Unit) {
         item { Intro("Roll notifications", "An optional, quiet preview of the next weighted choice") }
         item {
             Section {
-                Toggle("Show next-roll notification", "Updates one notification when the roll changes", m.preferences.notifyRoll, onChange = {
+                Toggle("Show next-roll notification", "Preview the weighted choice and play it with Next track", m.preferences.notifyRoll, onChange = {
                     m.changePreferences(m.preferences.copy(notifyRoll = it))
                     if (it && !m.notificationsAllowed) permission()
                 })
@@ -332,7 +332,7 @@ private fun AlertsPage(m: AimpController, permission: () -> Unit) {
                 Toggle("Playback mode", "Timed/manual and finite/endless", stats.mode) { m.changePreferences(m.preferences.copy(stats = stats.copy(mode = it))) }
             }
         }
-        item { Text("Notifications have no media-session controls, so AIMP keeps headset and lock-screen priority. Track details are marked private on the lock screen; Android channel settings still apply.", style = MaterialTheme.typography.bodySmall) }
+        item { Text("Next track plays the displayed weighted roll directly in AIMP. AIMP keeps headset and lock-screen media controls. Track details are marked private on the lock screen; Android channel settings still apply.", style = MaterialTheme.typography.bodySmall) }
     }
 }
 

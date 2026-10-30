@@ -53,6 +53,7 @@ class AimpController(private val context: Context) {
     private val issueNotifications = PlaybackIssueNotifications(context)
     private val audit = PlaybackAudit()
     private val runId = UUID.randomUUID().toString().take(8)
+    private val notificationToken = UUID.randomUUID().toString()
     private val power = context.getSystemService(PowerManager::class.java)
     private val wake by lazy {
         power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IgnorantShuffle:timed-playback").apply { setReferenceCounted(false) }
@@ -144,7 +145,7 @@ class AimpController(private val context: Context) {
             notifications.clear()
             notificationStatus = if (preferences.notifyRoll) "Waiting for a connected AIMP session" else "Next-roll notifications are off"
         } else notificationStatus = notifications.render(preferences, preview, preview.track?.let(::weight) ?: 0.0,
-            settings, automatic, rollSequence, playback.state)
+            settings, automatic, rollSequence, playback.state, notificationToken, pending)
     }
 
     private val environment = object : BroadcastReceiver() {
@@ -363,13 +364,26 @@ class AimpController(private val context: Context) {
     fun smartPrevious() = guarded { if (!pending) model.previous()?.let(::playChoice) }
     fun play(track: Track) = guarded { if (!pending) playChoice(Choice(track)) }
 
-    private fun playChoice(choice: Choice, planned: ScheduledRoll? = null) {
+    fun playNotificationRoll(action: RollAction) = guarded {
+        if (!connected || pending || !preferences.notifyRoll || storageError != null || folder.blocked ||
+            !action.matches(notificationToken, rollSequence, preview)) {
+            log("Ignored unavailable or outdated notification roll #${action.sequence}")
+            return@guarded
+        }
+        playChoice(preview, notificationAction = action)
+    }
+
+    private fun playChoice(choice: Choice, planned: ScheduledRoll? = null, notificationAction: RollAction? = null) {
         check(storageError == null && !folder.blocked) { "Storage is loading/unavailable; playback selection disabled" }
         val target = choice.track ?: run { result = "No eligible tracks / finite pass complete"; return }
         // Manual requests refresh the queue. Timed requests already performed a
         // lightweight source read; do not refetch/hash the whole queue twice here.
         if (planned == null) read(refreshQueue = true)
         if (pending) return
+        if (notificationAction != null && !notificationAction.matches(notificationToken, rollSequence, preview)) {
+            log("Notification roll #${notificationAction.sequence} cancelled after playback/catalog changed")
+            return
+        }
         if (planned != null && !HandoffPolicy.valid(planned, timing(), model.choiceSequence, SystemClock.elapsedRealtime())) {
             log("Timed choice cancelled: source/timing changed during revalidation"); scheduleTimer(); return
         }
@@ -414,11 +428,13 @@ class AimpController(private val context: Context) {
         log("COMMAND $label; target=$key")
         handler.postDelayed(timeout, 8000)
         sustainCpu()
+        refreshNotifications()
     }
     private fun finish(message: String) {
         handler.removeCallbacks(timeout); operation = null; pending = false; model.cancelRequest()
         result = message; log("RESULT $message")
         if (!message.startsWith("OBSERVED:")) disableAutomatic("Timed mode stopped after unconfirmed command")
+        refreshNotifications()
     }
 
     fun changeAutomatic(enabled: Boolean) = guarded {
