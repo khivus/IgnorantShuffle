@@ -190,6 +190,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     bool queue_refresh_pending_ = false;
     bool awaiting_stream_start_ = false;
     int cooldown_ = 0;
+    double minimum_weight_ = 1.0;
     std::deque<std::string> recent_tracks_;
     Ref<IAIMPPlaylistItem> prepared_track_;
     ignorant::CooldownPool cooldown_preview_;
@@ -237,6 +238,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         success = (WritePrivateProfileStringW(L"Monitor", L"CooldownTracks", std::to_wstring(cooldown_).c_str(), preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Shuffle", L"FinitePlaylist", finite_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Shuffle", L"DefaultWeight", weight_text(weights_.fallback()).c_str(), preferences_file_.c_str()) != FALSE) && success;
+        success = (WritePrivateProfileStringW(L"Shuffle", L"MinimumWeight", weight_text(minimum_weight_).c_str(), preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Storage", L"MusicFolder", music_folder_.c_str(), preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Storage", L"SharedGlobal", shared_global_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Storage", L"FolderLocal", folder_local_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
@@ -277,6 +279,15 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             weights_.set_default(ignorant::default_weight);
             preferences_error_ = L"Invalid default weight in preferences.ini; using 5. Change it in Weight storage.";
             log_.write("preferences.default_weight.error", error.what());
+        }
+        wchar_t minimum[512]{};
+        GetPrivateProfileStringW(L"Shuffle", L"MinimumWeight", L"1", minimum, 512, preferences_file_.c_str());
+        try { minimum_weight_ = parse_minimum_weight(minimum); }
+        catch (const std::exception& error) {
+            minimum_weight_ = 1.0;
+            if (!preferences_error_.empty()) preferences_error_ += L"\r\n";
+            preferences_error_ += L"Invalid minimum weight in preferences.ini; using 1. Change it in Weight storage.";
+            log_.write("preferences.minimum_weight.error", error.what());
         }
         wchar_t folder[32768]{};
         GetPrivateProfileStringW(L"Storage", L"MusicFolder", L"", folder, 32768, preferences_file_.c_str());
@@ -431,17 +442,17 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             keys.push_back(key);
         }
         const auto context = context_for(playlist, &keys);
-        for (const auto& key : keys) weights.push_back(effective_weight(key, context).weight);
+        for (const auto& key : keys) weights.push_back(selection_weight(effective_weight(key, context).weight));
         cooldown_preview_ = ignorant::cooldown_pool(keys, weights, projected_recent(audible_), cooldown_);
         cooldown_preview_ready_ = true;
     }
     std::wstring cooldown_status(const ignorant::CooldownPool* pool) const {
-        if (finite_) return L"Cooldown paused - each positive-weight filename plays once per pass.";
+        if (finite_) return L"Cooldown paused - each eligible filename plays once per pass.";
         if (!cooldown_) return L"Cooldown off - tracks can repeat immediately.";
         if (!pool) return L"Cooldown: " + std::to_wstring(cooldown_) + L" tracks. Waiting for a playlist.";
         if (pool->fallback) return L"Playlist too short: " + std::to_wstring(pool->distinct_positive) +
-            L" positive-weight tracks; need " + std::to_wstring(cooldown_ + 1) + L". Using weighted shuffle without cooldown.";
-        if (!pool->distinct_positive) return L"No positive-weight tracks. Weight 0 stays excluded.";
+            L" eligible tracks; need " + std::to_wstring(cooldown_ + 1) + L". Using weighted shuffle without cooldown.";
+        if (!pool->distinct_positive) return L"No tracks meet the minimum eligible weight.";
         return L"Cooldown: " + std::to_wstring(cooldown_) + L" other tracks before a repeat. Cooling down: " + std::to_wstring(pool->blocked) + L".";
     }
     void set_enabled(bool enabled) {
@@ -511,7 +522,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         const auto shuffle = shuffle_enabled();
         state.mode = !enabled_ ? L"Off - AIMP controls track order." : shuffle ? L"Active - weighted shuffle chooses the next track." : L"On, waiting - turn AIMP Shuffle on to activate.";
         if (finite_ && enabled_ && shuffle) state.mode = L"Finite playlist - higher weights are more likely to play earlier.";
-        state.notice = preferences_error_.empty() ? L"AIMP's manual queue and repeat settings can take priority." : preferences_error_;
+        state.notice = preferences_error_.empty() ? L"Minimum eligible weight: " + weight_text(minimum_weight_) + L". AIMP's manual queue and repeat settings can take priority." : preferences_error_;
         if (!log_.error().empty()) state.notice = L"Logging unavailable: " + from_utf8(log_.error());
         auto current = current_track();
         state.can_set_weight = static_cast<bool>(current);
@@ -534,7 +545,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 weight << L"Current weight: " << std::setprecision(8) << actual.weight;
                 if (storage_.enabled()) weight << L" (" << scope_label(actual.scope) << L")";
                 if (editing.weight <= 10 && editing.weight == std::floor(editing.weight)) state.selected_weight = static_cast<int>(editing.weight);
-                if (actual.weight == 0) weight << L" (excluded)";
+                if (actual.weight < minimum_weight_) weight << L" (excluded)";
                 else if (actual.weight > 10) weight << L" (custom)";
                 if (scope != actual.scope || editing.weight != actual.weight)
                     weight << L"\r\nEditing " << scope_label(scope) << L": " << editing.weight;
@@ -583,13 +594,13 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (!decision.index) {
             state.next_track = finite_ && source->pass_end ? L"Playlist complete - playback will stop" : L"No eligible tracks - playback will stop";
             if (finite_) state.can_reroll = false;
-            explanation << L"Eligible: 0 | Weight 0 excluded: " << decision.excluded;
+            explanation << L"Eligible: 0 | Below minimum excluded: " << decision.excluded;
             explanation << L"\r\nCooling down: " << source->cooldown.blocked;
         } else if (next) {
             state.next_track = track_label(next->item.get());
             if (source->rerolled) explanation << L"Reroll | ";
             explanation << L"Weight: " << std::setprecision(8) << decision.weight << L" | Chance: " << std::fixed << std::setprecision(2) << decision.probability * 100 << L"%\r\n";
-            explanation << L"Eligible: " << decision.eligible << L" | Weight 0 excluded: " << decision.excluded << L"\r\n";
+            explanation << L"Eligible: " << decision.eligible << L" | Below minimum excluded: " << decision.excluded << L"\r\n";
             explanation << L"Cooling down: " << source->cooldown.blocked << L"\r\n";
             explanation << L"Roll " << decision.draw * 100 << L"% fell in [" << decision.lower * 100 << L"%, " << decision.upper * 100 << L"%).";
         } else return state;
@@ -916,7 +927,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             }
         }
         const auto context = context_for(playlist, &keys);
-        for (const auto& key : keys) if (effective_weight(key, context).weight > 0) return true;
+        for (const auto& key : keys) if (effective_weight(key, context).weight >= minimum_weight_) return true;
         return false;
     }
     std::shared_ptr<Occurrence> finite_end(const std::shared_ptr<Occurrence>& source, const Ref<IAIMPPlaylist>& playlist,
@@ -946,7 +957,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         const auto cached = source->next.lock();
         if (!reroll && target && cached && source->end_action == action && cached->pass && cached->pass != source->pass &&
             same_object(cached->playlist.get(), target.get()) && playlist_for(cached->item.get()) &&
-            effective_weight(track_key(cached->item.get()), context_for(target)).weight > 0) {
+            effective_weight(track_key(cached->item.get()), context_for(target)).weight >= minimum_weight_) {
             source->decision = cached->incoming_decision; return cached;
         }
         source->end_action = action; source->next.reset();
@@ -974,7 +985,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             keys.push_back(key);
         }
         const auto context = context_for(playlist, &keys);
-        for (const auto& key : keys) probabilities.push_back(effective_weight(key, context).weight);
+        for (const auto& key : keys) probabilities.push_back(selection_weight(effective_weight(key, context).weight));
         ignorant::CooldownPool pool;
         if (finite_) {
             ensure_pass(source, playlist);
@@ -1083,6 +1094,24 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         text << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
         return text.str();
     }
+    double selection_weight(double weight) const { return weight >= minimum_weight_ ? weight : 0.0; }
+    static double parse_minimum_weight(const std::wstring& text) {
+        std::istringstream input(utf8(text)); input.imbue(std::locale::classic());
+        double value;
+        if (!(input >> value) || !(input >> std::ws).eof() || !std::isfinite(value) || value <= 0)
+            throw std::runtime_error("Minimum weight must be finite and greater than 0, for example 0.1 or 1.");
+        return value;
+    }
+    void apply_minimum_weight(HWND window) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        minimum_weight_ = parse_minimum_weight(control_text(window, IDC_MINIMUM_WEIGHT));
+        save_preferences(); changed(); refresh_cooldown_preview();
+        if (dialog_) refresh(dialog_);
+        update_monitor();
+        log_.write("weights.minimum", "weight=" + utf8(weight_text(minimum_weight_)));
+        storage_status(window, L"Minimum eligible weight applied: " + weight_text(minimum_weight_) + L". Stored track weights kept."
+            + (preferences_error_.empty() ? L"" : L"\r\n" + preferences_error_));
+    }
     void apply_default_weight(HWND window) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         weights_.set_default(parse_custom_weight(control_text(window, IDC_DEFAULT_WEIGHT)));
@@ -1169,6 +1198,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             const auto value = effective_weight(tracks[i], context);
             rows[i].source = scope_label(value.scope);
             rows[i].weight = value.weight;
+            rows[i].below_minimum = value.weight < minimum_weight_;
             rows[i].editing_weight = effective_weight(tracks[i], context, editing_scope).weight;
         }
         track_table_.sort(rows);
@@ -1341,6 +1371,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 SetWindowLongPtrW(window, DWLP_USER, lparam); self->storage_dialog_ = window;
                 SetDlgItemTextW(window, IDC_MUSIC_FOLDER, self->music_folder_.c_str());
                 SetDlgItemTextW(window, IDC_DEFAULT_WEIGHT, weight_text(self->weights_.fallback()).c_str());
+                SetDlgItemTextW(window, IDC_MINIMUM_WEIGHT, weight_text(self->minimum_weight_).c_str());
                 CheckDlgButton(window, IDC_SHARED_GLOBAL, self->shared_global_ ? BST_CHECKED : BST_UNCHECKED);
                 CheckDlgButton(window, IDC_FOLDER_LOCAL, self->folder_local_ ? BST_CHECKED : BST_UNCHECKED);
                 CheckDlgButton(window, IDC_PLAYLIST_LOCAL, self->playlist_local_ ? BST_CHECKED : BST_UNCHECKED);
@@ -1357,6 +1388,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 else if (id == IDC_BROWSE_MUSIC) self->browse_music_folder(window);
                 else if (id == IDC_APPLY_STORAGE) self->apply_storage_dialog(window);
                 else if (id == IDC_APPLY_DEFAULT_WEIGHT) self->apply_default_weight(window);
+                else if (id == IDC_APPLY_MINIMUM_WEIGHT && HIWORD(wparam) == BN_CLICKED) self->apply_minimum_weight(window);
                 else if (id == IDC_IMPORT || id == IDC_EXPORT) self->storage_transfer(window, id == IDC_EXPORT);
                 else if (id == IDC_WEIGHT_SCOPE && HIWORD(wparam) == CBN_SELCHANGE) {
                     std::lock_guard<std::recursive_mutex> lock(self->mutex_);
@@ -1503,7 +1535,7 @@ public:
         case AIMP_PLUGIN_INFO_NAME: return const_cast<TChar*>(L"IgnorantShuffle " IGNORANT_SHUFFLE_WINDOWS_VERSION_W);
         case AIMP_PLUGIN_INFO_AUTHOR: return const_cast<TChar*>(L"IgnorantShuffle contributors");
         case AIMP_PLUGIN_INFO_SHORT_DESCRIPTION: return const_cast<TChar*>(L"Weighted shuffle: 0 excludes a track; larger weights play more often.");
-        case AIMP_PLUGIN_INFO_FULL_DESCRIPTION: return const_cast<TChar*>(L"Uses AIMP's Shuffle switch. Configure track weights, optional track cooldown, or finite weighted playlists that follow AIMP's end-of-playlist action. Custom weights may exceed 10. The default weight is configurable in Weight storage (initially 5).");
+        case AIMP_PLUGIN_INFO_FULL_DESCRIPTION: return const_cast<TChar*>(L"Uses AIMP's Shuffle switch. Configure track weights, optional track cooldown, or finite weighted playlists that follow AIMP's end-of-playlist action. Custom weights may exceed 10. Weight storage configures the default weight (initially 5) and minimum eligible weight (initially 1, must be greater than 0).");
         default: return nullptr;
         }
     }
@@ -1657,7 +1689,7 @@ public:
             auto source = source_for(current, flags, playlist);
             auto previous = source ? source->previous.lock() : nullptr;
             if (!previous || !previous->item) return handled({}, output);
-            if (effective_weight(track_key(previous->item.get()), context_for(previous->playlist)).weight <= 0) return handled({}, output);
+            if (effective_weight(track_key(previous->item.get()), context_for(previous->playlist)).weight < minimum_weight_) return handled({}, output);
             // Re-resolve membership so deleted items cannot be returned from history.
             if (!playlist_for(previous->item.get())) return handled({}, output);
             log_.write("queue.previous.choice", "source=" + context_id(source) + " previous=" + context_id(previous));

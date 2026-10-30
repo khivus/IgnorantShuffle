@@ -264,6 +264,99 @@ public:
 };
 #undef STUB
 struct PluginChecks {
+    static void minimum_weight_checks(Manager& manager, Messages& messages) {
+        Track zero(L"minimum-zero.flac"), low(L"minimum-low.flac"), equal(L"minimum-equal.flac"), inherited(L"minimum-default.flac");
+        EmptyPlaylist playlist; playlist.items = {&zero, &low, &equal, &inherited};
+        for (int i = 0; i < playlist.GetItemCount(); ++i) {
+            auto* item = static_cast<Track*>(playlist.items[i]); item->owner = &playlist; item->index = i;
+        }
+        manager.active = &playlist;
+        Player player; player.current = &low;
+        PlaybackQueue queue;
+        Plugin plugin;
+        plugin.playlists_ = query<IAIMPServicePlaylistManager>(&manager, IID_IAIMPServicePlaylistManager);
+        plugin.messages_ = query<IAIMPServiceMessageDispatcher>(&messages, IID_IAIMPServiceMessageDispatcher);
+        plugin.player_ = query<IAIMPServicePlayer>(&player, IID_IAIMPServicePlayer);
+        plugin.queue_ = query<IAIMPServicePlaybackQueue2>(&queue, IID_IAIMPServicePlaybackQueue2);
+        plugin.preferences_file_ = std::filesystem::current_path() / L"minimum-weight-prefs.ini";
+        std::filesystem::remove(plugin.preferences_file_);
+        plugin.load_preferences();
+        check(plugin.minimum_weight_ == 1, "New and legacy Windows profiles use minimum weight one.");
+        plugin.weights_.set_default(1);
+        plugin.weights_.set(track_key(&zero), 0); plugin.weights_.set(track_key(&low), 0.5); plugin.weights_.set(track_key(&equal), 1);
+        const auto stored = plugin.weights_.entries();
+        module = GetModuleHandleW(nullptr); plugin.open_monitor();
+        const auto editor = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_SETTINGS), nullptr, Plugin::dialog_proc, reinterpret_cast<LPARAM>(&plugin));
+        const auto settings = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_STORAGE), editor, Plugin::storage_proc, reinterpret_cast<LPARAM>(&plugin));
+        check(Plugin::control_text(settings, IDC_MINIMUM_WEIGHT) == L"1", "The Windows minimum-weight field displays the saved setting.");
+        const auto apply = [&](const wchar_t* value) {
+            SetDlgItemTextW(settings, IDC_MINIMUM_WEIGHT, value);
+            SendMessageW(settings, WM_COMMAND, MAKEWPARAM(IDC_APPLY_MINIMUM_WEIGHT, BN_CLICKED), 0);
+        };
+        QueueOutput next;
+        plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &next);
+        check(next.item && !same_object(next.item.get(), &zero) && !same_object(next.item.get(), &low) && plugin.beginning_->decision.eligible == 2,
+            "The real Windows queue includes weights equal to one, including defaults, and excludes lower weights.");
+        const auto before = queue.notifications;
+        apply(L"1.5");
+        check(queue.notifications == before + 1 && plugin.weights_.entries() == stored,
+            "Changing the minimum invalidates lookahead once without rewriting stored weights.");
+        plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &next);
+        check(!next.item && !next.custom, "Raising the minimum clears an ineligible cached choice and stops an empty pool.");
+        check(plugin.monitor_state().current_weight.find(L"(excluded)") != std::wstring::npos && plugin.track_table_.rows()[1].excluded(),
+            "Current weight and table rows mark positive weights below the minimum as excluded.");
+        wchar_t cell[96]{}; ListView_GetItemText(GetDlgItem(editor, IDC_TRACKS), 1, 0, cell, 96);
+        check(std::wstring(cell).find(L"Excluded") != std::wstring::npos, "The real weight-table cell labels below-minimum entries.");
+        apply(L"0.5");
+        plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &next);
+        check(plugin.beginning_->decision.eligible == 3 && !plugin.track_table_.rows()[1].excluded(),
+            "Equality at a fractional minimum is eligible in queue selection and the table.");
+        apply(L"1"); plugin.set_cooldown(2);
+        plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &next);
+        check(plugin.beginning_->cooldown.distinct_positive == 2 && plugin.beginning_->cooldown.fallback &&
+            next.item && !same_object(next.item.get(), &zero) && !same_object(next.item.get(), &low),
+            "Cooldown capacity and short-list fallback exclude all below-minimum weights.");
+        plugin.set_finite(true);
+        plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &next);
+        check(next.item && plugin.beginning_->finite_pool.positive == 2,
+            "Finite-pass counts include equality and exclude weights below the minimum.");
+        apply(L"1.5");
+        plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &next);
+        check(!next.item, "An all-below-minimum finite pass stays handled without unweighted fallback.");
+        plugin.set_finite(false); apply(L"1");
+        const auto previous = plugin.remember(query<IAIMPPlaylistItem>(&low, IID_IAIMPPlaylistItem), query<IAIMPPlaylist>(&playlist, IID_IAIMPPlaylist));
+        plugin.playing_ = plugin.remember(query<IAIMPPlaylistItem>(&equal, IID_IAIMPPlaylistItem), query<IAIMPPlaylist>(&playlist, IID_IAIMPPlaylist));
+        plugin.playing_->previous = previous;
+        plugin.GetPrev(&equal, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &next);
+        check(!next.item, "Previous cannot replay a positive history weight below the minimum.");
+        apply(L"0.5");
+        plugin.GetPrev(&equal, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &next);
+        check(same_object(next.item.get(), &low), "Previous accepts a history weight exactly equal to the minimum.");
+        QueueOutput manual;
+        apply(L"1"); plugin.OnSelect(&low, &manual);
+        check(plugin.playing_ && same_object(plugin.playing_->item.get(), &low), "Manual AIMP selection can still play excluded tracks.");
+        for (const auto* value : {L"0.1", L"0.000000001", L"25.123456789012344"}) {
+            apply(value);
+            Plugin restored; restored.preferences_file_ = plugin.preferences_file_; restored.load_preferences();
+            check(restored.minimum_weight_ == plugin.minimum_weight_, "Positive fractional minimums survive INI save/reload without precision loss.");
+        }
+        const auto preserved = plugin.minimum_weight_;
+        const auto preserved_notifications = queue.notifications;
+        for (const auto* bad : {L"", L"0", L"-0.0", L"-1", L"NaN", L"inf", L"1e999", L"2junk"}) {
+            SetDlgItemTextW(settings, IDC_MINIMUM_WEIGHT, bad);
+            bool rejected = false;
+            try { plugin.apply_minimum_weight(settings); } catch (const std::exception&) { rejected = true; }
+            check(rejected && plugin.minimum_weight_ == preserved && queue.notifications == preserved_notifications,
+                "Zero, negative and invalid minimums cannot change settings or cached queue state.");
+        }
+        WritePrivateProfileStringW(L"Shuffle", L"MinimumWeight", L"0", plugin.preferences_file_.c_str());
+        Plugin restored; restored.preferences_file_ = plugin.preferences_file_; restored.load_preferences();
+        check(restored.minimum_weight_ == 1 && !restored.preferences_error_.empty(), "An invalid saved minimum recovers to one with a diagnostic.");
+        apply(L"1");
+        ShowWindow(settings, SW_SHOWNOACTIVATE); UpdateWindow(settings); capture_preview(settings, L"minimum-weight-settings.bmp");
+        DestroyWindow(settings); DestroyWindow(editor); plugin.Finalize(); manager.active = nullptr;
+        std::filesystem::remove(plugin.preferences_file_);
+    }
     static void default_weight_checks(Manager& manager, Messages& messages) {
         Track first(L"default-first.flac"), second(L"default-second.flac");
         EmptyPlaylist playlist; playlist.items = {&first, &second};
@@ -1368,7 +1461,7 @@ struct PluginChecks {
         const auto state = plugin.monitor_state();
         auto chosen = query<IAIMPPlaylistItem>(output.item.get(), IID_IAIMPPlaylistItem);
         check(state.next_track == Plugin::track_label(chosen.get()), "Panel must display the track supplied to AIMP.");
-        check(state.decision.find(L"Eligible: 2 | Weight 0 excluded: 1") != std::wstring::npos, "Panel explains candidate counts.");
+        check(state.decision.find(L"Eligible: 2 | Below minimum excluded: 1") != std::wstring::npos, "Panel explains candidate counts.");
         check(plugin.random_ == random_state, "Reading the panel must not consume a random draw.");
         plugin.GetNext(&second, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &prefetch);
         check(plugin.monitor_state().next_track == state.next_track, "Prefetch for a different source must not replace the current decision.");
@@ -1618,13 +1711,13 @@ struct PluginChecks {
         target_first.owner = target_second.owner = &target; target_second.index = 1; target.items = {&target_first, &target_second};
         manager.loaded = {&target, &playlist, &empty, &excluded};
         messages.end_action = 0;
-        Plugin move; setup(move); move.weights_.set("finite-target-zero.flac", 0);
+        Plugin move; setup(move); move.weights_.set("finite-target-zero.flac", 0.5);
         QueueOutput manual;
         player.current = &first; move.OnSelect(&first, &manual); move.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
         move.active_pass_->played = {"finite-A.flac", "finite-B.flac", "finite-C.flac"};
         move.GetNext(&first, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
         auto moved = occurrence_from(&output);
-        check(moved && same_object(moved->playlist.get(), &target) && move.active_pass_ != moved->pass, "Next-playlist action skips excluded lists, wraps, and does not commit a speculative switch.");
+        check(moved && same_object(moved->playlist.get(), &target) && move.active_pass_ != moved->pass, "Next-playlist action skips below-minimum lists, wraps, and does not commit a speculative switch.");
         player.current = moved->item.get(); move.OnSelect(moved->item.get(), &output); move.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
         check(move.active_pass_ == moved->pass && move.active_pass_->played.size() == 1, "Actual next-playlist playback commits its new finite pass.");
         move.GetNext(moved->item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &output);
@@ -1725,6 +1818,7 @@ struct PluginChecks {
         check(plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Shuffle off must return boolean false, not E_NOTIMPL.");
         check(plugin.GetPrev(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Previous with shuffle off.");
         messages.shuffle = TRUE;
+        minimum_weight_checks(manager, messages);
         default_weight_checks(manager, messages);
         mouse_input_checks();
         sorting_checks(manager);

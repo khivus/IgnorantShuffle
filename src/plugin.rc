@@ -31,7 +31,7 @@ BEGIN
     PUSHBUTTON "Inherit", IDC_RESET_LOCAL, 240, 264, 66, 18
     DEFPUSHBUTTON "Close", IDOK, 392, 264, 78, 18
 END
-IDD_STORAGE DIALOGEX 0, 0, 350, 310
+IDD_STORAGE DIALOGEX 0, 0, 350, 354
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "IgnorantShuffle - Weight storage"
 FONT 9, "Segoe UI"
@@ -54,8 +54,12 @@ BEGIN
     LTEXT "Default weight:", -1, 10, 247, 80, 10
     EDITTEXT IDC_DEFAULT_WEIGHT, 96, 244, 78, 14, ES_AUTOHSCROLL | WS_TABSTOP
     PUSHBUTTON "Apply default", IDC_APPLY_DEFAULT_WEIGHT, 182, 244, 88, 16
-    LTEXT "Used when no weight is saved. Any finite nonnegative value; 0 excludes unconfigured tracks. Initially 5.", -1, 10, 266, 330, 18
-    DEFPUSHBUTTON "Close", IDOK, 274, 286, 66, 16
+    LTEXT "Used when no weight is saved. Initially 5. Values below the minimum eligible weight are excluded from shuffle.", -1, 10, 266, 330, 18
+    LTEXT "Minimum weight:", -1, 10, 291, 80, 10
+    EDITTEXT IDC_MINIMUM_WEIGHT, 96, 288, 78, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON "Apply minimum", IDC_APPLY_MINIMUM_WEIGHT, 182, 288, 88, 16
+    LTEXT "Initially 1. Any finite value greater than 0, including fractions. Tracks with weight at or above this minimum are eligible.", -1, 10, 310, 330, 18
+    DEFPUSHBUTTON "Close", IDOK, 274, 332, 66, 16
 END
 IDD_MONITOR DIALOGEX 0, 0, 260, 230
 STYLE DS_SETFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_VSCROLL

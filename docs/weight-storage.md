@@ -13,6 +13,8 @@ not overwritten; repair it or move it aside first. See the
 
 **Default weight** in **Track weights... > Weight storage...** controls the fallback for tracks with no saved weight. Click **Apply default** to save it and refresh playback choices immediately. It starts at **5** and accepts any finite nonnegative number, including fractions and values above ten. **0** excludes unconfigured tracks. Explicit profile/shared/local weights are preserved. The setting is stored separately in `IgnorantShuffle\preferences.ini`, under `[Shuffle]` as `DefaultWeight`, and is specific to that AIMP profile; it is not part of shared TSV files.
 
+**Minimum weight** in the same dialog controls queue eligibility: effective weights **at or above** it can be selected, and lower weights are excluded. It defaults to **1** and requires a finite value **greater than 0**; positive fractions are allowed. **Apply minimum** saves `[Shuffle] MinimumWeight` in `preferences.ini` and refreshes cached choices without modifying any saved track weights. Invalid saved values fall back to 1 with a visible diagnostic. Android has its own saved minimum; shared TSV files contain track weights only.
+
 ## Shared global and local weights
 
 **Shared global weights are preferred by default** once a root is selected.

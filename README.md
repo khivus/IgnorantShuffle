@@ -11,8 +11,9 @@ Every new release includes both Windows and Android downloads and lists their in
 ## Features
 
 - One-click weights **0–10**, plus custom and imported values above 10 or fractional values. **0 excludes a track** from weighted selection.
+- A saved **Minimum weight**, initially **1**: weights at or above it are eligible. The minimum must be greater than zero; positive fractions are allowed.
 - Track cooldown with a visible fallback when the playlist is too short.
-- Optional finite playlists: higher weights tend to play earlier, each positive-weight filename plays once per pass, then AIMP's end-of-playlist setting applies.
+- Optional finite playlists: higher weights tend to play earlier, each eligible filename plays once per pass, then AIMP's end-of-playlist setting applies.
 - Current/next track details, selection probabilities, and a **Reroll next** button.
 - A compact, resizable panel with scrolling, always-on-top mode, and optional attachment beside AIMP.
 - Bulk weight editing, import/export, and optional folder-local and AIMP-playlist weight layers.

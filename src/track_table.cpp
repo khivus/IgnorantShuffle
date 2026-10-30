@@ -99,7 +99,7 @@ void TrackTable::replace(std::vector<TrackTableRow> rows, const std::vector<int>
     for (std::size_t i = 0; i < rows_.size(); ++i) {
         const auto& row = rows_[i];
         auto weight = number(row.weight);
-        if (row.weight == 0) weight += L"  Excluded";
+        if (row.excluded()) weight += L"  Excluded";
         LVITEMW item{}; item.mask = LVIF_TEXT; item.iItem = static_cast<int>(i); item.pszText = weight.data();
         const auto index = ListView_InsertItem(window_, &item);
         auto folder = std::filesystem::path(row.path).parent_path().wstring();
@@ -132,7 +132,7 @@ LRESULT TrackTable::notify(NMHDR* notification) {
             const auto index = static_cast<std::size_t>(drawing->nmcd.dwItemSpec);
             SelectObject(drawing->nmcd.hdc, drawing->iSubItem == 0 && bold_ ? bold_ : reinterpret_cast<HFONT>(SendMessageW(window_, WM_GETFONT, 0, 0)));
             if (index < rows_.size() && !ListView_GetItemState(window_, static_cast<int>(index), LVIS_SELECTED)) {
-                if (!high_contrast_ && drawing->iSubItem == 0 && rows_[index].weight == 0) drawing->clrText = RGB(175, 30, 30);
+                if (!high_contrast_ && drawing->iSubItem == 0 && rows_[index].excluded()) drawing->clrText = RGB(175, 30, 30);
                 else if (!high_contrast_ && drawing->iSubItem == 3 && rows_[index].weight != rows_[index].editing_weight) drawing->clrText = RGB(0, 80, 150);
                 else drawing->clrText = GetSysColor(COLOR_WINDOWTEXT);
             }
@@ -145,7 +145,7 @@ LRESULT TrackTable::notify(NMHDR* notification) {
             const auto& row = rows_[tip->iItem];
             std::wostringstream text;
             text << row.title << L"\r\nPlayback weight: " << std::setprecision(17) << row.weight;
-            if (row.weight == 0) text << L" (excluded)";
+            if (row.excluded()) text << L" (excluded)";
             text << L"\r\nSource: " << row.source;
             if (edit_visible_) text << L"\r\n" << edit_caption_ << L": " << row.editing_weight;
             text << L"\r\n" << row.path;

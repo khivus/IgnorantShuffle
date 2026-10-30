@@ -7,6 +7,8 @@
 struct TrackTableRow {
     std::wstring title, path, source;
     double weight = 5, editing_weight = 5;
+    bool below_minimum = false;
+    bool excluded() const { return weight == 0 || below_minimum; }
 };
 
 // Native report view keeps numeric weights separate from long file paths.

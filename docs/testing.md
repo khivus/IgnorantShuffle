@@ -81,8 +81,14 @@ numbers, process restarts, removed/replaced tracks and queue renumbering. Minimu
 weight tests cover the default cutoff of 1, exact/fractional boundaries, default
 weights, an empty eligible pool in cooldown/finite mode, history navigation,
 manual playback, preview invalidation and small positive cutoffs. Settings tests
-verify legacy migration, saved cutoff precision and rejection of zero, negative and
-of invalid values while retaining existing weights and shuffle rules.
+verify legacy migration, saved cutoff precision and rejection of zero, negative
+and invalid values while retaining existing weights and shuffle rules.
+
+Windows minimum-weight adapter tests use the real dialog controls and AIMP SDK
+queue interface. They cover default 1, inclusive equality, positive fractions,
+INI persistence/precision and invalid-value recovery, cache invalidation, default
+weights, table/panel exclusions, cooldown capacity/fallback, finite-pass counts,
+empty pools, next-playlist skipping, history navigation and manual selection.
 
 Automated checks cover release parsing, version ordering, placeholder behavior, auto-check timing and opt-out persistence, verified/corrupt downloads, background cancellation, and actual WinHTTP requests against localhost. Installer tests launch a local GUI helper through ShellExecute and verify the exact package argument with spaces and Unicode. Dialog tests cover installation requests, visible retry controls, reuse of the saved package, and preventing repeated launches on timer ticks. Saved packages are checked again before installation, including rejection after tampering. The actual GitHub update and AIMP installer/restart flow require live verification.
 
