@@ -245,13 +245,16 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
         item { Intro("Shuffle rules", "Shared selection rules with the Windows plugin") }
         item {
             Section("Music-folder weights") {
-                Toggle("Use music-folder file", "Default · synchronize the same file and relative music paths with Windows", m.folder.config.enabled,
+                Text("Each song has its own weight: 10 gives twice the chance of 5 when both songs are eligible; 0 excludes a song from shuffle.")
+                Text("Choose the folder containing all your artist and album folders. For Music/Artist/Song.flac, choose Music, not Artist. This folder stores song weights; it does not set one weight for the whole folder.", style = MaterialTheme.typography.bodySmall)
+                Toggle("Save weights in the music folder", "Store linked song weights in ${PortableWeights.FILENAME}", m.folder.config.enabled,
                     enabled = !m.folder.busy && !m.pending, onChange = m.folder::enable)
                 Text(m.folder.config.label)
                 Text(m.folder.status, style = MaterialTheme.typography.bodySmall)
                 m.folder.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (m.folder.config.root == null) Text("Choose your main music folder once. Local weights work until a folder is selected.", style = MaterialTheme.typography.bodySmall)
-                Text("File: ${PortableWeights.FILENAME}. Keep the same relative folder/file names on both devices. Reindex after adding or retagging music; link unresolved entries in Playlist.", style = MaterialTheme.typography.bodySmall)
+                if (m.folder.config.root == null) Text("Until you choose a folder, weights are saved privately on this phone.", style = MaterialTheme.typography.bodySmall)
+                Text("To share with your PC: choose D:\\Music there and Music here for the same library. Sync ${PortableWeights.FILENAME} along with matching Artist/Song.flac subfolders, then reload weights. The apps do not sync files for you. Sharing is optional.", style = MaterialTheme.typography.bodySmall)
+                Text("Edit each song's weight in Playlist. Reindex after adding or retagging music; use Link music file for unresolved songs so they can use shared weights.", style = MaterialTheme.typography.bodySmall)
                 val enabled = !m.folder.busy && !m.pending
                 ActionButton(onClick = chooseMusicFolder, enabled = enabled) { Text("Choose music folder") }
                 if (m.folder.config.root != null) {
@@ -261,7 +264,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
                         TextButton(onClick = { m.folder.reload(true) }, enabled = enabled) { Text("Reindex files") }
                     }
                     TextButton(onClick = m::copyLocalWeights, enabled = enabled && m.folder.active && m.folder.error == null) { Text("Copy missing local weights") }
-                    Text("Copies linked entries only; existing shared values, including 0, win. Unmatched weights stay local.", style = MaterialTheme.typography.bodySmall)
+                    Text("Choosing a folder does not copy old weights automatically. Copy missing local weights brings across linked songs only; existing file values, including 0, are kept. Unmatched weights stay private on this phone.", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

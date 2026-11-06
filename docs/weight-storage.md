@@ -17,6 +17,12 @@ not overwritten; repair it or move it aside first. See the
 
 ## Shared global and local weights
 
+The **main music folder** is the parent of your artist/album folders. For
+`D:\Music\Artist\Song.flac`, choose **`D:\Music`**. This sets the save location
+for individual song weights in `IgnorantShuffle.weights.tsv`; it does not assign
+one weight to the folder. See the [step-by-step example](shared-music-folder.md#what-is-the-main-music-folder)
+for selecting the matching Android folder, migrating old weights and syncing.
+
 **Shared global weights are preferred by default** once a root is selected.
 Folder/playlist override layers remain off by default and are Windows-only.
 The original profile file stays intact as the fallback for missing shared entries,

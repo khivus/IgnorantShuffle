@@ -5,8 +5,32 @@ Choose the corresponding music root once on each device; until then private
 weights continue to work. Preserve relative subfolder/file names when syncing.
 Existing explicit Windows opt-outs remain respected.
 
-For example, `D:\Music\Artist\Song.flac` and a phone's
-`Music/Artist/Song.flac` both use the key `Artist/Song.flac`:
+## What is the main music folder?
+
+Choose the folder that contains your whole music library, including all artist
+and album subfolders. If your songs are `D:\Music\Artist\Song.flac` on the PC
+and `Music/Artist/Song.flac` on the phone, choose **`D:\Music` on Windows** and
+**`Music` on Android**. Choose the containing folder, not `Artist` or the TSV file.
+The drive letter and the folders above `Music` can differ between devices.
+
+Each **song** still has its own weight. Choosing this folder tells the app where
+to save those song weights; it does not give every song in the folder one weight.
+A song with weight 10 has twice the chance of a song with weight 5 when both are
+eligible in the same draw. Weight 0 excludes a song from weighted shuffle.
+
+For example, set Song's weight to 10 in the playlist editor. With shared storage
+enabled, the app saves `10` next to `Artist/Song.flac` in
+`Music/IgnorantShuffle.weights.tsv`. Copy/sync that file **and the matching music
+subfolders** to the other device, then reload weights there. Both apps find the
+song by the part of its path below the main folder: `Artist/Song.flac`.
+
+You can also use folder storage on just one device. Sharing is optional, and the
+apps do not transfer files automatically. Without a folder, weights stay private
+in the app/AIMP profile. Choosing a folder does not migrate old weights: use
+**Copy missing profile weights** on Windows or **Copy missing local weights** on
+Android to bring them across, preserving weights already in the shared file.
+
+Example file contents:
 
 ```text
 0<TAB>Artist/Excluded.flac

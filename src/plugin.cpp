@@ -1354,7 +1354,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_IFileDialog, browser.out())))
             throw std::runtime_error("Could not open the music-folder chooser. Enter its full path instead.");
         browser->SetOptions(FOS_PICKFOLDERS | FOS_PATHMUSTEXIST | FOS_FORCEFILESYSTEM | FOS_DONTADDTORECENT);
-        browser->SetTitle(L"Choose the root folder you share between devices");
+        browser->SetTitle(L"Choose your main music folder (for example, D:\\Music)");
         if (FAILED(browser->Show(window))) return;
         Ref<IShellItem> selected;
         if (FAILED(browser->GetResult(selected.put()))) return;
