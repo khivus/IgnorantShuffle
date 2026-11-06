@@ -29,7 +29,7 @@ private val pages = listOf("Player", "Shuffle", "Playlist", "Alerts", "Theme", "
 @Composable
 internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () -> Unit, copy: () -> Unit,
     exportLog: () -> Unit, exportWeights: () -> Unit, importWeights: () -> Unit, requestNotifications: () -> Unit,
-    chooseMusicFolder: () -> Unit, updates: AppUpdates) {
+    chooseMusicFolder: () -> Unit, batteryExempt: Boolean, batterySettings: () -> Unit, updates: AppUpdates) {
     val pager = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Track?>(null) }
@@ -77,7 +77,7 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
         }
         HorizontalPager(pager, modifier = Modifier.weight(1f).fillMaxWidth(), beyondViewportPageCount = 1) { page ->
             when (page) {
-                0 -> PlayerPage(m, settings, openAimp) { editing = it }
+                0 -> PlayerPage(m, settings, openAimp, batteryExempt, batterySettings) { editing = it }
                 1 -> ShufflePage(m, chooseMusicFolder)
                 2 -> PlaylistPage(m, importWeights, exportWeights) { editing = it }
                 3 -> AlertsPage(m, requestNotifications)
@@ -112,7 +112,8 @@ private fun AimpController.ready() = connected && !pending && storageError == nu
 private val pagePadding get() = PaddingValues(16.dp)
 
 @Composable
-private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Unit, edit: (Track) -> Unit) {
+private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Unit,
+    batteryExempt: Boolean, batterySettings: () -> Unit, edit: (Track) -> Unit) {
     val ready = m.ready()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (!m.connected || !m.permission) item {
@@ -162,6 +163,15 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                 Text(m.automaticStatus, style = MaterialTheme.typography.bodySmall)
                 Text("CPU protection supports screen-off timing and uses more battery. It releases on pause, disable or disconnect. Headset Next keeps AIMP's own order.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        item {
+            Section("Background playback") {
+                Text(if (batteryExempt) "Battery optimization is disabled for IgnorantShuffle." else
+                    "Battery optimization is enabled. Android may delay background shuffle and let AIMP skip the weighted choice.")
+                Text("For reliable screen-off switching, allow unrestricted battery use for IgnorantShuffle. In Android settings, choose this app and select Don't optimize / Unrestricted. Some phones also have a separate background or auto-start setting.",
+                    style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = batterySettings) { Text(if (batteryExempt) "Battery settings" else "Disable battery optimization") }
             }
         }
         item {

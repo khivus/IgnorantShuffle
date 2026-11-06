@@ -35,6 +35,16 @@ Grant **IgnorantShuffle — AIMP control** notification access from the app's bu
 then open AIMP and start music. On Android 13+ a sideloaded app may require allowing
 restricted settings in its Android app-info menu before notification access.
 
+On first launch, **Disable optimization** opens Android's request to let
+IgnorantShuffle run without battery optimization. Allow it to avoid delayed or
+missed weighted switches while the app is in the background or the screen is off.
+**Not now** dismisses this one-time prompt; **Player > Background playback** always
+shows the current exemption status and lets you open the setting again. Returning
+from settings checks the actual status, including denial or cancellation. If the
+direct request is unavailable, choose IgnorantShuffle in Android's battery list
+and select **Don't optimize / Unrestricted**. Some phones also require background
+or auto-start permission. Unrestricted timed playback can use more battery.
+
 Use Play in the next-roll card, **Next track** in the next-roll notification, or
 Previous in the companion for weighted selection. Headset, AIMP,
 and lock-screen Next remain under AIMP's own control. Queue editing is not used.

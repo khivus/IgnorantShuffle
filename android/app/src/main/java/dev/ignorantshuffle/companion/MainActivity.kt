@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.Context
 import android.os.Bundle
 import android.os.Build
+import android.os.PowerManager
 import android.Manifest
 import android.content.pm.PackageManager
 import android.provider.Settings as AndroidSettings
@@ -15,6 +16,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.LaunchedEffect
@@ -27,6 +34,8 @@ class MainActivity : ComponentActivity() {
     private val updates get() = (application as ShuffleApplication).updates
     private var exportKind = "log"
     private var installAfterPermission = false
+    private var batteryExempt by mutableStateOf(false)
+    private var showBatteryPrompt by mutableStateOf(false)
     private val installAccess = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (installAfterPermission) {
             if (packageManager.canRequestPackageInstalls()) {
@@ -97,8 +106,15 @@ class MainActivity : ComponentActivity() {
                 ShuffleScreen(monitor, ::openSettings, ::openAimp, ::copySummary,
                     { exportKind = "log"; export.launch(LogExport.filename()) },
                     { exportKind = "weights"; export.launch("IgnorantShuffle-Android.weights.tsv") },
-                    { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications, ::chooseMusicFolder, updates)
+                    { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications, ::chooseMusicFolder,
+                    batteryExempt, ::openBatterySettings, updates)
                 if (updates.visible) UpdatesScreen(updates, updates::prepareInstall, ::openUpdateRelease)
+                if (showBatteryPrompt && !updates.visible) AlertDialog(
+                    onDismissRequest = ::dismissBatteryPrompt,
+                    title = { Text("Keep shuffle working in the background") },
+                    text = { Text("Android battery optimization can delay IgnorantShuffle and make AIMP skip the next weighted choice when the app is in the background or the screen is off.\n\nAllow IgnorantShuffle to run without battery optimization. This can use more battery during timed playback. You can change this later under Player > Background playback.") },
+                    confirmButton = { TextButton(onClick = { dismissBatteryPrompt(); openBatterySettings() }) { Text("Disable optimization") } },
+                    dismissButton = { TextButton(onClick = ::dismissBatteryPrompt) { Text("Not now") } })
                 LaunchedEffect(updates.installRequest) {
                     updates.takeInstallRequest()?.let { file ->
                         if (!packageManager.canRequestPackageInstalls()) {
@@ -122,7 +138,13 @@ class MainActivity : ComponentActivity() {
             } }
         }
     }
-    override fun onResume() { super.onResume(); monitor.log("Activity resumed"); monitor.refresh(); monitor.refreshNotifications(); monitor.reloadSharedWeights(); updates.onForeground() }
+    override fun onResume() {
+        super.onResume()
+        batteryExempt = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+        showBatteryPrompt = !batteryExempt && !getPreferences(MODE_PRIVATE).getBoolean("batterySetupShown", false)
+        monitor.log("Activity resumed; batteryExempt=$batteryExempt")
+        monitor.refresh(); monitor.refreshNotifications(); monitor.reloadSharedWeights(); updates.onForeground()
+    }
     override fun onStop() { monitor.log("Activity backgrounded"); super.onStop() }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("exportKind", exportKind)
@@ -130,6 +152,23 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
     }
     private fun openSettings() { runCatching { startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.onFailure { monitor.log("Settings error: $it") } }
+    private fun dismissBatteryPrompt() {
+        getPreferences(MODE_PRIVATE).edit().putBoolean("batterySetupShown", true).apply()
+        showBatteryPrompt = false
+    }
+    private fun openBatterySettings() {
+        val exempt = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+        batteryExempt = exempt
+        val intents = buildList {
+            if (!exempt) add(Intent(AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+            add(Intent(AndroidSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            add(Intent(AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        }
+        for (intent in intents) {
+            if (runCatching { startActivity(intent) }.onFailure { monitor.log("Battery settings unavailable (${intent.action}): $it") }.isSuccess) return
+        }
+        monitor.log("Open Android Settings > Apps > IgnorantShuffle > Battery and allow unrestricted background use")
+    }
     private fun openUpdateRelease() {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updates.release?.pageUrl ?: AndroidReleases.releasesUrl))) }
             .onFailure { updates.installProblem("Cannot open release page: ${it.message}") }
