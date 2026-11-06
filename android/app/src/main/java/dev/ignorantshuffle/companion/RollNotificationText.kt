@@ -5,8 +5,10 @@ import java.util.Locale
 data class NotificationText(val title: String, val body: String)
 object RollNotificationText {
     fun create(choice: Choice, weight: Double, settings: Settings, automatic: Boolean,
-        stats: RollStats, sequence: Long): NotificationText? {
-        val track = choice.track ?: return null
+        stats: RollStats, sequence: Long, previous: Track? = null): NotificationText? {
+        val track = choice.track ?: return previous?.let {
+            NotificationText("No next weighted track", "Previous: ${it.title.take(160)} · Open IgnorantShuffle for shuffle rules")
+        }
         val lines = mutableListOf<String>()
         if (stats.artist && track.artist.isNotBlank()) lines += track.artist
         if (stats.weight) lines += "Weight: $weight"

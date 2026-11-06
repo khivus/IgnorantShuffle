@@ -33,4 +33,13 @@ class PreferenceJsonTest {
         val enabled = AppPreferences(debugPlayback = true, logging = false)
         assertEquals(enabled, PreferenceJson.decode(PreferenceJson.encode(enabled)))
     }
+
+    @Test fun lockScreenControlsPreserveLegacyPrivacyAndBothChoicesPersist() {
+        assertTrue(AppPreferences().lockScreenControls)
+        assertFalse(PreferenceJson.decode("""{"notifyRoll":true}""").lockScreenControls)
+        for (enabled in listOf(false, true)) {
+            val choice = AppPreferences(notifyRoll = true, lockScreenControls = enabled)
+            assertEquals(choice, PreferenceJson.decode(PreferenceJson.encode(choice)))
+        }
+    }
 }

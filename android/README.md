@@ -45,9 +45,12 @@ direct request is unavailable, choose IgnorantShuffle in Android's battery list
 and select **Don't optimize / Unrestricted**. Some phones also require background
 or auto-start permission. Unrestricted timed playback can use more battery.
 
-Use Play in the next-roll card, **Next track** in the next-roll notification, or
-Previous in the companion for weighted selection. Headset, AIMP,
-and lock-screen Next remain under AIMP's own control. Queue editing is not used.
+Use Play in the next-roll card or **Next track** in IgnorantShuffle's notification
+for weighted selection. **Previous track** returns through confirmed listening
+history. Enable **Alerts > Show next-roll notification > Lock-screen controls**
+to show these buttons and track details while locked; expand the notification
+if needed. AIMP's separate media card, its own Next button, and headset controls
+remain under AIMP's own control. Queue editing is not used.
 The first version cannot provide Windows's native pre-playback queue hook.
 
 ## App updates
@@ -162,13 +165,22 @@ Logging can be disabled; saved logs remain available for viewing/export. Exports
 use `IgnorantShuffle-yyyy-MM-dd_HH-mm-ss.log` with an export date/time header;
 event lines include date, time and timezone.
 
-Alerts can enable a quiet next-roll notification. Its **Next track** button plays
-the displayed weighted choice without opening the app. The action is hidden while
-a playback command is pending; outdated actions are ignored after the roll changes,
-the session disconnects or the app process restarts. Artist, weight, chance at roll,
+Alerts can enable a quiet next-roll notification. **Next track** plays the
+displayed weighted choice and **Previous track** goes back through confirmed
+listening history without opening the app. Previous appears only when an eligible
+history entry exists, including after a finite pass ends with no next choice.
+Both actions are hidden while a playback command is pending. Outdated actions
+are ignored after the roll, current track or history changes, the session
+disconnects or the app process restarts. Artist, weight, chance at roll,
 pool counts, cooldown, finite-pass remaining count, and playback mode are individually
 selectable. A single notification is updated; it does not own a MediaSession or
-intercept AIMP's controls. Track content is private on the lock screen. On Android
+intercept AIMP's controls. **Lock-screen controls** allows the buttons and track
+details to appear while locked. It defaults on for new installs; existing saved
+preferences keep lock-screen controls off until you enable it. Turning it off
+hides this notification from the lock screen. Android's lock-screen/channel settings
+still take priority: allow lock-screen notifications and check whether silent
+notifications are hidden. Some phones may require unlocking before an action.
+This is a separate notification, not a replacement for AIMP's media card. On Android
 13+ POST_NOTIFICATIONS is requested only when the user enables this option.
 Denial or a disabled channel does not block shuffle. Android settings can override
 notification visibility and appearance. Alerts offers **Always while connected**,
@@ -234,3 +246,14 @@ new APK has been tested on a phone.
 12. Open Updates and test manual/daily checks, previews and Skip. With a newer
     same-key Android release, test download cancellation/retry, rotation, cache
     restoration, install-permission denial/grant and canceled/completed installation.
+13. On first launch, try **Not now**, relaunch and confirm it does not nag again.
+    Reopen **Player > Background playback**, allow battery exemption, and verify
+    the status after returning. Test denial/cancellation, an already exempt app,
+    rotation during the prompt and several background/screen-off transitions.
+14. Enable roll notifications and **Lock-screen controls**; confirm Previous/Next
+    in the expanded lock-screen notification with Android lock-screen visibility
+    allowed. Test both buttons while playing/paused, a pending command, reroll,
+    a manual AIMP track change, no history, finite-pass completion, reconnection
+    and process restart. Turn lock-screen controls off to check the notification
+    is hidden while locked, then restart to verify both choices persist. Also test
+    notifications denied, channel blocked and silent lock-screen alerts hidden.

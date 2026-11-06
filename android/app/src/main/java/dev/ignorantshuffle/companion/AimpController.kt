@@ -145,7 +145,8 @@ class AimpController(private val context: Context) {
             notifications.clear()
             notificationStatus = if (preferences.notifyRoll) "Waiting for a connected AIMP session" else "Next-roll notifications are off"
         } else notificationStatus = notifications.render(preferences, preview, preview.track?.let(::weight) ?: 0.0,
-            settings, automatic, rollSequence, playback.state, notificationToken, pending)
+            settings, automatic, rollSequence, playback.state, notificationToken, pending,
+            playback.track?.key, model.previous())
     }
 
     private val environment = object : BroadcastReceiver() {
@@ -365,7 +366,7 @@ class AimpController(private val context: Context) {
     fun play(track: Track) = guarded { if (!pending) playChoice(Choice(track)) }
 
     fun playNotificationRoll(action: RollAction) = guarded {
-        if (!connected || pending || !preferences.notifyRoll || storageError != null || folder.blocked ||
+        if (!notificationActionsAvailable() ||
             !action.matches(notificationToken, rollSequence, preview)) {
             log("Ignored unavailable or outdated notification roll #${action.sequence}")
             return@guarded
@@ -373,15 +374,33 @@ class AimpController(private val context: Context) {
         playChoice(preview, notificationAction = action)
     }
 
-    private fun playChoice(choice: Choice, planned: ScheduledRoll? = null, notificationAction: RollAction? = null) {
+    private fun notificationActionsAvailable() = connected && !pending && preferences.notifyRoll &&
+        preferences.notificationVisibility.allows(playback.state) && storageError == null && !folder.blocked
+
+    fun playNotificationPrevious(action: PreviousRollAction) = guarded {
+        val previous = model.previous()
+        if (!notificationActionsAvailable() || !action.matches(notificationToken, rollSequence, playback.track?.key, previous)) {
+            log("Ignored unavailable or outdated notification Previous for roll #${action.sequence}")
+            return@guarded
+        }
+        playChoice(requireNotNull(previous), previousAction = action)
+    }
+
+    private fun playChoice(choice: Choice, planned: ScheduledRoll? = null, notificationAction: RollAction? = null,
+        previousAction: PreviousRollAction? = null) {
         check(storageError == null && !folder.blocked) { "Storage is loading/unavailable; playback selection disabled" }
         val target = choice.track ?: run { result = "No eligible tracks / finite pass complete"; return }
         // Manual requests refresh the queue. Timed requests already performed a
         // lightweight source read; do not refetch/hash the whole queue twice here.
         if (planned == null) read(refreshQueue = true)
         if (pending) return
-        if (notificationAction != null && !notificationAction.matches(notificationToken, rollSequence, preview)) {
+        if (notificationAction != null && (!notificationActionsAvailable() || !notificationAction.matches(notificationToken, rollSequence, preview))) {
             log("Notification roll #${notificationAction.sequence} cancelled after playback/catalog changed")
+            return
+        }
+        if (previousAction != null && (!notificationActionsAvailable() ||
+            !previousAction.matches(notificationToken, rollSequence, playback.track?.key, model.previous()))) {
+            log("Notification Previous cancelled after playback/catalog/history changed")
             return
         }
         if (planned != null && !HandoffPolicy.valid(planned, timing(), model.choiceSequence, SystemClock.elapsedRealtime())) {

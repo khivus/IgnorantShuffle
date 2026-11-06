@@ -21,6 +21,13 @@ class RollNotificationTextTest {
     @Test fun noEligibleChoiceProducesNoNotification() {
         assertNull(RollNotificationText.create(Choice(null), 0.0, Settings(), false, RollStats(), 1))
     }
+    @Test fun completedFinitePassStillAllowsPreviousFromTheNotification() {
+        val text = RollNotificationText.create(Choice(null), 0.0, Settings(finite = true), false,
+            RollStats(), 9, choice.track)!!
+        assertEquals("No next weighted track", text.title)
+        assertTrue(text.body.contains("Previous: Song"))
+        assertFalse(text.body.contains("android:v1"))
+    }
     @Test fun historyDoesNotInventAProbability() {
         val text = RollNotificationText.create(choice.copy(historyIndex = 1), 5.0, Settings(), false, RollStats(), 1)!!
         assertTrue(text.body.contains("Listening history")); assertFalse(text.body.contains("%"))

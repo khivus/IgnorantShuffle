@@ -327,12 +327,15 @@ private fun AlertsPage(m: AimpController, permission: () -> Unit) {
         item { Intro("Roll notifications", "An optional, quiet preview of the next weighted choice") }
         item {
             Section {
-                Toggle("Show next-roll notification", "Preview the weighted choice and play it with Next track", m.preferences.notifyRoll, onChange = {
+                Toggle("Show next-roll notification", "Weighted Next and listening-history Previous controls", m.preferences.notifyRoll, onChange = {
                     m.changePreferences(m.preferences.copy(notifyRoll = it))
                     if (it && !m.notificationsAllowed) permission()
                 })
                 Text(m.notificationStatus, style = MaterialTheme.typography.bodySmall)
                 if (m.preferences.notifyRoll && !m.notificationsAllowed) ActionButton(onClick = permission) { Text("Allow / Android notification settings") }
+                Toggle("Lock-screen controls", "Show track details and Previous / Next while the phone is locked", m.preferences.lockScreenControls,
+                    onChange = { m.changePreferences(m.preferences.copy(lockScreenControls = it)) })
+                TextButton(onClick = permission) { Text("Android notification settings") }
                 Text("Show notification when:", style = MaterialTheme.typography.titleSmall)
                 RollVisibility.entries.forEach { visibility ->
                     StateChip(selected = m.preferences.notificationVisibility == visibility,
@@ -352,7 +355,7 @@ private fun AlertsPage(m: AimpController, permission: () -> Unit) {
                 Toggle("Playback mode", "Timed/manual and finite/endless", stats.mode) { m.changePreferences(m.preferences.copy(stats = stats.copy(mode = it))) }
             }
         }
-        item { Text("Next track plays the displayed weighted roll directly in AIMP. AIMP keeps headset and lock-screen media controls. Track details are marked private on the lock screen; Android channel settings still apply.", style = MaterialTheme.typography.bodySmall) }
+        item { Text("Next track plays the displayed weighted choice; Previous track goes back through confirmed listening history. Expand the IgnorantShuffle notification to see its buttons on the lock screen. Allow lock-screen notifications in Android settings; if missing, check whether silent notifications are hidden. Android or your phone may require unlocking. AIMP's separate media card and headset buttons keep AIMP's own order.", style = MaterialTheme.typography.bodySmall) }
     }
 }
 

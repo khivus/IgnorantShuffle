@@ -15,7 +15,9 @@ object PreferenceJson {
                 stats.optBoolean("cooldown", false), stats.optBoolean("remaining", false), stats.optBoolean("mode", false)),
             RollVisibility.entries.firstOrNull { it.name == json.optString("notificationVisibility") } ?: RollVisibility.ALWAYS,
             json.optLong("leadMs", EndTiming.LEAD_MS).also { require(it in 0..5000) { "Invalid saved switch lead" } },
-            json.optBoolean("automatic", true), json.optBoolean("debugPlayback", false))
+            json.optBoolean("automatic", true), json.optBoolean("debugPlayback", false),
+            // Keep lock-screen controls off for existing installations.
+            json.optBoolean("lockScreenControls", false))
     }
 
     fun encode(value: AppPreferences): String {
@@ -24,6 +26,7 @@ object PreferenceJson {
         return JSONObject().put("logging", value.logging).put("theme", value.theme.name)
             .put("accent", value.accent.name).put("notifyRoll", value.notifyRoll).put("automatic", value.automatic)
             .put("debugPlayback", value.debugPlayback)
+            .put("lockScreenControls", value.lockScreenControls)
             .put("notificationVisibility", value.notificationVisibility.name).put("leadMs", value.leadMs)
             .put("stats", JSONObject().put("artist", s.artist).put("weight", s.weight).put("chance", s.chance)
                 .put("pool", s.pool).put("cooldown", s.cooldown).put("remaining", s.remaining).put("mode", s.mode)).toString()

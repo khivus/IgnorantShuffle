@@ -84,6 +84,14 @@ manual playback, preview invalidation and small positive cutoffs. Settings tests
 verify legacy migration, saved cutoff precision and rejection of zero, negative
 and invalid values while retaining existing weights and shuffle rules.
 
+Previous-notification tests also bind the action to the current source track and
+exact history occurrence, rejecting source/history changes while accepting queue
+renumbering. A finished finite pass keeps the notification available for Previous.
+Preference tests cover lock-screen visibility choices and migration with controls
+off for existing saved preferences. First-launch battery-exemption prompts,
+actual screen-off transitions, notification expansion/buttons on a locked phone,
+and Android/OEM visibility overrides require the [phone checks](../android/README.md#phone-acceptance-checks).
+
 Windows minimum-weight adapter tests use the real dialog controls and AIMP SDK
 queue interface. They cover default 1, inclusive equality, positive fractions,
 INI persistence/precision and invalid-value recovery, cache invalidation, default
