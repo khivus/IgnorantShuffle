@@ -1,3 +1,20 @@
+# Android 0.7.0 / combined 0.15.0 verification — 2026-11-06
+
+- 124 Kotlin/JVM tests passed, including stale Previous/Next actions, source and
+  history changes, finite-pass completion and saved lock-screen preferences.
+- Android build and lint completed with 0 errors, 23 warnings and 2 hints. The
+  universal APK includes arm64-v8a, armeabi-v7a and x86_64 native libraries.
+- Release preflight verified application ID, version 0.7.0, versionCode 9, the
+  pinned update-signing certificate and the APK hash.
+- Windows 0.13.1 built for x64 and Win32; all six CTest suites passed on each.
+  Installer contents, DLL versions/architectures and local checksums passed the
+  release preflight. Offline version, publisher and bundle regressions passed.
+- No phone/emulator installation, actual AIMP playback, lock-screen presentation,
+  battery-exemption dialog or live Windows installer/restart test was performed.
+  These checks do not establish device/OEM behavior or audible playback results.
+
+The following sections record earlier builds and their limitations.
+
 # Android 0.5.0 / combined 0.13.0 verification — 2026-10-29
 
 - 107 Kotlin/JVM tests passed, including combined bundle/APK version selection,

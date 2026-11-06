@@ -4,6 +4,12 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.7.0 (versionCode 9)
+
+- Ask once during setup to disable battery optimization so Android is less likely to delay background or screen-off weighted switches. Show the actual exemption status and a settings shortcut under Player > Background playback.
+- Add Previous track to the optional notification and a saved Lock-screen controls option under Alerts. Previous follows confirmed listening history; Next plays the displayed weighted choice. Ignore outdated actions and hide both while waiting for playback confirmation. Existing saved preferences keep lock-screen controls off until enabled.
+- Explain the main music folder with PC/phone path examples, individual song weights, copying old weights, file linking and manual synchronization.
+
 ## 0.6.0 (versionCode 8)
 
 - Add a Next track action to the next-roll notification that plays the displayed weighted choice through the companion. Ignore outdated actions and hide the action while a playback command awaits confirmation.

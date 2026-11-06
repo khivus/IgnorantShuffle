@@ -1,28 +1,24 @@
-# IgnorantShuffle Android v0.6.0
+# IgnorantShuffle Android v0.7.0
 
-## Weighted Next from the notification
+## Background playback setup
 
-- Add **Next track** to the optional next-roll notification. It plays the displayed weighted choice directly in AIMP without opening the companion.
-- Use the companion's weighted playback path and confirmation checks. Outdated actions are ignored after the roll changes, the session disconnects or the app process restarts.
-- Hide the action while a playback command awaits confirmation to prevent overlapping commands.
+- Ask once to disable battery optimization for IgnorantShuffle, helping prevent delayed or missed weighted switches in the background or with the screen off.
+- Show the actual exemption status and a settings shortcut under **Player > Background playback**. **Not now** dismisses the setup prompt without repeated reminders.
 
-## Minimum eligible weight
+## Previous and Next on the lock screen
 
-- Add a saved **Minimum eligible weight** under **Shuffle > Weights & cooldown**, initially **1** for new and existing installs.
-- A track is eligible when **weight >= minimum**. Weight **1** plays with the default minimum; lower weights are excluded. The minimum must be finite and **greater than 0**; positive fractions such as **0.1** are supported.
-- Apply the minimum to default, local and shared weights, weighted rolls, rerolls, timed playback and listening-history navigation. Preserve stored weights and manual **Play now**.
-- Mark excluded playlist entries and show the active minimum in the weight editor.
+- Add **Previous track** to the optional notification to return through confirmed listening history. **Next track** plays the displayed weighted choice.
+- Enable **Alerts > Show next-roll notification > Lock-screen controls**, then expand IgnorantShuffle's notification to use the buttons while locked. Existing saved preferences keep lock-screen controls off until enabled.
+- Ignore outdated actions and hide both buttons while waiting for AIMP to confirm a command. Previous remains available after a finite pass ends when history exists.
 
-Android app version: **0.6.0** (versionCode **8**). Bundled shuffle core:
-**0.1.0** (unchanged). The minimum is a separate per-device setting and is not
-synchronized in shared TSV files.
+## Clearer music-folder weights
 
-Requires Android 8.0 / API 26+. This preview retains the existing application ID
-and pinned update signing key. Updating preserves weights and settings. Enable
-**Alerts > Show next-roll notification** and allow notifications to use its button.
+- Explain which main folder to choose, how individual song weights work, how to copy existing weights, and how to sync the file with Windows.
 
-Validation: **119 Android tests passed**, lint has no errors, and the APK signature
-matches the pinned update key. All three native ABIs are included. Phone playback,
-notification rendering and the Android update installer still need device
-verification. Timed playback remains experimental; AIMP/headset/lock-screen Next
-continues to follow AIMP's own order.
+Android app version: **0.7.0** (versionCode **9**). Bundled shuffle core:
+**0.1.0** (unchanged). Requires Android 8.0 / API 26+. This preview retains the
+existing application ID and pinned update signing key; updating preserves weights
+and settings. Android notification settings still control lock-screen visibility.
+AIMP's own media card and headset buttons continue to follow AIMP's order.
+Timed automatic playback remains experimental; actual phone behavior requires
+device verification.
