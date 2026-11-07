@@ -51,7 +51,7 @@ Both applications read their own version from their download filenames.
 An early **Android companion** now lives in [android/](android/README.md). It shares
 the C++ selection rules with this Windows plugin and provides weight editing,
 Smart Next/Previous, cooldown and finite passes. Optional timed automatic mode
-is experimental: it can clip endings and is not equivalent to AIMP's Windows
+switches the configured number of milliseconds before track end and requires AIMP Shuffle to be on. It can clip endings and is not equivalent to AIMP's Windows
 queue extension. See [the platform design](docs/android-design.md) for the boundary.
 
 | Guide | Covers |

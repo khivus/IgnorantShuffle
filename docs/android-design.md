@@ -12,7 +12,7 @@ diagnostic tool and is not modified or replaced by the companion.
 
 Phone tests showed immediate media-ID/queue selection working. Queue insertion
 and append did not establish scheduling support. Consequently the first app
-provides explicit Smart Next/Previous and an optional, experimental timed mode.
+provides explicit Smart Next/Previous and an optional automatic weighted shuffle.
 The timer switches near the estimated end, may clip endings, can be delayed by
 Android, and does not replace headset/lock-screen Next. It is off at startup and
 after connection loss. It must not fight manual track selections or retry failed
@@ -61,3 +61,27 @@ Network/file verification runs on a separate worker; downloads and
 installer handoff require user actions. The app validates hash, identity, version,
 signing key and ABI and uses a narrow private APK FileProvider. Daily foreground
 checks can be disabled. See [Android updates](android-updates.md).
+
+## Following AIMP shuffle mode and manual queue limitations
+
+The Player switch **Enable weighted shuffle** enables automatic playback of the
+weighted choice, the configured number of milliseconds before the estimated
+track end. `MediaControllerCompat.getShuffleMode()` and its session-ready / mode
+callbacks gate the timer. Shuffle off or unknown cancels automatic handoffs and
+releases the timing wake lock; turning AIMP Shuffle on resumes an enabled app.
+An in-flight timer checks the mode again before dispatch. Explicit Play / Next /
+Previous actions remain user commands and do not change AIMP's shuffle setting.
+
+AIMP's MediaSession queue is its playlist, **not its separate manual queue**.
+Do not interpret a nonempty session list as queued requests. Inspection of the
+public AIMP 4.31.1750 APK (SHA256
+`42c1838b9b228d5c981f48c4822729b4d50f6774e27e200706190a10a6b45d75`)
+confirms its session list is built from playlist items and its browser routes
+cover folders, music library and playlists, with no manual-queue route or count.
+Automatic waiting for that private queue to drain cannot currently be implemented
+through this integration. Turn off **Enable weighted shuffle** while using AIMP's
+manual queue, then enable it again after the queue finishes.
+
+References: [Android compatibility controller](https://developer.android.com/reference/android/support/v4/media/session/MediaControllerCompat),
+[AIMP's explanation of its manual queue](https://aimp.ru/blogs/?p=1589),
+[official APK download](https://aimp.ru/?do=download&os=android).

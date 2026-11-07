@@ -11,6 +11,8 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
+import android.support.v4.media.session.MediaControllerCompat
+import android.support.v4.media.session.MediaSessionCompat
 import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Build
@@ -63,6 +65,9 @@ class AimpController(private val context: Context) {
         override fun release() { if (wake.isHeld) wake.release() }
     }, { task, delay -> handler.postDelayed(task, delay); Unit }, { handler.removeCallbacks(it) }, { log(it) },
         { e -> log("CPU protection failed: $e"); disableAutomatic("Timed mode stopped: CPU protection unavailable") })
+    private var compat: MediaControllerCompat? = null
+    private var compatCallback: MediaControllerCompat.Callback? = null
+    var aimpShuffle by mutableStateOf(AimpShuffleMode.UNKNOWN); private set
     private var native: MediaController? = null
     private var callback: MediaController.Callback? = null
     private var listening = false
@@ -193,6 +198,14 @@ class AimpController(private val context: Context) {
         }
         c.registerCallback(cb, handler)
         native = c; callback = cb; connected = true
+        val compatibility = MediaControllerCompat(context, requireNotNull(MediaSessionCompat.Token.fromToken(c.sessionToken)))
+        val modeCallback = object : MediaControllerCompat.Callback() {
+            private fun active() = native?.sessionToken == c.sessionToken
+            override fun onSessionReady() { if (active()) guarded { read() } }
+            override fun onShuffleModeChanged(shuffleMode: Int) { if (active()) guarded { read() } }
+        }
+        compat = compatibility; compatCallback = modeCallback
+        compatibility.registerCallback(modeCallback, handler)
         automatic = preferences.automatic
         automaticStatus = if (automatic) "Waiting for playable track timing" else "Timed automatic mode is off"
         status = "Connected to AIMP; ${matches.size} session(s)"
@@ -208,6 +221,8 @@ class AimpController(private val context: Context) {
         if (pending) finish("INCONCLUSIVE: $reason")
         disableAutomatic(if (preferences.automatic) "Timed mode waiting for AIMP: $reason" else "Timed automatic mode is off")
         native?.let { c -> callback?.let { cb -> runCatching { c.unregisterCallback(cb) } } }
+        compat?.let { c -> compatCallback?.let { cb -> runCatching { c.unregisterCallback(cb) } } }
+        compat = null; compatCallback = null; aimpShuffle = AimpShuffleMode.UNKNOWN
         native = null; callback = null; connected = false; actions = 0
         // Disconnect cancels work, not the user's saved on/off choice.
         automatic = preferences.automatic
@@ -230,6 +245,9 @@ class AimpController(private val context: Context) {
 
     private fun read(rearm: Boolean = true, refreshQueue: Boolean = false) {
         val c = native ?: return
+        val mode = AimpShuffleMode.fromSession(runCatching { compat?.shuffleMode ?: -1 }.getOrDefault(-1))
+        if (aimpShuffle != mode) log("AIMP shuffle mode: $aimpShuffle -> $mode")
+        aimpShuffle = mode
         val state = c.playbackState
         val metadata = c.metadata
         val queue = if (refreshQueue || tracks.isEmpty()) c.queue?.map {
@@ -403,7 +421,7 @@ class AimpController(private val context: Context) {
             log("Notification Previous cancelled after playback/catalog/history changed")
             return
         }
-        if (planned != null && !HandoffPolicy.valid(planned, timing(), model.choiceSequence, SystemClock.elapsedRealtime())) {
+        if (planned != null && (!automaticPlaybackAllowed() || !HandoffPolicy.valid(planned, timing(), model.choiceSequence, SystemClock.elapsedRealtime()))) {
             log("Timed choice cancelled: source/timing changed during revalidation"); scheduleTimer(); return
         }
         val fresh = tracks.firstOrNull { it.key == target.key } ?: error("Queue changed; choose again")
@@ -426,7 +444,7 @@ class AimpController(private val context: Context) {
         if (pending) return@guarded
         val c = native ?: error("No AIMP session")
         read(); check(granted())
-        if (expectedSource != null && !EndTiming.due(timing(), expectedSource, SystemClock.elapsedRealtime(), preferences.leadMs)) {
+        if (expectedSource != null && (!automaticPlaybackAllowed() || !EndTiming.due(timing(), expectedSource, SystemClock.elapsedRealtime(), preferences.leadMs))) {
             log("Timed pause cancelled: source/timing changed during revalidation"); return@guarded
         }
         check(supportsBasic(play)) { "AIMP does not advertise this command" }
@@ -480,10 +498,16 @@ class AimpController(private val context: Context) {
     private fun timing() = TimingSnapshot(playback.track?.key, playback.state, playback.position,
         playback.duration, playback.speed, playback.updatedAt)
 
+    private fun automaticPlaybackAllowed() = aimpShuffle == AimpShuffleMode.ON
+
     private fun scheduleTimer() {
         handler.removeCallbacks(endTimer); scheduled = null
         sustainCpu()
         if (!automatic || !connected || !permission || storageError != null || pending || folder.blocked) return
+        if (!automaticPlaybackAllowed()) {
+            automaticStatus = if (aimpShuffle == AimpShuffleMode.OFF) "Waiting: turn Shuffle on in AIMP" else "Waiting for AIMP to report its shuffle mode"
+            return
+        }
         val delay = EndTiming.delayMillis(timing(), SystemClock.elapsedRealtime(), preferences.leadMs)
         if (delay == null) {
             automaticStatus = "Waiting for PLAYING state with a known track, position, speed and duration"
@@ -499,7 +523,7 @@ class AimpController(private val context: Context) {
     private fun sustainCpu() {
         // AIMP can briefly report PAUSED/BUFFERING during the requested handoff.
         // Keep the bounded command-confirmation window awake through that state.
-        val ready = automatic && connected && permission && storageError == null && !folder.blocked
+        val ready = automatic && automaticPlaybackAllowed() && connected && permission && storageError == null && !folder.blocked
         cpu.update((preferences.debugPlayback && audit.active && connected && permission) ||
             CpuProtection.needed(ready, pending, timing(), SystemClock.elapsedRealtime(), preferences.leadMs))
     }
@@ -542,7 +566,7 @@ class AimpController(private val context: Context) {
                 log("TIMER fired roll=${planned.sequence}; elapsedLate=${SystemClock.elapsedRealtime() - planned.elapsedDeadline}ms; uptimeLate=${SystemClock.uptimeMillis() - planned.uptimeDeadline}ms")
                 val beforeHandoff = playback
                 read(rearm = false)
-                if (HandoffPolicy.valid(planned, timing(), model.choiceSequence, SystemClock.elapsedRealtime())) {
+                if (automaticPlaybackAllowed() && HandoffPolicy.valid(planned, timing(), model.choiceSequence, SystemClock.elapsedRealtime())) {
                     log("Timed deadline reached for ${planned.source}; captured roll=${planned.sequence}")
                     val choice = planned.choice
                     if (choice.track == null) {
@@ -588,7 +612,7 @@ class AimpController(private val context: Context) {
         (if (full) tracks else tracks.take(20)).forEach { appendLine("TRACK $it key=${it.key} weight=${weight(it)} source=${weightSource(it)} fileMatch=${folder.match(it)}") }
         if (!full && tracks.size > 20) appendLine("Queue truncated in summary; export full log for every track")
         appendLine("Queue: ${tracks.size}; explicit weights: ${weights.size}; current-pass starts: ${model.played.size}")
-        appendLine("Timed mode: $automatic; $automaticStatus")
+        appendLine("Weighted shuffle enabled: $automatic; AIMP shuffle=$aimpShuffle; $automaticStatus")
         appendLine("Immediate companion controls; AIMP's own next-track selection is independent.")
         if (full) appendLine(journal.contents())
         else events.takeLast(100).forEach { appendLine(it) }

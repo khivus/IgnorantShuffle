@@ -109,13 +109,13 @@ Purple, Rose and Green. Choices apply and save immediately, without rerolling.
 
 ## Timed playback and screen-off protection
 
-**Experimental timed automatic mode** is enabled by default. Its toggle is saved
+**Enable weighted shuffle** is enabled by default. Its toggle is saved
 across relaunches, including an explicit off choice. Older installs without a
 saved choice adopt the enabled default. It resumes when notification access and
-an AIMP session with valid track timing are available; it does not start AIMP or
+an AIMP session with Shuffle on and valid track timing are available; it does not start AIMP or
 unpause music. Errors still stop the current timed run and appear in diagnostics.
 When enabled it switches before the estimated track end using the lead
-configured in **Shuffle > Automatic switch timing**. The default is **300ms**;
+configured in **Shuffle > Switch before track end**. The default is **300ms**;
 choose **0–5000ms**, with 0/50/100/300 presets. Smaller values preserve more of
 the ending but give AIMP more opportunity to advance first. Zero means the
 estimated end, not a guarantee of a seamless transition. The timer and handoff
@@ -128,7 +128,9 @@ lock is held only while timed PLAYING playback has valid timing or a command is
 awaiting confirmation. It does not turn on the display. Bounded ten-minute leases
 are renewed while needed and released on pause, disable, errors and disconnect.
 This costs additional battery while timed playback is active.
-It remains a best-effort fallback, not seamless parity with the Windows plugin.
+AIMP Shuffle off or unknown suspends automatic switching until Shuffle is reported on.
+AIMP does not expose its separate manual queue through this integration: disable the
+app switch while listening to queued requests. See [integration details](../docs/android-design.md#following-aimp-shuffle-mode-and-manual-queue-limitations).
 Manual selections and source changes cancel/replan the old deadline; failed or
 unconfirmed commands disable timed mode. Unknown timing waits for usable state.
 At finite-pass completion or an empty positive pool it requests Pause at the

@@ -269,7 +269,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
             }
         }
         item {
-            Section("Automatic switch timing") {
+            Section("Switch before track end") {
                 OutlinedTextField(lead, { lead = it }, label = { Text("Lead before track end (ms)") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -313,7 +313,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
             Section("How it behaves") {
                 Text("Preview and reroll do not consume a track. Only observed playback advances history and cooldown.")
                 Text("Weights below ${m.settings.minimumWeight} are excluded from weighted choices; you can still use Play now on any exposed track.")
-                Text("Timed mode requests Pause at the estimated end when the pass completes or no eligible tracks remain.")
+                Text("Weighted shuffle requests Pause at the estimated end when the pass completes or no eligible tracks remain.")
             }
             Spacer(Modifier.height(8.dp)); Text(m.result, style = MaterialTheme.typography.bodySmall)
         }
