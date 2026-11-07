@@ -39,11 +39,16 @@ them never materializes default entries in that file.
 Unreadable or malformed weights stop weighted selection with a visible error.
 Restore folder access or repair the file and reload. A missing canonical file
 with a `.bak` present requires backup recovery, preventing exclusions from being
-silently lost. Removing a root from the app keeps its files intact.
+silently lost. Removing a root from the app keeps its files intact. Android asks for confirmation
+first; Cancel preserves its assignment and index. Adding a removed root again
+requires indexing.
 
 ## Import and export copy the file
 
-Choose the **import/export music root**, then Import or Export. Import **replaces**
+On Windows, choose the **import/export music root**, then Import or Export.
+On Android, use **Import weights** and **Export weights** beside the root controls
+in **Shuffle > Music-folder weights**. Radio choices select the transfer root when
+several are configured; a single root is displayed as a plain folder name. Import **replaces**
 that root's complete file with the selected valid TSV. Omitted entries are removed.
 Export copies the current file exactly, including comments, numeric formatting,
 UTF-8 BOM and line endings. It adds no defaults or entries from the playlist.

@@ -3,6 +3,7 @@ package dev.ignorantshuffle.companion
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -16,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -78,8 +80,8 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
         HorizontalPager(pager, modifier = Modifier.weight(1f).fillMaxWidth(), beyondViewportPageCount = 1) { page ->
             when (page) {
                 0 -> PlayerPage(m, settings, openAimp, batteryExempt, batterySettings) { editing = it }
-                1 -> ShufflePage(m, chooseMusicFolder)
-                2 -> PlaylistPage(m, importWeights, exportWeights) { editing = it }
+                1 -> ShufflePage(m, chooseMusicFolder, importWeights, exportWeights)
+                2 -> PlaylistPage(m) { editing = it }
                 3 -> AlertsPage(m, requestNotifications)
                 4 -> ThemePage(m)
                 else -> LogsPage(m, copy, exportLog, requestNotifications)
@@ -187,7 +189,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
 }
 
 @Composable
-private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Unit, edit: (Track) -> Unit) {
+private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
     var search by rememberSaveable { mutableStateOf("") }
     var linking by remember { mutableStateOf<Track?>(null) }
     val visible = remember(search, m.tracks) { m.tracks.filter { search.isBlank() || it.title.contains(search, true) || it.artist.contains(search, true) } }
@@ -196,10 +198,6 @@ private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Un
         Intro("Playlist", "${m.tracks.size} entries exposed by AIMP")
         OutlinedTextField(search, { search = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
             label = { Text("Search title or artist") }, singleLine = true, shape = RoundedCornerShape(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = import, enabled = !m.pending && !m.folder.blocked && m.folder.active) { Text("Import weights") }
-            TextButton(onClick = export, enabled = !m.pending && !m.folder.blocked && m.folder.active) { Text("Export weights") }
-        }
         if (visible.isEmpty()) Text(if (m.tracks.isEmpty()) "Start music in AIMP and refresh to load its playlist." else "No matching tracks.", Modifier.padding(vertical = 16.dp))
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
             itemsIndexed(visible) { _, track ->
@@ -234,40 +232,66 @@ private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Un
 }
 
 @Composable
-private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
+private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, importWeights: () -> Unit, exportWeights: () -> Unit) {
     var default by rememberSaveable(m.settings.defaultWeight) { mutableStateOf(m.settings.defaultWeight.toString()) }
     var minimum by rememberSaveable(m.settings.minimumWeight) { mutableStateOf(m.settings.minimumWeight.toString()) }
     var cooldown by rememberSaveable(m.settings.cooldown) { mutableStateOf(m.settings.cooldown.toString()) }
     var finite by rememberSaveable(m.settings.finite) { mutableStateOf(m.settings.finite) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var lead by rememberSaveable(m.preferences.leadMs) { mutableStateOf(m.preferences.leadMs.toString()) }
+    var removingRoot by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Intro("Shuffle rules", "Shared selection rules with the Windows plugin") }
         item {
             Section("Music-folder weights") {
-                Text("Each song has its own weight: 10 gives twice the chance of 5 when both songs are eligible; 0 excludes a song from shuffle.")
-                Text("Choose the folder containing all your artist and album folders. For Music/Artist/Song.flac, choose Music, not Artist. This folder stores song weights; it does not set one weight for the whole folder.", style = MaterialTheme.typography.bodySmall)
-                Text("Weights are saved only in ${PortableWeights.FILENAME}, one file per music root. Add separate roots for separate music libraries.", style = MaterialTheme.typography.bodySmall)
+                Text("Each song has its own weight: 10 gives twice the chance of 5 when both are eligible; 0 excludes a song.")
+                Text("For Music/Artist/Song.flac, add Music. Each separate music root stores its song weights in ${PortableWeights.FILENAME}.", style = MaterialTheme.typography.bodySmall)
                 Text(m.folder.status, style = MaterialTheme.typography.bodySmall)
                 m.folder.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 val enabled = !m.folder.busy && !m.pending
                 ActionButton(onClick = chooseMusicFolder, enabled = enabled) { Text("Add music root") }
+                val severalRoots = m.folder.config.roots.size > 1
+                if (severalRoots) {
+                    Text("Music root for Import / Export", style = MaterialTheme.typography.titleSmall)
+                    Text("Select the destination for Import weights and the source for Export weights.", style = MaterialTheme.typography.bodySmall)
+                }
                 m.folder.config.roots.forEach { root ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { m.folder.selectTransferRoot(root.uri) }, enabled = enabled, modifier = Modifier.weight(1f)) {
-                            Text(if (root.uri == m.folder.config.root) "${root.label} · import/export" else root.label)
+                    val selected = root.uri == m.folder.config.root
+                    OutlinedCard(Modifier.fillMaxWidth(), border = BorderStroke(1.dp,
+                        if (selected && severalRoots) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
+                        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val selection = if (severalRoots) Modifier.selectable(selected = selected, enabled = enabled,
+                                role = Role.RadioButton, onClick = { if (!selected) m.folder.selectTransferRoot(root.uri) }) else Modifier
+                            Row(Modifier.fillMaxWidth().then(selection), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(root.label, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                                if (severalRoots) RadioButton(selected = selected, onClick = null, enabled = enabled)
+                            }
+                            if (selected && severalRoots) Text("Selected for Import / Export", style = MaterialTheme.typography.labelSmall)
+                            TextButton(onClick = { removingRoot = root.uri }, enabled = enabled,
+                                contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Remove music root") }
                         }
-                        TextButton(onClick = { m.folder.removeRoot(root.uri) }, enabled = enabled) { Text("Remove") }
                     }
                 }
                 if (m.folder.active) {
                     Text("${m.tracks.count { m.folder.match(it).path != null }}/${m.tracks.size} playlist entries linked to files", style = MaterialTheme.typography.bodySmall)
-                    Row {
-                        TextButton(onClick = { m.folder.reload() }, enabled = enabled) { Text("Reload weights") }
-                        TextButton(onClick = { m.folder.reload(true) }, enabled = enabled) { Text("Reindex files") }
+                    Text("Import replaces the weights file in ${m.folder.config.label}. Export saves a copy of that file.", style = MaterialTheme.typography.bodySmall)
+                } else Text("Add a music root to import or export its weights file.", style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = importWeights, enabled = enabled && m.folder.active && !m.folder.blocked,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.weight(1f).fillMaxHeight()) { Text("Import weights") }
+                    OutlinedButton(onClick = exportWeights, enabled = enabled && m.folder.active && !m.folder.blocked,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.weight(1f).fillMaxHeight()) { Text("Export weights") }
+                }
+                if (m.folder.active) {
+                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { m.folder.reload() }, enabled = enabled, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("Reload weights") }
+                        TextButton(onClick = { m.folder.reload(true) }, enabled = enabled, modifier = Modifier.weight(1f).fillMaxHeight()) { Text("Reindex files") }
                     }
                 }
-                Text("Edit song weights in Playlist. Link unresolved songs to their actual files first. Import replaces the selected root's weights file; Export copies that file. To share weights with your PC, sync the file together with its music subfolders, then reload.", style = MaterialTheme.typography.bodySmall)
+                Text("Edit song weights in Playlist. Link unresolved songs to their files first. Reload weights after syncing the file from another device; reindex after adding or retagging music.", style = MaterialTheme.typography.bodySmall)
             }
         }
         item {
@@ -320,6 +344,15 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
             Spacer(Modifier.height(8.dp)); Text(m.result, style = MaterialTheme.typography.bodySmall)
         }
     }
+    m.folder.config.roots.firstOrNull { it.uri == removingRoot }?.let { root ->
+        AlertDialog(onDismissRequest = { removingRoot = null },
+            title = { Text("Remove music root?") },
+            text = { Text("Remove ${root.label} from IgnorantShuffle? Music files and the saved weights file stay in that folder. Adding it again will require indexing its music files.") },
+            confirmButton = { TextButton(onClick = { m.folder.removeRoot(root.uri); removingRoot = null },
+                enabled = !m.folder.busy && !m.pending) { Text("Remove music root") } },
+            dismissButton = { TextButton(onClick = { removingRoot = null }) { Text("Cancel") } })
+    }
+
 }
 
 @Composable

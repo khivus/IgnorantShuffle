@@ -1,3 +1,47 @@
+# Music-root controls verification — 2026-11-07
+
+- Android build, lint, APK signature verification and all 127 Kotlin/JVM tests passed.
+- Tested the actual Compose UI and Android document pickers on the disposable
+  Android 16 / API 36 emulator using two real writable music trees with cached
+  file indexes, including a long root name.
+- Remove opened a confirmation before any storage mutation. Cancel preserved the
+  assignment/index byte for byte. Confirming removal affected only the chosen root;
+  its music and weights file and the other root's data stayed intact.
+- Root radio selection changed the transfer destination while retaining both roots
+  and their existing file indexes. A single root appears as a plain folder name.
+- Export from Shuffle copied the selected file exactly, including BOM, comments,
+  number formatting and CRLF. Import from Shuffle replaced only the selected root.
+- Reproduced an import being rejected while onResume reloaded the music folders.
+  The fixed build logged the import waiting for that reload, then applied it; the
+  imported bytes and unchanged other-root file were checked directly.
+- Checked layout at 360 dp and at 320 dp with 1.3 font scaling: long names wrap,
+  and paired transfer/maintenance buttons remain aligned without overlap.
+- Playlist no longer contains Import/Export. Three cold starts and three Home/resume
+  cycles passed with the final APK and existing folder grants/indexes retained.
+- Actual AIMP playback and physical-phone/OEM behavior remain untested.
+
+## Phone verification checklist for the folder controls
+
+1. Open **Shuffle > Music-folder weights**. With one root, expect its plain name;
+   with several, select a radio choice. The selected root must be clearly marked,
+   with no new music indexing or playback command caused by selection.
+2. Tap **Remove music root**, then **Cancel** or Back. Expect the assignment,
+   index and current playback to remain. To test confirmation, use a small spare
+   root: only its assignment/index should be removed; its music/weights stay in
+   storage. Adding it again explicitly starts indexing, as the prompt explains.
+3. Select a root and use **Export weights** in Shuffle to save a backup. Import
+   that same copy with **Import weights**, then check its saved values in Playlist.
+   Returning from the picker must apply the import, even if weights are reloading;
+   other roots must keep their values. Canceling either picker must keep all files.
+4. Check **Reload weights**, **Reindex files**, long root names and both transfer
+   buttons at your usual and enlarged font sizes. Labels may wrap; controls must
+   stay aligned and tappable. Playlist should retain track weights/file links and
+   playback actions, with no duplicate Import/Export buttons.
+5. With AIMP playing, check the saved weighted-shuffle/timing settings and any
+   enabled notification controls after selecting a transfer root, canceling removal,
+   returning from a picker, and backgrounding/reopening the app. Expected playback
+   settings and the current music root assignments must survive.
+
 # Android startup-crash fix verification — 2026-11-07
 
 - Reproduced the previous APK's cold-start crash on an isolated Android 16 / API 36

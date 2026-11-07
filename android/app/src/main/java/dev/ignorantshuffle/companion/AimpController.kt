@@ -358,7 +358,7 @@ class AimpController(private val context: Context) {
     }
 
     fun importWeights(text: String) = guarded {
-        check(!pending && storageError == null && !folder.blocked)
+        check(!pending && storageError == null && folder.error == null) { "Restore music-folder access and reload before importing weights" }
         folder.import(text)
     }
 

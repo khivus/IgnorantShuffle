@@ -24,6 +24,8 @@ class FolderWeightsController(context: Context, private val event: (String) -> U
     var status by mutableStateOf("Loading music folders"); private set
     val active get() = config.roots.isNotEmpty()
     val blocked get() = busy || error != null
+    private data class ImportRequest(val root: String?, val text: String)
+    private var pendingImport: ImportRequest? = null
     private data class Snapshot(val config: FolderConfig, val files: List<LibraryFile>,
         val values: Map<String, Map<String, Double>>, val note: String)
 
@@ -51,8 +53,15 @@ class FolderWeightsController(context: Context, private val event: (String) -> U
         matcher = LibraryMatcher(files); busy = false; error = null
         status = "${snapshot.note}; ${files.size} files; ${values.values.sumOf { it.size }} saved weights"
         event(status); changed()
+        pendingImport?.let { request ->
+            pendingImport = null
+            try { importInto(request.root ?: config.root ?: error("Choose a music root for import"), request.text) }
+            catch (e: Exception) { failed("Import weights", e) }
+        }
     } }
     private fun failed(label: String, exception: Exception) { handler.post {
+        if (pendingImport != null) event("Pending import was not applied because music-folder loading failed")
+        pendingImport = null
         busy = false; error = "$label failed: ${exception.message}"
         status = "Weights preserved. Restore folder access or fix the weights file, then reload."
         event("FOLDER ERROR: $exception"); changed()
@@ -119,7 +128,18 @@ class FolderWeightsController(context: Context, private val event: (String) -> U
     }
     fun import(text: String) {
         PortableWeights.parse(text)
-        val root = config.root ?: error("Choose a music root for import")
+        // Returning from the file picker can trigger onResume's reload before
+        // its input stream has been read. Keep the requested import and target.
+        if (busy) {
+            check(pendingImport == null) { "A weights import is already waiting for music-folder loading" }
+            pendingImport = ImportRequest(config.root, text)
+            event("Weights import waiting for the current music-folder operation")
+            return
+        }
+        importInto(config.root ?: error("Choose a music root for import"), text)
+    }
+    private fun importInto(root: String, text: String) {
+        check(config.roots.any { it.uri == root }) { "The import's music root is no longer configured" }
         launch("Replacing music-root weights file") {
             val updated = SharedWeightFile.replace(store.documents(Uri.parse(root)), text)
             Snapshot(config, files, values + (root to updated), "Weights file replaced")

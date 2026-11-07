@@ -23,7 +23,9 @@ Windows and `Music` on Android, rather than their `Artist` subfolder.
    automatically. Avoid simultaneous edits on both devices.
 
 **Import** replaces the selected root's weights file; **Export** copies it exactly.
-Choose the desired root before transferring. Files from different roots remain
+On Android, both buttons are in **Shuffle > Music-folder weights**, beside the
+root controls. With multiple roots, use the radio choices to select the desired
+root before transferring. Files from different roots remain
 separate even if their relative song paths are identical. Unmatched songs use
 the configured default weight until linked. Changing a filename or relative path
 requires changing its weight entry or assigning the weight again.

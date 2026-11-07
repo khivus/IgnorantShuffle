@@ -92,9 +92,13 @@ Android matches real files by URI or unique title/artist; ambiguous entries need
 use the default. No new private weights are saved; old private files are retained
 but ignored. **Use default weight** removes an explicit song entry.
 
-Choose the import/export root in Shuffle. Import replaces that root's complete
-weights file; Export copies it unchanged. Reload after copying/syncing from your
-PC. Reindex after changing the music library. See the
+Use **Shuffle > Music-folder weights > Import weights / Export weights**. With
+several roots, select the source/destination using the radio choices above these
+buttons. With one root, its name is displayed directly. Import replaces that
+root's complete weights file; Export copies it unchanged. Reload after copying/syncing from your
+PC. Reindex after changing the music library. **Remove music root** asks for
+confirmation; Cancel retains its assignment and index. Confirming removal keeps
+the music and weights files, but adding that root again requires indexing. See the
 [shared-folder guide](../docs/shared-music-folder.md) for setup and recovery.
 
 ## Swipeable categories and appearance
