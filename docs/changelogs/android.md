@@ -4,6 +4,14 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.8.0 (versionCode 10)
+
+- Clarify Enable weighted shuffle and its millisecond lead before track end; run automatic switching only while AIMP Shuffle is on, waiting while off or unknown.
+- Store individual weights only in music-root files, with separate libraries and explicit file links. Old private files remain untouched but are no longer used.
+- Move Import/Export weights into Shuffle beside the root controls, use radio choices for multiple roots, and keep controls aligned on narrow screens with enlarged text.
+- Confirm removal before clearing a root assignment/index and warn that adding it again needs indexing. Keep music and weights files intact.
+- Fix the startup crash during the first folder load and imports being discarded while the file-picker return triggers a reload.
+
 ## 0.7.0 (versionCode 9)
 
 - Ask once during setup to disable battery optimization so Android is less likely to delay background or screen-off weighted switches. Show the actual exemption status and a settings shortcut under Player > Background playback.

@@ -1,3 +1,18 @@
+# Release v0.16.0 verification — 2026-11-07
+
+- Included Windows 0.14.0, Android 0.8.0 (versionCode 10), unchanged core 0.1.0.
+- Rebuilt Windows for x64 and Win32; all six CTest suites passed on each.
+- Rebuilt the universal Android APK; all 127 Kotlin/JVM tests, build and lint passed.
+  Verified the package/version/code, all three native ABI ELF architectures and
+  the pinned update-signing certificate.
+- Installed the release APK over the previous Android build on the disposable
+  Android 16 / API 36 emulator. Three cold starts and three Home/resume cycles
+  passed; existing music-root selections and cached file index stayed unchanged.
+- Version/publisher/bundle regressions and complete package preflight passed.
+  Verified Windows DLL versions/architectures, installer contents, compatibility
+  alias and local integrity manifests. Public packages exclude checksum files.
+- Physical-phone AIMP playback and live Windows AIMP installation remain untested.
+
 # Music-root controls verification — 2026-11-07
 
 - Android build, lint, APK signature verification and all 127 Kotlin/JVM tests passed.

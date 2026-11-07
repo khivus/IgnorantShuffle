@@ -3,6 +3,12 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## 0.14.0
+
+- Store song weights only in a file per music root, with separate files for multiple libraries. Remove profile and folder/playlist override layers; existing private/override files remain untouched but are no longer used.
+- Replace scope selectors with music-root controls. Save mixed-library bulk selections into their respective root files, and remove a saved entry with Use default.
+- Make import replace a selected root's complete file and export copy it exactly, without adding playlist defaults or merging omitted entries.
+
 ## 0.13.1
 
 - Clarify Weight storage with a main-folder example, individual song weights, Android sharing and manual synchronization. Explain the optional folder/playlist overrides separately.

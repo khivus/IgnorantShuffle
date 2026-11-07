@@ -1,24 +1,27 @@
-# IgnorantShuffle Android v0.7.0
+# IgnorantShuffle Android v0.8.0
 
-## Background playback setup
+## Clearer weighted shuffle
 
-- Ask once to disable battery optimization for IgnorantShuffle, helping prevent delayed or missed weighted switches in the background or with the screen off.
-- Show the actual exemption status and a settings shortcut under **Player > Background playback**. **Not now** dismisses the setup prompt without repeated reminders.
+- Rename the Player switch to Enable weighted shuffle and explain that it changes tracks the configured number of milliseconds before track end.
+- Run automatic switching only while AIMP reports Shuffle on. Wait while Shuffle is off or unknown, and resume when it turns on.
 
-## Previous and Next on the lock screen
+## Simpler music-folder weights
 
-- Add **Previous track** to the optional notification to return through confirmed listening history. **Next track** plays the displayed weighted choice.
-- Enable **Alerts > Show next-roll notification > Lock-screen controls**, then expand IgnorantShuffle's notification to use the buttons while locked. Existing saved preferences keep lock-screen controls off until enabled.
-- Ignore outdated actions and hide both buttons while waiting for AIMP to confirm a command. Previous remains available after a finite pass ends when history exists.
+- Manage several music roots with a separate IgnorantShuffle.weights.tsv file in each. Save song weights only in their linked music root.
+- Move Import weights and Export weights to Shuffle, beside the music-folder controls. Show a plain name for one root or radio choices for several roots.
+- Confirm root removal before clearing its assignment/index, and explain that adding it again requires indexing. Cancel keeps the assignment and cached index.
+- Keep folder names and transfer buttons readable on narrow screens and with larger text.
 
-## Clearer music-folder weights
+## Fixes
 
-- Explain which main folder to choose, how individual song weights work, how to copy existing weights, and how to sync the file with Windows.
+- Fix the startup crash caused by overlapping music-folder loading and the first screen resume.
+- Apply a selected import after returning from the file picker, even when the app is reloading weights.
 
-Android app version: **0.7.0** (versionCode **9**). Bundled shuffle core:
-**0.1.0** (unchanged). Requires Android 8.0 / API 26+. This preview retains the
-existing application ID and pinned update signing key; updating preserves weights
-and settings. Android notification settings still control lock-screen visibility.
-AIMP's own media card and headset buttons continue to follow AIMP's order.
-Timed automatic playback remains experimental; actual phone behavior requires
-device verification.
+Existing root files stay compatible. Old private app weights remain untouched but
+are no longer used; see the [migration guide](../docs/weight-storage.md#existing-installations).
+Import replaces the selected root's file; Export copies it unchanged.
+
+Android app version: **0.8.0** (versionCode **10**). Bundled shuffle core:
+**0.1.0** (unchanged). Requires Android 8.0 / API 26+. The application ID and pinned
+update signing key stay the same. AIMP's separate manual queue is not exposed to
+the companion; disable automatic weighted shuffle while listening to queued requests.
