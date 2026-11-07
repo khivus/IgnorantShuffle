@@ -1,3 +1,18 @@
+# Android startup-crash fix verification — 2026-11-07
+
+- Reproduced the previous APK's cold-start crash on an isolated Android 16 / API 36
+  x86_64 emulator: `IllegalStateException: Music-folder operation already in progress`
+  from `MainActivity.onResume` calling `FolderWeightsController.reload` before the
+  initial folder load completed.
+- The fixed APK passed three cold starts and three Home/resume cycles with fresh
+  app data, plus two cold starts and two resumes with a legacy version-1 folder
+  configuration pointing to an unavailable folder. The saved file stayed intact.
+- The same startup smoke check rejects the old APK with the reproduced exception.
+- All 127 Kotlin/JVM tests passed; Android build, lint and APK signature verification
+  passed. No physical-phone or actual AIMP playback validation was performed.
+
+The following sections record earlier builds and their limitations.
+
 # Android 0.7.0 / combined 0.15.0 verification — 2026-11-06
 
 - 124 Kotlin/JVM tests passed, including stale Previous/Next actions, source and

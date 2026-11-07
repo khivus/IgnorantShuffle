@@ -58,7 +58,7 @@ class FolderWeightsController(context: Context, private val event: (String) -> U
         event("FOLDER ERROR: $exception"); changed()
     } }
     private fun launch(label: String, action: () -> Snapshot) {
-        check(!busy) { "Music-folder operation already in progress" }
+        if (busy) { event("Music-folder operation already in progress; skipped: $label"); return }
         busy = true; error = null; status = label; changed()
         worker.execute { try { complete(action()) } catch (e: Exception) { failed(label, e) } }
     }
@@ -79,13 +79,18 @@ class FolderWeightsController(context: Context, private val event: (String) -> U
         store.save(next, allFiles)
         Snapshot(next, allFiles, values + (root.uri to weights), "Music folder added")
     }
-    fun reload(rescan: Boolean = false) = launch(if (rescan) "Reindexing music folders" else "Reloading weights") {
-        val indexed = if (rescan) config.roots.flatMap { store.scan(Uri.parse(it.uri)) { count ->
-            handler.post { status = "Indexing ${it.label}: $count audio files" }
-        } } else files
-        val weights = readRoots(config)
-        if (rescan) store.save(config, indexed)
-        Snapshot(config, indexed, weights, if (rescan) "Music folders reindexed" else "Weights reloaded")
+    fun reload(rescan: Boolean = false) {
+        // onResume can run before the initial load posts its result to the main
+        // thread. That load already reads the files; do not start a second one.
+        if (busy || config.roots.isEmpty()) return
+        launch(if (rescan) "Reindexing music folders" else "Reloading weights") {
+            val indexed = if (rescan) config.roots.flatMap { store.scan(Uri.parse(it.uri)) { count ->
+                handler.post { status = "Indexing ${it.label}: $count audio files" }
+            } } else files
+            val weights = readRoots(config)
+            if (rescan) store.save(config, indexed)
+            Snapshot(config, indexed, weights, if (rescan) "Music folders reindexed" else "Weights reloaded")
+        }
     }
     fun selectTransferRoot(root: String) = launch("Selecting import/export folder") {
         check(config.roots.any { it.uri == root })

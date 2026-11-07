@@ -13,6 +13,21 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\publish_tests.ps
 
 The publisher regression is offline and does not authenticate or contact GitHub. See [Building](building.md) to run core tests without the SDK.
 
+## Android startup smoke check
+
+After building the Android APK, run this against an explicitly selected, booted
+emulator or test phone:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\test-android-startup.ps1 -DeviceSerial emulator-5556
+```
+
+The script installs the debug APK over the existing app, then checks three cold
+starts and three Home/resume cycles. It retains app data and checks the process,
+resumed activity and crash logs from each run. `-ApkPath` selects another APK;
+`-ColdStarts` changes the repetition count. This catches startup/lifecycle failures
+that the Android-free JVM tests cannot exercise.
+
 ## Automated coverage
 
 ### Core and storage
