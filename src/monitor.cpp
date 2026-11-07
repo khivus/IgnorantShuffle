@@ -93,24 +93,6 @@ void MonitorWindow::update(const MonitorState& state) {
         SetDlgItemInt(window_, IDC_COOLDOWN, state.cooldown, FALSE);
         displayed_cooldown_ = state.cooldown;
     }
-    if (displayed_scopes_ != state.weight_scopes) {
-        displayed_scopes_ = state.weight_scopes;
-        SendDlgItemMessageW(window_, IDC_WEIGHT_SCOPE, CB_RESETCONTENT, 0, 0);
-        for (const auto scope : state.weight_scopes) {
-            const auto label = scope == 1 ? L"Folder local" : scope == 2 ? L"AIMP playlist" : L"Global";
-            const auto index = SendDlgItemMessageW(window_, IDC_WEIGHT_SCOPE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
-            SendDlgItemMessageW(window_, IDC_WEIGHT_SCOPE, CB_SETITEMDATA, index, scope);
-        }
-    }
-    const auto selected_scope = std::find(state.weight_scopes.begin(), state.weight_scopes.end(), state.weight_scope);
-    const auto scope_index = selected_scope == state.weight_scopes.end() ? 0 : std::distance(state.weight_scopes.begin(), selected_scope);
-    if (SendDlgItemMessageW(window_, IDC_WEIGHT_SCOPE, CB_GETCURSEL, 0, 0) != scope_index)
-        SendDlgItemMessageW(window_, IDC_WEIGHT_SCOPE, CB_SETCURSEL, scope_index, 0);
-    scope_visible_ = state.weight_scopes.size() > 1;
-    for (const int id : {IDC_SCOPE_LABEL, IDC_WEIGHT_SCOPE, IDC_RESET_LOCAL})
-        ShowWindow(GetDlgItem(window_, id), scope_visible_ ? SW_SHOWNA : SW_HIDE);
-    EnableWindow(GetDlgItem(window_, IDC_WEIGHT_SCOPE), state.can_set_weight);
-    EnableWindow(GetDlgItem(window_, IDC_RESET_LOCAL), state.can_clear_override);
     if (displayed_track_ != state.current_key) {
         cancel_button_input();
         displayed_track_ = state.current_key;
@@ -206,7 +188,7 @@ void MonitorWindow::layout() {
         const auto weight_height = text_height(IDC_CURRENT_WEIGHT, inner - exclude_width - gap, y_units(window_, 9));
         const auto weight_y = y_units(window_, 11) + track_height + y_units(window_, 2);
         const auto buttons_y = weight_y + std::max(weight_height + y_units(window_, 2), y_units(window_, 14)) + y_units(window_, 2);
-        const auto current_height = buttons_y + y_units(window_, scope_visible_ ? 38 : 18);
+        const auto current_height = buttons_y + y_units(window_, 18);
         place(IDC_CURRENT_GROUP, margin, y, width, current_height);
         place(IDC_CURRENT_WEIGHT, margin + inset, y + weight_y + y_units(window_, 2), inner - exclude_width - gap, weight_height);
         place(IDC_QUICK_WEIGHT_0, margin + width - inset - exclude_width, y + weight_y, exclude_width, y_units(window_, 14));
@@ -216,12 +198,6 @@ void MonitorWindow::layout() {
             const auto left = (weight - 1) * button_space / 10 + (weight - 1) * gap;
             const auto right = weight * button_space / 10 + (weight - 1) * gap;
             place(IDC_QUICK_WEIGHT_0 + weight, margin + inset + left, y + buttons_y, right - left, y_units(window_, 14));
-        }
-        if (scope_visible_) {
-            const auto row = y + buttons_y + y_units(window_, 17);
-            place(IDC_SCOPE_LABEL, margin + inset, row + y_units(window_, 2), x_units(window_, 20), y_units(window_, 11));
-            place(IDC_WEIGHT_SCOPE, margin + inset + x_units(window_, 23), row, x_units(window_, 90), y_units(window_, 90));
-            place(IDC_RESET_LOCAL, margin + inset + x_units(window_, 117), row, x_units(window_, 48), y_units(window_, 15));
         }
         y += current_height + y_units(window_, 4);
         const auto cooldown_label_width = label_width(IDC_COOLDOWN_LABEL) + gap;
@@ -281,8 +257,7 @@ void MonitorWindow::layout() {
     for (const auto& item : controls) {
         RECT previous{}; GetWindowRect(item.control, &previous);
         MapWindowPoints(nullptr, window_, reinterpret_cast<POINT*>(&previous), 2);
-        const bool dropdown = GetDlgCtrlID(item.control) == IDC_WEIGHT_SCOPE;
-        if (previous.left != item.x || previous.top != item.y - scroll_ || previous.right - previous.left != item.width || (!dropdown && previous.bottom - previous.top != item.height)) {
+        if (previous.left != item.x || previous.top != item.y - scroll_ || previous.right - previous.left != item.width || previous.bottom - previous.top != item.height) {
             // Do not copy pixels or paint overlapping group boxes midway through
             // reflow. Their old contents can otherwise survive over new labels.
             SetWindowPos(item.control, nullptr, item.x, item.y - scroll_, item.width, item.height,
@@ -429,7 +404,6 @@ INT_PTR CALLBACK MonitorWindow::procedure(HWND window, UINT message, WPARAM wpar
             self->window_ = window;
             self->displayed_cooldown_ = -1;
             self->displayed_track_.clear();
-            self->displayed_scopes_.clear(); self->scope_visible_ = false;
             self->attached_ = self->wanted_visible_ = self->host_hidden_ = false;
             self->sizing_ = false;
             self->scroll_ = self->wheel_remainder_ = 0;
@@ -503,7 +477,7 @@ INT_PTR CALLBACK MonitorWindow::procedure(HWND window, UINT message, WPARAM wpar
         }
         if (message == WM_COMMAND) {
             const auto id = LOWORD(wparam);
-            if (id != IDC_WEIGHT_SCOPE && HIWORD(wparam) != BN_CLICKED) return TRUE;
+            if (HIWORD(wparam) != BN_CLICKED) return TRUE;
             if (id == IDC_ENABLED && self->on_enabled) self->on_enabled(IsDlgButtonChecked(window, id) == BST_CHECKED);
             else if (id == IDC_PINNED && self->on_pinned) self->on_pinned(IsDlgButtonChecked(window, id) == BST_CHECKED);
             else if (id == IDC_ATTACHED && self->on_attached) self->on_attached(IsDlgButtonChecked(window, id) == BST_CHECKED);
@@ -513,11 +487,7 @@ INT_PTR CALLBACK MonitorWindow::procedure(HWND window, UINT message, WPARAM wpar
             else if (id >= IDC_QUICK_WEIGHT_0 && id <= IDC_QUICK_WEIGHT_10 && self->on_weight) self->on_weight(id - IDC_QUICK_WEIGHT_0);
             else if (id == IDC_OPEN_LOGS && self->on_logs) self->on_logs();
             else if (id == IDC_UPDATES && self->on_updates) self->on_updates();
-            else if (id == IDC_RESET_LOCAL && self->on_clear_override) self->on_clear_override();
-            else if (id == IDC_WEIGHT_SCOPE && HIWORD(wparam) == CBN_SELCHANGE && self->on_scope) {
-                const auto index = SendDlgItemMessageW(window, id, CB_GETCURSEL, 0, 0);
-                if (index >= 0) self->on_scope(static_cast<int>(SendDlgItemMessageW(window, id, CB_GETITEMDATA, index, 0)));
-            }
+
             else if (id == IDC_APPLY_COOLDOWN && self->on_cooldown) {
                 wchar_t input[16]{};
                 const auto length = GetWindowTextLengthW(GetDlgItem(window, IDC_COOLDOWN));

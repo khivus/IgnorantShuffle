@@ -32,27 +32,33 @@ object PortableWeights {
         path.split('/').all { it.isNotEmpty() && it != "." && it != ".." }
 }
 
-data class LibraryFile(val path: String, val uri: String, val title: String, val artist: String)
-data class FileMatch(val path: String?, val description: String)
-data class FolderConfig(val root: String? = null, val label: String = "No music folder selected",
-    val enabled: Boolean = true, val links: Map<String, String> = emptyMap())
+data class MusicRoot(val uri: String, val label: String)
+data class LibraryFile(val path: String, val uri: String, val title: String, val artist: String, val root: String = "") {
+    val id get() = if (root.isEmpty()) path else "$root|$path"
+}
+data class FileMatch(val path: String?, val description: String, val root: String = "")
+data class FolderConfig(val roots: List<MusicRoot> = emptyList(), val links: Map<String, String> = emptyMap(),
+    val transferRoot: String? = null) {
+    val root get() = transferRoot?.takeIf { selected -> roots.any { it.uri == selected } } ?: roots.firstOrNull()?.uri
+    val label get() = roots.firstOrNull { it.uri == root }?.label ?: "No music folders selected"
+}
 
 class LibraryMatcher(files: List<LibraryFile>) {
-    private val paths = files.associateBy { it.path }
+    private val paths = files.associateBy { it.id }
     private val uris = files.groupBy { it.uri }
     private fun normalized(value: String) = Normalizer.normalize(value.trim(), Normalizer.Form.NFC).lowercase(Locale.ROOT)
     private fun metadata(title: String, artist: String) = normalized(title) to normalized(artist)
     private val tags = files.filter { it.title.isNotBlank() }.groupBy { metadata(it.title, it.artist) }
     fun match(track: Track, links: Map<String, String>): FileMatch {
         links[track.key]?.let {
-            return if (it in paths) FileMatch(it, "Manually linked") else FileMatch(null, "Linked file is missing; link again")
+            return paths[it]?.let { file -> FileMatch(file.path, "Manually linked", file.root) } ?: FileMatch(null, "Linked file is missing; link again")
         }
         val direct = track.uri?.let { uris[it] }
-        if (direct?.size == 1) return FileMatch(direct.single().path, "Media URI")
+        if (direct?.size == 1) return FileMatch(direct.single().path, "Media URI", direct.single().root)
         if (track.title.isBlank()) return FileMatch(null, "Missing track title; link a file")
         val matches = tags[metadata(track.title, track.artist)].orEmpty()
         return when (matches.size) {
-            1 -> FileMatch(matches.single().path, "Unique title + artist match")
+            1 -> FileMatch(matches.single().path, "Unique title + artist match", matches.single().root)
             0 -> FileMatch(null, "No matching file; link a file")
             else -> FileMatch(null, "${matches.size} files share these tags; link the correct file")
         }
@@ -76,15 +82,26 @@ object SharedWeightFile {
         check(id != null || documents.find(BACKUP) == null) { "Shared file is missing but its .bak exists; restore the backup before reloading" }
         return id?.let { PortableWeights.parse(documents.read(it)) }.orEmpty()
     }
-    fun edit(documents: WeightDocuments, transform: (MutableMap<String, Double>) -> Unit): Map<String, Double> {
+    fun text(documents: WeightDocuments): String {
+        read(documents)
+        return documents.find(PortableWeights.FILENAME)?.let(documents::read) ?: PortableWeights.write(emptyMap())
+    }
+    fun replace(documents: WeightDocuments, text: String): Map<String, Double> {
+        PortableWeights.parse(text)
+        return save(documents, text) { values -> values.clear(); values.putAll(PortableWeights.parse(text)) }
+    }
+    fun edit(documents: WeightDocuments, transform: (MutableMap<String, Double>) -> Unit): Map<String, Double> =
+        save(documents, null, transform)
+
+    private fun save(documents: WeightDocuments, replacement: String?, transform: (MutableMap<String, Double>) -> Unit): Map<String, Double> {
         val original = documents.find(PortableWeights.FILENAME)
         check(original != null || documents.find(BACKUP) == null) { "Restore the shared .bak file before editing" }
         val before = original?.let(documents::read)
         val values = before?.let(PortableWeights::parse).orEmpty().toMutableMap()
         val unchanged = values.toMap()
         transform(values)
-        if (original != null && values == unchanged) return values.toMap()
-        val text = PortableWeights.write(values)
+        if (replacement == null && original != null && values == unchanged) return values.toMap()
+        val text = replacement ?: PortableWeights.write(values)
         var temporary: String? = documents.create("${PortableWeights.FILENAME}.${UUID.randomUUID()}.tmp")
         var backup: String? = null
         var promoted: String? = null

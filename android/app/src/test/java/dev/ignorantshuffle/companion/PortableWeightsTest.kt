@@ -122,4 +122,24 @@ class PortableWeightsTest {
         assertTrue(requireNotNull(docs.canonical()).startsWith("# IgnorantShuffle weights v1:"))
         assertTrue(SharedWeightFile.read(docs).isEmpty())
     }
+    @Test fun sameRelativePathInTwoRootsKeepsWeightsAndLinksSeparate() {
+        val first = file.copy(root = "content://root-one")
+        val second = file.copy(root = "content://root-two", uri = "content://real-file/2")
+        val matcher = LibraryMatcher(listOf(first, second))
+        assertNull(matcher.match(track, emptyMap()).path)
+        assertEquals(first.root, matcher.match(track, mapOf(track.key to first.id)).root)
+        assertEquals(second.root, matcher.match(track, mapOf(track.key to second.id)).root)
+        assertEquals(second.root, matcher.match(track.copy(uri = second.uri), emptyMap()).root)
+    }
+    @Test fun importReplacesRatherThanMergesAndExportPreservesOriginalText() {
+        val docs = Documents(); docs.initial("9\tOld.mp3\n")
+        val imported = "\uFEFF# exact comment\r\n2.5000\tArtist/Song.flac\r\n"
+        SharedWeightFile.replace(docs, imported)
+        assertEquals(imported, SharedWeightFile.text(docs))
+        assertFalse(SharedWeightFile.read(docs).containsKey("Old.mp3"))
+        assertEquals(2.5, SharedWeightFile.read(docs)["Artist/Song.flac"]!!, 0.0)
+        rejects { SharedWeightFile.replace(docs, "broken") }
+        assertEquals(imported, SharedWeightFile.text(docs))
+    }
+
 }

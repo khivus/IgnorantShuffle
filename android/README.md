@@ -82,20 +82,20 @@ across restarts. Android may ask to allow installation from IgnorantShuffle, the
 shows its installer. No installation success is assumed just from opening it.
 See [update behavior, release requirements and phone checks](../docs/android-updates.md).
 
-## Shared music-folder file
+## Music-root weights files
 
-Shared weights are configured under **Shuffle > Music-folder weights**. Choose
-the main music root and grant read/write folder access once. Shared mode is on
-by default; Windows prefers the same root **`IgnorantShuffle.weights.tsv`**.
-Synchronize it with the music, preserving relative folder/file names.
+Weights are saved only in `IgnorantShuffle.weights.tsv` in each selected music
+root. Add one or several roots in **Shuffle > Music-folder weights**. For
+`Music/Artist/Song.flac`, choose `Music`. Each root keeps a separate file.
+Android matches real files by URI or unique title/artist; ambiguous entries need
+**Playlist > Link music file** before saving individual weights. Unmatched songs
+use the default. No new private weights are saved; old private files are retained
+but ignored. **Use default weight** removes an explicit song entry.
 
-Android indexes actual files/tags off the playback thread. Unique title/artist
-matches link automatically; use **Playlist > Link music file** for ambiguous or
-unmatched entries. Rows show Shared, Local only or Default. Unmatched entries
-keep private weights until linked. **Copy missing local weights** preserves
-existing shared values, including zero. Use **Reload weights** after syncing
-(also done on resume) and **Reindex files** after adding/retagging music. See
-[setup, migration and recovery](../docs/shared-music-folder.md).
+Choose the import/export root in Shuffle. Import replaces that root's complete
+weights file; Export copies it unchanged. Reload after copying/syncing from your
+PC. Reindex after changing the music library. See the
+[shared-folder guide](../docs/shared-music-folder.md) for setup and recovery.
 
 ## Swipeable categories and appearance
 
@@ -145,15 +145,13 @@ rerolls and listening-history navigation. The minimum must be finite and **great
 than 0**; positive fractions such as **0.1** are allowed, with no fixed positive
 lower bound. The cutoff also applies to the default weight and shared-folder
 values; stored weights are preserved. Manual **Play now** remains available.
-The minimum, default, overrides, cooldown and finite mode persist privately. Existing
+The minimum, default, cooldown and finite mode persist as device settings; individual weights live in music-root files. Existing
 installs without a saved minimum adopt 1. Confirmation, not command
 dispatch or preview, advances listening history. Failed commands time out without
 automatic retries. A finite pass can be restarted explicitly.
 
-Export/import uses UTF-8 TSV with Android app-local track keys. AIMP's queue IDs
-are volatile; keys include exposed media ID/URI plus title/artist. Reordering or
-editing a library can require reassignment. Windows filename weights are not
-automatically mapped. No backend or cross-device synchronization is implemented.
+Import/export copies the selected music root's UTF-8 TSV file. Keys are real
+root-relative paths shared with Windows; queue IDs are never saved as file paths.
 
 ## Automatic logs and optional notifications
 
@@ -238,7 +236,7 @@ new APK has been tested on a phone.
 8. Enable timed mode, record the next roll number/title, turn the screen off for
    several transitions, then compare observed tracks. Check that pausing/disabling
    timed mode releases CPU protection (shown in exported power diagnostics).
-9. Select matching roots on both devices, copy missing private weights, sync the
+9. Select matching roots on both devices, assign weights in each root, sync the
    TSV and reload in both directions. Verify a shared zero exclusion, a weight
    above 10, duplicate tags/manual links, and folder permission loss/corrupt TSV.
 10. Try leads 300, 100, 50 and 0 ms with screen on/off; compare timer lateness,

@@ -15,9 +15,9 @@ Turn on both **AIMP Shuffle** and the plugin's **Weighted shuffle enabled** opti
 
 Each choice is proportional to weight. If the only eligible tracks have weights 2 and 8, their chances are 20% and 80%. Larger imported weights remain unchanged when settings reopen or weights are exported.
 
-Set **Track weights... > Weight storage... > Default weight**, then click **Apply default** to change the weight for tracks without a saved value. Any finite nonnegative number is supported, including fractions and values above 10. Zero excludes unconfigured tracks. This setting is saved in the AIMP profile and takes effect immediately; existing explicit track weights and local overrides keep their values.
+Set **Track weights... > Weight storage... > Default weight**, then click **Apply default** to change the weight for tracks without a saved value. Any finite nonnegative number is supported, including fractions and values above 10. Zero excludes unconfigured tracks. This setting is saved in the AIMP profile and takes effect immediately; existing root-file track weights keep their values.
 
-Set **Track weights... > Weight storage... > Minimum weight**, then click **Apply minimum** to control eligibility. The default is **1**. A track is eligible when its effective weight is **greater than or equal to** the minimum; lower values are excluded. The minimum must be finite and **greater than 0**, including positive fractions such as **0.1**. It applies to default, profile, shared and local weights before cooldown and finite-pass selection, without changing stored weights. Changes refresh prefetched choices and the panel/editor immediately. The minimum is saved per AIMP profile, separately from shared TSV files.
+Set **Track weights... > Weight storage... > Minimum weight**, then click **Apply minimum** to control eligibility. The default is **1**. A track is eligible when its effective weight is **greater than or equal to** the minimum; lower values are excluded. The minimum must be finite and **greater than 0**, including positive fractions such as **0.1**. It applies to default and music-root weights before cooldown and finite-pass selection, without changing stored weights. Changes refresh prefetched choices and the panel/editor immediately. The minimum is saved per AIMP profile, separately from shared TSV files.
 
 By default shuffle continues indefinitely. With cooldown off, every draw includes all candidates that meet the minimum weight, so immediate repeats are possible. With cooldown on, the draw uses eligible tracks outside cooldown. Returning from cooldown makes a track eligible; it does not guarantee that it will be selected immediately.
 
@@ -69,7 +69,7 @@ Open **Track weights...**, then Ctrl/Shift-click to select rows. Use **Select al
 
 - Click **0–10** to assign the weight immediately to every selected row.
 - Use **Custom weight → Apply custom**, or Enter in that field, for values such as **2.5**, **25**, or **100**.
-- Select an editing scope when local storage is enabled. **Inherit** clears local overrides for the selection.
+- Add music roots in **Weight storage...** before saving weights. **Use default** clears saved entries for the selection.
 - Open **Weight storage...** for import/export.
 
 Mixed selected weights are shown as mixed. Actions are disabled without a selection. Selection, caret, Shift anchor, and scroll position survive edits, refreshes, scope changes, and imports.
@@ -81,10 +81,9 @@ The editor separates information into columns:
 | **Weight** | Actual playback weight, in bold. Values below the minimum say **Excluded**. |
 | **Track** | Track name, separate from its folder path. |
 | **Source** | The winning Global, Folder, or AIMP-playlist layer. |
-| **Edit** | The selected scope's value when local scopes are available; a higher-priority override may make playback weight different. |
 | **Folder** | File location. |
 
-Hover a weight for full-precision values, its source, editing value, and full filename. Columns can be resized while keeping the selection. See [Weight storage](weight-storage.md) for scope precedence and **Inherit** behavior.
+Hover a weight for full-precision values, its source and full filename. Columns can be resized while keeping the selection. See [Weight storage](weight-storage.md) for root selection and **Use default** behavior.
 
 Click any visible column header to sort ascending; click it again for descending. Weight and Edit columns sort numerically. The header arrow shows the active direction, and sorting stays active during edits and refreshes. Selected tracks, the keyboard caret, and the Shift-selection anchor follow their rows.
 

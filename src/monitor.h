@@ -12,9 +12,6 @@ struct MonitorState {
     bool can_set_weight = false;
     int selected_weight = -1;
     bool can_reroll = false;
-    bool can_clear_override = false;
-    int weight_scope = 0;
-    std::vector<int> weight_scopes{0};
     int cooldown = 0;
     std::wstring cooldown_status;
     std::wstring mode, current_track, current_key, current_weight, next_track, decision, notice, update_status;
@@ -27,8 +24,6 @@ class MonitorWindow {
     HFONT weight_font_ = nullptr;
     int displayed_cooldown_ = -1;
     std::wstring displayed_track_;
-    std::vector<int> displayed_scopes_;
-    bool scope_visible_ = false;
     bool attached_ = false, wanted_visible_ = false, host_hidden_ = false;
     bool was_minimized_ = false, laying_out_ = false, sizing_ = false;
     int scroll_ = 0, content_height_ = 0, wheel_remainder_ = 0;
@@ -42,8 +37,7 @@ class MonitorWindow {
     static INT_PTR CALLBACK procedure(HWND, UINT, WPARAM, LPARAM);
 public:
     ~MonitorWindow() { destroy(); }
-    std::function<void()> on_tick, on_weights, on_reroll, on_move, on_logs, on_clear_override, on_updates;
-    std::function<void(int)> on_scope;
+    std::function<void()> on_tick, on_weights, on_reroll, on_move, on_logs, on_updates;
     std::function<void(int)> on_weight;
     std::function<void(int)> on_cooldown;
     std::function<void(const std::string&)> on_error;

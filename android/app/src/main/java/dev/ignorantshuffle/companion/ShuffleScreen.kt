@@ -158,7 +158,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
         }
         item {
             Section {
-                Toggle("Timed automatic shuffle", "Experimental · ${m.preferences.leadMs} ms before estimated end", m.automatic,
+                Toggle("Enable weighted shuffle", "Automatically play the weighted choice ${m.preferences.leadMs} ms before track end while AIMP Shuffle is on.", m.automatic,
                     enabled = m.automatic || ready, onChange = m::changeAutomatic)
                 Text(m.automaticStatus, style = MaterialTheme.typography.bodySmall)
                 Text("CPU protection supports screen-off timing and uses more battery. It releases on pause, disable or disconnect. Headset Next keeps AIMP's own order.",
@@ -197,10 +197,10 @@ private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Un
         OutlinedTextField(search, { search = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
             label = { Text("Search title or artist") }, singleLine = true, shape = RoundedCornerShape(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = import, enabled = !m.pending && !m.folder.blocked) { Text("Import weights") }
-            TextButton(onClick = export) { Text("Export weights") }
+            TextButton(onClick = import, enabled = !m.pending && !m.folder.blocked && m.folder.active) { Text("Import weights") }
+            TextButton(onClick = export, enabled = !m.pending && !m.folder.blocked && m.folder.active) { Text("Export weights") }
         }
-        if (visible.isEmpty()) Text(if (m.tracks.isEmpty()) "Start music in AIMP and refresh to load its queue." else "No matching tracks.", Modifier.padding(vertical = 16.dp))
+        if (visible.isEmpty()) Text(if (m.tracks.isEmpty()) "Start music in AIMP and refresh to load its playlist." else "No matching tracks.", Modifier.padding(vertical = 16.dp))
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
             itemsIndexed(visible) { _, track ->
                 val current = m.playback.track?.key == track.key
@@ -227,7 +227,7 @@ private fun PlaylistPage(m: AimpController, import: () -> Unit, export: () -> Un
                     }
                 }
             }
-            item { Text("Shared weights use real paths relative to your music folder. Unmatched entries keep local weights until linked; ambiguous tags are never linked automatically.", style = MaterialTheme.typography.bodySmall) }
+            item { Text("Shared weights use real paths relative to your music folder. Unmatched entries use the default weight until linked; ambiguous tags require a file link.", style = MaterialTheme.typography.bodySmall) }
         }
     }
     linking?.let { track -> FileLinkDialog(m, track) { linking = null } }
@@ -247,25 +247,27 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit) {
             Section("Music-folder weights") {
                 Text("Each song has its own weight: 10 gives twice the chance of 5 when both songs are eligible; 0 excludes a song from shuffle.")
                 Text("Choose the folder containing all your artist and album folders. For Music/Artist/Song.flac, choose Music, not Artist. This folder stores song weights; it does not set one weight for the whole folder.", style = MaterialTheme.typography.bodySmall)
-                Toggle("Save weights in the music folder", "Store linked song weights in ${PortableWeights.FILENAME}", m.folder.config.enabled,
-                    enabled = !m.folder.busy && !m.pending, onChange = m.folder::enable)
-                Text(m.folder.config.label)
+                Text("Weights are saved only in ${PortableWeights.FILENAME}, one file per music root. Add separate roots for separate music libraries.", style = MaterialTheme.typography.bodySmall)
                 Text(m.folder.status, style = MaterialTheme.typography.bodySmall)
                 m.folder.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (m.folder.config.root == null) Text("Until you choose a folder, weights are saved privately on this phone.", style = MaterialTheme.typography.bodySmall)
-                Text("To share with your PC: choose D:\\Music there and Music here for the same library. Sync ${PortableWeights.FILENAME} along with matching Artist/Song.flac subfolders, then reload weights. The apps do not sync files for you. Sharing is optional.", style = MaterialTheme.typography.bodySmall)
-                Text("Edit each song's weight in Playlist. Reindex after adding or retagging music; use Link music file for unresolved songs so they can use shared weights.", style = MaterialTheme.typography.bodySmall)
                 val enabled = !m.folder.busy && !m.pending
-                ActionButton(onClick = chooseMusicFolder, enabled = enabled) { Text("Choose music folder") }
-                if (m.folder.config.root != null) {
+                ActionButton(onClick = chooseMusicFolder, enabled = enabled) { Text("Add music root") }
+                m.folder.config.roots.forEach { root ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { m.folder.selectTransferRoot(root.uri) }, enabled = enabled, modifier = Modifier.weight(1f)) {
+                            Text(if (root.uri == m.folder.config.root) "${root.label} · import/export" else root.label)
+                        }
+                        TextButton(onClick = { m.folder.removeRoot(root.uri) }, enabled = enabled) { Text("Remove") }
+                    }
+                }
+                if (m.folder.active) {
                     Text("${m.tracks.count { m.folder.match(it).path != null }}/${m.tracks.size} playlist entries linked to files", style = MaterialTheme.typography.bodySmall)
                     Row {
-                        TextButton(onClick = { m.folder.reload() }, enabled = enabled && m.folder.active) { Text("Reload weights") }
+                        TextButton(onClick = { m.folder.reload() }, enabled = enabled) { Text("Reload weights") }
                         TextButton(onClick = { m.folder.reload(true) }, enabled = enabled) { Text("Reindex files") }
                     }
-                    TextButton(onClick = m::copyLocalWeights, enabled = enabled && m.folder.active && m.folder.error == null) { Text("Copy missing local weights") }
-                    Text("Choosing a folder does not copy old weights automatically. Copy missing local weights brings across linked songs only; existing file values, including 0, are kept. Unmatched weights stay private on this phone.", style = MaterialTheme.typography.bodySmall)
                 }
+                Text("Edit song weights in Playlist. Link unresolved songs to their actual files first. Import replaces the selected root's weights file; Export copies that file. To share weights with your PC, sync the file together with its music subfolders, then reload.", style = MaterialTheme.typography.bodySmall)
             }
         }
         item {
@@ -464,15 +466,15 @@ private fun WeightDialog(m: AimpController, track: Track, close: () -> Unit) {
     AlertDialog(onDismissRequest = close, title = { Text(track.title) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Weights below ${m.settings.minimumWeight} are excluded from shuffle. Fractions and values above 10 are supported.")
-            Text(if (m.folder.active) m.folder.match(track).path?.let { "Saves to shared file: $it" }
-                ?: "No file link: this weight stays local. Link the entry in Playlist to share it." else "Saves to local app storage.",
+            Text(m.folder.match(track).path?.let { "Saves in the music root: $it" }
+                ?: "Link this entry to a file in a music root before saving a weight.",
                 style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(text, { text = it; error = null }, label = { Text("Weight") }, singleLine = true, isError = error != null)
             Row { listOf(0, 1, 5, 10).forEach { value -> TextButton(onClick = { text = value.toString() }) { Text("$value") } } }
             TextButton(onClick = {
                 m.setWeight(track, "", inherit = true)
                 if (m.folder.busy || !m.weights.containsKey(track.key)) close() else error = m.result
-            }) { Text("Remove override / inherit") }
+            }) { Text("Use default weight") }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = { TextButton(onClick = {
@@ -494,7 +496,7 @@ private fun FileLinkDialog(m: AimpController, track: Track, close: () -> Unit) {
             OutlinedTextField(search, { search = it }, label = { Text("Search file, title or artist") }, singleLine = true)
             LazyColumn(Modifier.heightIn(min = 100.dp, max = 300.dp)) {
                 itemsIndexed(files) { _, file ->
-                    TextButton(onClick = { m.linkFile(track, file.path); close() }, modifier = Modifier.fillMaxWidth()) { Text(file.path) }
+                    TextButton(onClick = { m.linkFile(track, file.id); close() }, modifier = Modifier.fillMaxWidth()) { Text("${m.folder.config.roots.firstOrNull { it.uri == file.root }?.label.orEmpty()}/${file.path}") }
                 }
                 if (files.isEmpty()) item { Text("No files match. Clear the search or reindex your folder.") }
             }

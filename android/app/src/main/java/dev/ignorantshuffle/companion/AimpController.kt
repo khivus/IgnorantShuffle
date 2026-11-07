@@ -48,7 +48,6 @@ class AimpController(private val context: Context) {
     private val store = SettingsStore(context)
     private val preferenceStore = PreferenceStore(context)
     private val model = ShuffleModel(NativePlanner())
-    private var localWeights = emptyMap<String, Double>()
     val folder = FolderWeightsController(context, ::log, ::folderChanged)
     private val journal = DiagnosticJournal(context.filesDir)
     private val notifications = RollNotifications(context) { log(it) }
@@ -111,7 +110,7 @@ class AimpController(private val context: Context) {
         log("PROCESS START; IgnorantShuffle Android ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}); Core ${ShuffleNative.coreVersion()}; Android ${Build.VERSION.RELEASE}; ${Build.MANUFACTURER} ${Build.MODEL}")
         try {
             val loaded = store.load()
-            settings = loaded.first; localWeights = loaded.second; weights = localWeights
+            settings = loaded.first; weights = emptyMap()
             model.configure(settings, weights)
         } catch (e: Exception) { storageError = e.toString(); log("Saved settings unreadable; preserved: $e") }
     }
@@ -282,7 +281,7 @@ class AimpController(private val context: Context) {
         // AIMP can cross the deadline before our timed dispatch runs. Audit the
         // captured roll too, so an unexpected natural next track is visible.
         val plan = scheduled
-        if (preferences.debugPlayback && !audit.active && automatic && PlaybackAudit.handoffDue(plan, next, SystemClock.elapsedRealtime())) {
+        if (preferences.debugPlayback && !audit.active && automatic && automaticPlaybackAllowed() && PlaybackAudit.handoffDue(plan, next, SystemClock.elapsedRealtime())) {
             armAudit(playback, requireNotNull(plan?.choice?.track), requireNotNull(plan).sequence)
         }
         playback = next
@@ -316,7 +315,7 @@ class AimpController(private val context: Context) {
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
 
     private fun applyWeights(preservePreview: Boolean = false) {
-        val effective = folder.effective(tracks, localWeights)
+        val effective = folder.effective(tracks)
         if (weights != effective || model.settings != settings) {
             weights = effective; model.configure(settings, weights, preservePreview)
         }
@@ -324,29 +323,27 @@ class AimpController(private val context: Context) {
     private fun folderChanged() {
         if (folder.blocked) {
             handler.removeCallbacks(endTimer); scheduled = null; preview = Choice(null)
-            if (folder.error != null) disableAutomatic("Shared weights unavailable; reload or choose local weights")
+            if (folder.error != null) disableAutomatic("Music-root weights unavailable; restore access and reload")
             refreshNotifications(); return
         }
         applyWeights(); updatePreview("Music-folder weights updated"); scheduleTimer()
         val matched = tracks.count { folder.match(it).path != null }
         log("FOLDER root=${folder.config.root}; shared=${folder.active}; matched=$matched/${tracks.size}; overrides=${folder.values.size}")
     }
-    fun chooseMusicFolder(uri: Uri) { disableAutomatic("Music-folder selection changed; enable timed mode after indexing"); folder.select(uri) }
+    fun chooseMusicFolder(uri: Uri) = guarded { folder.select(uri) }
     fun reloadSharedWeights() { folder.reload() }
-    fun copyLocalWeights() = guarded { folder.copyMissing(tracks, localWeights) }
     fun linkFile(track: Track, path: String?) { folder.link(track, path) }
     fun weightSource(track: Track): String {
         val path = folder.match(track).path
         return when {
-            folder.active && path != null && folder.values.containsKey(path) -> "Shared · $path"
-            localWeights.containsKey(track.key) -> "Local only"
+            path != null && folder.values[folder.match(track).root]?.containsKey(path) == true -> "Music root · $path"
             else -> "Default"
         }
     }
 
     fun configure(value: Settings) = guarded {
         check(storageError == null) { "Saved settings could not be read; existing data is preserved" }
-        store.save(value, localWeights)
+        store.save(value)
         settings = value; model.configure(value, weights)
         updatePreview(); scheduleTimer(); log("Settings changed: $value")
     }
@@ -356,27 +353,19 @@ class AimpController(private val context: Context) {
         val number = if (inherit) null else text.toDoubleOrNull().also {
             require(it != null && it.isFinite() && it >= 0) { "Enter a finite nonnegative weight" }
         }
-        if (folder.active && folder.match(track).path != null) {
-            folder.edit(track, number); return@guarded
-        }
-        val next = localWeights.toMutableMap()
-        if (inherit) next.remove(track.key)
-        else {
-            next[track.key] = requireNotNull(number)
-        }
-        store.save(settings, next); localWeights = next; applyWeights(); updatePreview(); scheduleTimer()
-        log("Local weight ${track.title}: ${next[track.key] ?: "inherited"}; shared file link=${folder.match(track)}")
+        check(folder.active) { "Choose a music root before saving weights" }
+        folder.edit(track, number)
     }
 
     fun importWeights(text: String) = guarded {
         check(!pending && storageError == null && !folder.blocked)
-        if (folder.active) { folder.import(text); return@guarded }
-        val next = localWeights + WeightTransfer.parse(text)
-        store.save(settings, next); localWeights = next; applyWeights(); updatePreview(); scheduleTimer()
-        log("Imported weight overrides transactionally")
+        folder.import(text)
     }
 
-    fun exportWeights() = if (folder.active) PortableWeights.write(folder.values) else WeightTransfer.write(localWeights)
+    fun exportWeights(copy: (String) -> Unit) = guarded {
+        check(!pending && storageError == null && !folder.blocked)
+        folder.export(copy)
+    }
     fun newPass() = guarded { model.newPass(); updatePreview(); scheduleTimer(); log("Started a new finite pass; current track counted") }
     fun reroll() = guarded { if (!pending) { model.next(true); updatePreview("User reroll"); scheduleTimer() } }
     fun smartNext() = guarded { if (!pending) playChoice(model.next()) }
@@ -421,7 +410,7 @@ class AimpController(private val context: Context) {
             log("Notification Previous cancelled after playback/catalog/history changed")
             return
         }
-        if (planned != null && (!automaticPlaybackAllowed() || !HandoffPolicy.valid(planned, timing(), model.choiceSequence, SystemClock.elapsedRealtime()))) {
+        if (planned != null && !HandoffPolicy.valid(planned, timing(), model.choiceSequence, SystemClock.elapsedRealtime(), aimpShuffle)) {
             log("Timed choice cancelled: source/timing changed during revalidation"); scheduleTimer(); return
         }
         val fresh = tracks.firstOrNull { it.key == target.key } ?: error("Queue changed; choose again")
@@ -566,7 +555,7 @@ class AimpController(private val context: Context) {
                 log("TIMER fired roll=${planned.sequence}; elapsedLate=${SystemClock.elapsedRealtime() - planned.elapsedDeadline}ms; uptimeLate=${SystemClock.uptimeMillis() - planned.uptimeDeadline}ms")
                 val beforeHandoff = playback
                 read(rearm = false)
-                if (automaticPlaybackAllowed() && HandoffPolicy.valid(planned, timing(), model.choiceSequence, SystemClock.elapsedRealtime())) {
+                if (HandoffPolicy.valid(planned, timing(), model.choiceSequence, SystemClock.elapsedRealtime(), aimpShuffle)) {
                     log("Timed deadline reached for ${planned.source}; captured roll=${planned.sequence}")
                     val choice = planned.choice
                     if (choice.track == null) {
@@ -574,7 +563,7 @@ class AimpController(private val context: Context) {
                         basic(false, planned.source)
                     } else playChoice(choice, planned)
                 } else {
-                    if (preferences.debugPlayback && !audit.active && PlaybackAudit.handoffDue(planned, playback, SystemClock.elapsedRealtime())) {
+                    if (preferences.debugPlayback && !audit.active && automaticPlaybackAllowed() && PlaybackAudit.handoffDue(planned, playback, SystemClock.elapsedRealtime())) {
                         armAudit(beforeHandoff, requireNotNull(planned.choice.track), planned.sequence)
                         observeAudit()
                     }

@@ -1,11 +1,15 @@
 #include "weight_storage.h"
 #include <algorithm>
-#include <cstdint>
-#include <cwchar>
 #include <cmath>
-#include <iomanip>
-#include <sstream>
+#include <chrono>
+#include <cwchar>
+#include <fstream>
 #include <stdexcept>
+#ifdef _WIN32
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 namespace ignorant {
 namespace {
@@ -39,169 +43,112 @@ std::string key_for(const std::filesystem::path& file, const std::string& track)
     }
     return track;
 }
-std::string playlist_file(const std::string& name) {
-    std::uint64_t hash = 14695981039346656037ull;
-    std::string label;
-    for (const auto raw : name) {
-        const auto value = static_cast<unsigned char>(raw);
-        hash = (hash ^ value) * 1099511628211ull;
-        if (label.size() < 24) label += (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9') ? static_cast<char>(value) : '_';
-    }
-    std::ostringstream result;
-    result << "IgnorantShuffle.playlist-" << label << '-' << std::hex << hash << ".weights.tsv";
-    return result.str();
-}
-std::optional<double> find(const Weights& weights, const std::string& key) {
-    const auto entry = weights.entries().find(key);
-    return entry == weights.entries().end() ? std::nullopt : std::optional<double>(entry->second);
+
+void replace_copy(const std::filesystem::path& source, const std::filesystem::path& destination) {
+    if (std::filesystem::exists(destination) && std::filesystem::equivalent(source, destination)) return;
+    auto temporary = destination; temporary += ".transfer-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".tmp";
+    try {
+        std::filesystem::copy_file(source, temporary, std::filesystem::copy_options::overwrite_existing);
+#ifdef _WIN32
+        if (!MoveFileExW(temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            throw std::runtime_error("Could not replace weights file.");
+#else
+        std::filesystem::rename(temporary, destination);
+#endif
+    } catch (...) { std::error_code ignored; std::filesystem::remove(temporary, ignored); throw; }
 }
 }
-void WeightStorage::configure(const std::filesystem::path& root, bool global, bool folders, bool playlists) {
+void WeightStorage::configure(const std::vector<std::filesystem::path>& roots) {
     WeightStorage next;
-    next.global_ = global; next.folders_ = folders; next.playlists_ = playlists;
-    if (next.enabled()) {
+    for (const auto& root : roots) {
         if (!root.is_absolute() || !std::filesystem::is_directory(root))
-            throw std::runtime_error("Choose an existing absolute music-folder path before enabling shared weights.");
-        next.root_ = root.lexically_normal();
-        if (global) next.file(next.root_ / "IgnorantShuffle.weights.tsv");
-    } else next.root_ = root;
+            throw std::runtime_error("Choose existing absolute music-root folders.");
+        const auto normalized = std::filesystem::weakly_canonical(root);
+        for (const auto& other : next.roots_)
+            if (within(normalized, other) || within(other, normalized))
+                throw std::runtime_error("Music roots must be separate folders, without overlapping trees.");
+        next.roots_.push_back(normalized);
+        next.file(normalized / "IgnorantShuffle.weights.tsv");
+    }
     *this = std::move(next);
 }
-Weights WeightStorage::read_current(const std::filesystem::path& path) {
-    try {
-        auto backup = path; backup += ".bak";
-        if (!std::filesystem::exists(path) && std::filesystem::exists(backup))
-            throw std::runtime_error("Shared file is missing but its .bak exists. Restore the backup before reloading.");
-        Weights weights; weights.load(path); return weights;
-    }
-    catch (const std::exception& error) {
-        throw std::runtime_error("Cannot load shared weights (" + path.u8string() + "): " + error.what());
-    }
+Weights WeightStorage::read_current(const std::filesystem::path& path) const {
+    auto backup = path; backup += ".bak";
+    if (!std::filesystem::exists(path) && std::filesystem::exists(backup))
+        throw std::runtime_error("Weights file is missing but its .bak exists. Restore the backup before reloading.");
+    Weights weights;
+    try { weights.load(path); }
+    catch (const std::exception& error) { throw std::runtime_error("Cannot read " + path.u8string() + ": " + error.what()); }
+    return weights;
 }
 Weights& WeightStorage::file(const std::filesystem::path& path) {
-    const auto failure = errors_.find(path);
-    if (failure != errors_.end()) throw std::runtime_error(failure->second);
-    const auto found = files_.find(path);
-    if (found != files_.end()) return found->second;
-    try {
-        auto weights = read_current(path);
-        return files_.emplace(path, std::move(weights)).first->second;
-    } catch (const std::exception& error) {
-        errors_[path] = error.what();
-        throw;
+    const auto cached = files_.find(path);
+    if (cached != files_.end()) return cached->second;
+    return files_.emplace(path, read_current(path)).first->second;
+}
+std::optional<std::filesystem::path> WeightStorage::target(const std::string& track) const {
+    if (uri(track)) return {};
+    const auto path = std::filesystem::u8path(track);
+    for (const auto& root : roots_) if (const auto relative = within(path, root); relative && !relative->empty())
+        return root / "IgnorantShuffle.weights.tsv";
+    return {};
+}
+WeightValue WeightStorage::resolve(const Weights& defaults, const std::string& track) {
+    if (const auto path = target(track)) {
+        const auto& values = file(*path).entries();
+        const auto entry = values.find(key_for(*path, track));
+        if (entry != values.end()) return {entry->second, *path};
     }
+    return {defaults.get(track), {}};
 }
-std::optional<double> WeightStorage::lookup(const std::filesystem::path& path, const std::string& track) {
-    const auto& values = file(path);
-    auto value = find(values, key_for(path, track));
-    if (!value) value = find(values, track); // Accept legacy absolute-key imports.
-    return value;
-}
-WeightContext WeightStorage::context(const std::vector<std::string>& tracks, const std::string& playlist) const {
-    WeightContext result; result.playlist = playlist;
-    if (!enabled()) return result;
-    for (const auto& track : tracks) {
-        if (uri(track)) continue;
-        const auto path = std::filesystem::u8path(track).lexically_normal();
-        if (!path.is_absolute() || !within(path, root_)) { result.folder.clear(); return result; }
-        auto parent = path.parent_path();
-        if (result.folder.empty()) result.folder = parent;
-        else while (!within(parent, result.folder)) {
-            const auto previous = result.folder;
-            result.folder = previous.parent_path();
-            if (result.folder == previous || result.folder.empty()) { result.folder.clear(); return result; }
-        }
-    }
-    return result;
-}
-bool WeightStorage::available(WeightScope scope, const WeightContext& context) const {
-    if (scope == WeightScope::Global) return true;
-    return !context.folder.empty() && (scope == WeightScope::Folder ? folders_ : playlists_ && !context.playlist.empty());
-}
-std::optional<std::filesystem::path> WeightStorage::target(WeightScope scope, const std::string& track, const WeightContext& context) const {
-    if (scope == WeightScope::Global) {
-        if (global_ && !uri(track) && within(std::filesystem::u8path(track), root_)) return root_ / "IgnorantShuffle.weights.tsv";
-        return {};
-    }
-    if (!available(scope, context)) throw std::runtime_error("This local scope is unavailable. Enable it in Weight storage and open a list inside your music folder.");
-    return context.folder / (scope == WeightScope::Folder ? "IgnorantShuffle.folder.weights.tsv" : playlist_file(context.playlist));
-}
-WeightValue WeightStorage::resolve(const Weights& profile, const std::string& track, const WeightContext& context, WeightScope through) {
-    if (through == WeightScope::Playlist && available(WeightScope::Playlist, context))
-        if (const auto value = lookup(*target(WeightScope::Playlist, track, context), track)) return {*value, WeightScope::Playlist};
-    if (through != WeightScope::Global && available(WeightScope::Folder, context)) {
-        auto folder = context.folder;
-        while (within(folder, root_)) {
-            if (const auto value = lookup(folder / "IgnorantShuffle.folder.weights.tsv", track)) return {*value, WeightScope::Folder};
-            if (same_part(folder, root_)) break;
-            folder = folder.parent_path();
-        }
-    }
-    if (const auto path = target(WeightScope::Global, track, context))
-        if (const auto value = lookup(*path, track)) return {*value, WeightScope::Global};
-    return {profile.get(track), WeightScope::Global};
-}
-void WeightStorage::set(WeightScope scope, const std::string& track, const WeightContext& context, double weight) {
-    set_many(scope, {track}, context, weight);
-}
-void WeightStorage::set_many(WeightScope scope, const std::vector<std::string>& tracks, const WeightContext& context, double weight) {
+void WeightStorage::set_many(const std::vector<std::string>& tracks, double weight) {
     if (!std::isfinite(weight) || weight < 0) throw std::runtime_error("Weight must be finite and nonnegative.");
-    if (tracks.empty()) return;
-    const auto path = target(scope, tracks.front(), context);
-    if (!path) throw std::runtime_error("This track uses the AIMP-profile global weights.");
-    for (const auto& track : tracks)
-        if (target(scope, track, context) != path) throw std::runtime_error("A shared batch must use one target weights file.");
-    auto next = read_current(*path);
-    for (const auto& track : tracks) next.set(key_for(*path, track), weight);
-    next.save(*path); files_[*path] = std::move(next); errors_.erase(*path);
-}
-bool WeightStorage::has_override(WeightScope scope, const std::string& track, const WeightContext& context) {
-    const auto path = target(scope, track, context);
-    return path && lookup(*path, track).has_value();
-}
-Weights WeightStorage::snapshot(WeightScope scope, const Weights& profile, const std::vector<std::string>& tracks, const WeightContext& context) {
-    const auto path = target(scope, (root_ / "export-target").u8string(), context);
-    auto result = path ? file(*path) : profile;
-    for (const auto& track : tracks)
-        result.set(path ? key_for(*path, track) : track, resolve(profile, track, context, scope).weight);
-    return result;
-}
-void WeightStorage::clear(WeightScope scope, const std::string& track, const WeightContext& context) {
-    clear_many(scope, {track}, context);
-}
-void WeightStorage::clear_many(WeightScope scope, const std::vector<std::string>& tracks, const WeightContext& context) {
-    if (tracks.empty()) return;
-    const auto path = target(scope, tracks.front(), context);
-    if (!path) return;
-    for (const auto& track : tracks)
-        if (target(scope, track, context) != path) throw std::runtime_error("A shared batch must use one target weights file.");
-    auto next = read_current(*path);
-    const auto before = next.entries().size();
-    for (const auto& track : tracks) { next.erase(key_for(*path, track)); next.erase(track); }
-    if (next.entries().size() != before) next.save(*path);
-    files_[*path] = std::move(next); errors_.erase(*path);
-}
-void WeightStorage::import(WeightScope scope, const std::string& track, const WeightContext& context, std::istream& input) {
-    const auto path = target(scope, track, context);
-    if (!path) throw std::runtime_error("Select the AIMP-profile import target for this track.");
-    Weights imported; imported.import(input);
-    auto next = read_current(*path);
-    for (const auto& [key, value] : imported.entries()) next.set(key_for(*path, key), value);
-    next.save(*path); files_[*path] = std::move(next); errors_.erase(*path);
-}
-std::size_t WeightStorage::copy_profile(const Weights& profile) {
-    if (!global_) throw std::runtime_error("Enable music-folder global weights first.");
-    const auto path = root_ / "IgnorantShuffle.weights.tsv";
-    auto next = read_current(path);
-    std::size_t copied = 0;
-    for (const auto& [track, value] : profile.entries()) {
-        if (uri(track) || !within(std::filesystem::u8path(track), root_)) continue;
-        const auto key = key_for(path, track);
-        if (!find(next, key) && !find(next, track)) { next.set(key, value); ++copied; }
+    std::map<std::filesystem::path, std::vector<std::string>> grouped;
+    for (const auto& track : tracks) {
+        const auto path = target(track);
+        if (!path) throw std::runtime_error("Add this track's music root in Weight storage before saving a weight: " + track);
+        grouped[*path].push_back(track);
     }
-    if (copied) next.save(path);
-    files_[path] = std::move(next);
-    errors_.erase(path);
-    return copied;
+    // Validate every destination before writing any of them.
+    std::map<std::filesystem::path, Weights> updates;
+    for (const auto& [path, entries] : grouped) {
+        auto next = read_current(path);
+        for (const auto& track : entries) next.set(key_for(path, track), weight);
+        updates.emplace(path, std::move(next));
+    }
+    std::size_t saved = 0;
+    try {
+        for (auto& [path, next] : updates) { next.save(path); files_[path] = std::move(next); ++saved; }
+    } catch (const std::exception& error) {
+        throw std::runtime_error(std::to_string(saved) + " music-root files saved before failure: " + error.what());
+    }
+}
+void WeightStorage::clear_many(const std::vector<std::string>& tracks) {
+    std::map<std::filesystem::path, std::vector<std::string>> grouped;
+    for (const auto& track : tracks) {
+        const auto path = target(track);
+        if (!path) throw std::runtime_error("Add the music root before editing weights.");
+        grouped[*path].push_back(track);
+    }
+    for (const auto& [path, entries] : grouped) {
+        auto next = read_current(path);
+        for (const auto& track : entries) next.erase(key_for(path, track));
+        next.save(path); files_[path] = std::move(next);
+    }
+}
+void WeightStorage::transfer(const std::filesystem::path& root, const std::filesystem::path& external, bool exporting) {
+    if (std::find(roots_.begin(), roots_.end(), root) == roots_.end()) throw std::runtime_error("Select a configured music root.");
+    const auto canonical = root / "IgnorantShuffle.weights.tsv";
+    if (exporting) {
+        auto checked = read_current(canonical);
+        if (!std::filesystem::exists(canonical)) checked.save(canonical);
+        replace_copy(canonical, external);
+    } else {
+        Weights checked;
+        if (!std::filesystem::is_regular_file(external)) throw std::runtime_error("Cannot open import file.");
+        checked.load(external);
+        replace_copy(external, canonical);
+        files_[canonical] = std::move(checked);
+    }
 }
 }

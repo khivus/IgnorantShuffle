@@ -2,63 +2,66 @@
 
 [Back to README](../README.md)
 
-## Profile storage
+## One file per music root
 
-Shared global weights are preferred by default, pending selection of the main
-music folder. Until then, weights stay under the profile directory returned by
-AIMP, at `IgnorantShuffle\weights.tsv`. Existing saved storage choices are
-respected. A corrupt existing profile file prevents plugin initialization and is
-not overwritten; repair it or move it aside first. See the
-[Windows/Android folder guide](shared-music-folder.md) for synchronization.
+Track weights are saved **only** in `IgnorantShuffle.weights.tsv` inside each
+configured music root. There are no private app/profile weights or folder/playlist
+override layers. Each song has its own weight; a root is its save location.
 
-**Default weight** in **Track weights... > Weight storage...** controls the fallback for tracks with no saved weight. Click **Apply default** to save it and refresh playback choices immediately. It starts at **5** and accepts any finite nonnegative number, including fractions and values above ten. **0** excludes unconfigured tracks. Explicit profile/shared/local weights are preserved. The setting is stored separately in `IgnorantShuffle\preferences.ini`, under `[Shuffle]` as `DefaultWeight`, and is specific to that AIMP profile; it is not part of shared TSV files.
+For `D:\Music\Artist\Song.flac`, choose `D:\Music`. Its entry is
+`Artist/Song.flac`. Choose the corresponding `Music` root on Android. Relative
+paths let the file travel with its music when the drive or root name changes.
 
-**Minimum weight** in the same dialog controls queue eligibility: effective weights **at or above** it can be selected, and lower weights are excluded. It defaults to **1** and requires a finite value **greater than 0**; positive fractions are allowed. **Apply minimum** saves `[Shuffle] MinimumWeight` in `preferences.ini` and refreshes cached choices without modifying any saved track weights. Invalid saved values fall back to 1 with a visible diagnostic. Android has its own saved minimum; shared TSV files contain track weights only.
+Add multiple separate roots for separate libraries. Each has its own weights file,
+including when two libraries contain the same relative filename. Roots cannot
+overlap. A Windows bulk selection spanning roots saves into each root separately.
+Each file is replaced safely; a later failure reports how many root files saved.
 
-## Shared global and local weights
+On Windows, open **Track weights... > Weight storage...**, enter one music root
+per line (or use **Add...**), and click **Apply / reload**. On Android, open
+**Shuffle > Music-folder weights > Add music root** and grant access with the
+system folder picker. Android matches actual files using their URI or unique
+title/artist tags. Resolve ambiguous entries with **Playlist > Link music file**.
 
-The **main music folder** is the parent of your artist/album folders. For
-`D:\Music\Artist\Song.flac`, choose **`D:\Music`**. This sets the save location
-for individual song weights in `IgnorantShuffle.weights.tsv`; it does not assign
-one weight to the folder. See the [step-by-step example](shared-music-folder.md#what-is-the-main-music-folder)
-for selecting the matching Android folder, migrating old weights and syncing.
+Songs without a saved root-file entry use **Default weight**, initially **5**.
+Windows URLs and tracks outside configured roots also use that default; their
+individual weights cannot be saved until a local music root is configured.
+Android requires a file link before saving an individual weight. **Use default**
+removes that song's saved entry. Choose **Reload weights** after external changes
+or **Reindex files** on Android after adding or retagging music.
 
-**Shared global weights are preferred by default** once a root is selected.
-Folder/playlist override layers remain off by default and are Windows-only.
-The original profile file stays intact as the fallback for missing shared entries,
-URLs and tracks outside the selected music folder.
+**Minimum weight** starts at **1** and must be finite and greater than zero.
+Weights at or above it are eligible; lower values are excluded. Default weight
+can be any finite nonnegative value. Both settings, along with cooldown and
+finite mode, are device settings, separate from the music-root file. Changing
+them never materializes default entries in that file.
 
-1. Open **Track weights... > Weight storage...** and choose the root music folder you copy between devices.
-2. Leave **Use shared global weights** checked. Folder-local and AIMP-playlist-specific overrides are optional Windows layers; Android shares the root global file only.
-3. Click **Apply / reload**. Click **Copy missing profile weights** to copy existing weights for tracks under that root into the shared global file; existing shared values, including zero, are kept.
-4. Select **Global**, **Folder local**, or **AIMP playlist** in the panel's **Edit** selector or the editor's scope selector. Weight buttons save to that scope immediately. **Inherit** removes an explicit local entry and restores the lower layer's value.
-5. On another device, copy the music tree including the TSV files, choose its new root path in Weight storage, and enable the same options. Relative track paths continue to work when the root folder or drive changes.
+Unreadable or malformed weights stop weighted selection with a visible error.
+Restore folder access or repair the file and reload. A missing canonical file
+with a `.bak` present requires backup recovery, preventing exclusions from being
+silently lost. Removing a root from the app keeps its files intact.
 
-| Scope | File location |
-| --- | --- |
-| Shared global | `<music root>\IgnorantShuffle.weights.tsv` |
-| Folder local | `<current folder context>\IgnorantShuffle.folder.weights.tsv` |
-| AIMP playlist | `<current folder context>\IgnorantShuffle.playlist-<name>-<hash>.weights.tsv` |
+## Import and export copy the file
 
-The **folder context is the common parent folder of the local tracks in the current source list**, within the configured music root. It does not depend on naming an AIMP playlist. For example, a list containing `Music\Chill\song.mp3` and `Music\Chill\other.mp3` uses Chill's local file. A list spanning Chill and another subfolder uses their common parent, Music, so Chill's local overrides do not apply there. A single-track list uses that track's parent folder. A list containing local files outside the configured root has no folder-local context.
+Choose the **import/export music root**, then Import or Export. Import **replaces**
+that root's complete file with the selected valid TSV. Omitted entries are removed.
+Export copies the current file exactly, including comments, numeric formatting,
+UTF-8 BOM and line endings. It adds no defaults or entries from the playlist.
+Copying `IgnorantShuffle.weights.tsv` with a file manager does the same thing;
+reload afterwards. Other music roots remain independent.
 
-The effective weight is the first configured value found in this order: the current AIMP playlist's override, the current folder's override, overrides in its parent folders up to the music root, the shared global value, the original profile value, then the configured **Default weight** (initially **5**). Weight **0 at the winning layer** excludes the track. Imported values above 10 remain supported. The panel distinguishes the actual playback weight from the value being edited when the selected scope differs.
+The file contains a nonnegative finite weight, a **tab**, and a root-relative track
+path per line. Zero, fractions and weights above ten are supported. Blank lines
+and `#` comments are allowed. Invalid numbers or empty keys reject the whole import.
+Use forward slashes for relative paths, matching the music tree and filename case.
+See [examples](../examples/weights.tsv) and the
+[Windows/Android guide](shared-music-folder.md).
 
-Folder-local files use paths relative to their folder; global files use paths relative to the music root. Moving a track within the tree or changing its relative filename creates a new key. AIMP-playlist overrides additionally match the exact playlist name and folder context: keep that name on another device, and use distinct names for distinct playlists in the same context.
+## Existing installations
 
-Shared files are cached for playback. Use **Apply / reload** after files change externally or arrive from another device. Each edit rereads its target before saving, preserving unrelated changes already on disk; simultaneous edits from multiple running instances are not merged as a coordinated transaction. An unreadable or malformed shared file is reported in the panel and stops weighted selection rather than silently bypassing its exclusions. Fix the file and reload, or disable that shared-storage option to return to the original profile behavior.
-
-## Import/export
-
-Open **Track weights... > Weight storage...** and choose **Global**, **Folder**, or **AIMP playlist** beside Import / Export. Transfers use the applied storage settings shown above them; unsaved checkbox/path changes take effect after Apply / reload. Transfers affect the whole selected scope, independently of which track rows are selected.
-
-UTF-8 TSV, one weight and track key per line, separated by a **tab**. Profile storage uses exact absolute filenames/URIs as before; shared files use paths relative to the selected scope's file folder. Relative imported keys are interpreted in that target folder. Export first to get the exact keys for your tracks. Paths are matched exactly, including case; URLs also retain their case. Moving or renaming a file creates a new key. Duplicate rows use the last value. Import merges with saved weights; omitted tracks keep their previous weights.
-
-```text
-# weight<TAB>track
-0    D:\Music\Excluded.flac
-5    D:\Music\Normal.flac
-25   D:\Music\Favorite.flac
-```
-
-The spacing above is illustrative; [examples/weights.tsv](../examples/weights.tsv) contains real tab separators. Blank lines and lines beginning with `#` are ignored. A UTF-8 BOM and Windows line endings are accepted. Negative values, NaN, infinity, invalid numbers, and empty keys reject the entire import. Save uses a temporary file and replacement so a failed write does not truncate the old weights file. Export includes saved entries plus defaults for the playlist shown in the dialog.
+Existing music-root files remain compatible. Previously selected roots are
+retained. Old private profile/app weights and folder/playlist override files are
+left untouched but are no longer read or written. If you need those values,
+export them with the previous version before upgrading, convert absolute or
+Android identity keys to root-relative file paths, then import into the matching
+root. Existing root files can be copied directly without conversion.

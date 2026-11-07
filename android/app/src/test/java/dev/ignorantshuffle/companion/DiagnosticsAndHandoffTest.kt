@@ -84,4 +84,14 @@ class DiagnosticsAndHandoffTest {
         assertFalse(CpuProtection.needed(true, false, sample.copy(state = 3, duration = -1), 1000))
         assertTrue(CpuProtection.needed(true, false, sample.copy(state = 3), 1000))
     }
+    @Test fun aTimerCapturedBeforeShuffleOffCannotDispatchAndCanResumeTheSameRoll() {
+        val track = Track(4, "b", null, "Published", "Artist")
+        val plan = ScheduledRoll("source", Choice(track), 7, 10_700, 10_700)
+        val sample = TimingSnapshot("source", 3, 20_000, 30_000, 1f, 1000)
+        assertFalse(HandoffPolicy.valid(plan, sample, 7, 10_700, AimpShuffleMode.OFF))
+        assertFalse(HandoffPolicy.valid(plan, sample, 7, 10_700, AimpShuffleMode.UNKNOWN))
+        assertTrue(HandoffPolicy.valid(plan, sample, 7, 10_700, AimpShuffleMode.ON))
+        assertEquals(track, plan.choice.track)
+    }
+
 }

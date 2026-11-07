@@ -29,8 +29,8 @@ data class ScheduledRoll(val source: String, val choice: Choice, val sequence: L
     val elapsedDeadline: Long, val uptimeDeadline: Long, val leadMs: Long = EndTiming.LEAD_MS)
 
 object HandoffPolicy {
-    fun valid(roll: ScheduledRoll, sample: TimingSnapshot, currentSequence: Long, now: Long): Boolean =
-        roll.sequence == currentSequence && EndTiming.due(sample, roll.source, now, roll.leadMs)
+    fun valid(roll: ScheduledRoll, sample: TimingSnapshot, currentSequence: Long, now: Long, shuffle: AimpShuffleMode = AimpShuffleMode.ON): Boolean =
+        shuffle == AimpShuffleMode.ON && roll.sequence == currentSequence && EndTiming.due(sample, roll.source, now, roll.leadMs)
 }
 
 object CpuProtection {

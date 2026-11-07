@@ -7,7 +7,7 @@ STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "IgnorantShuffle"
 FONT 9, "Segoe UI"
 BEGIN
-    LTEXT "Click a column header to sort. Ctrl/Shift-click to select tracks; hover a weight for full details. Edit shows the selected scope's value.", -1, 10, 6, 366, 20
+    LTEXT "Click a column header to sort. Ctrl/Shift-click to select tracks; hover a weight for full details. Weights save in each track's music root.", -1, 10, 6, 366, 20
     PUSHBUTTON "Select all", IDC_SELECT_ALL, 386, 7, 84, 15
     CONTROL "", IDC_TRACKS, "SysListView32", LVS_REPORT | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 10, 30, 460, 158
     PUSHBUTTON "0", 1300, 10, 194, 38, 15, WS_GROUP
@@ -27,40 +27,34 @@ BEGIN
     PUSHBUTTON "Refresh playlist", IDC_REFRESH, 279, 215, 101, 16
     LTEXT "", IDC_STATUS, 10, 237, 460, 20
     PUSHBUTTON "Weight storage...", IDC_STORAGE, 10, 264, 90, 18
-    COMBOBOX IDC_WEIGHT_SCOPE, 110, 264, 120, 90, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    PUSHBUTTON "Inherit", IDC_RESET_LOCAL, 240, 264, 66, 18
+    PUSHBUTTON "Use default", IDC_RESET_WEIGHT, 110, 264, 78, 18
     DEFPUSHBUTTON "Close", IDOK, 392, 264, 78, 18
 END
-IDD_STORAGE DIALOGEX 0, 0, 350, 378
+IDD_STORAGE DIALOGEX 0, 0, 350, 342
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "IgnorantShuffle - Weight storage"
 FONT 9, "Segoe UI"
 BEGIN
-    LTEXT "Choose D:\\Music for songs in D:\\Music\\Artist\\Song.flac. Each song has its own weight; this folder saves them in IgnorantShuffle.weights.tsv.", -1, 10, 8, 330, 22
-    LTEXT "For Android sharing, choose Music there and sync the file and matching subfolders yourself. Private profile weights work until setup.", -1, 10, 32, 330, 18
-    LTEXT "Main music folder:", -1, 10, 54, 330, 10
-    EDITTEXT IDC_MUSIC_FOLDER, 10, 66, 264, 14, ES_AUTOHSCROLL | WS_TABSTOP
-    PUSHBUTTON "Browse...", IDC_BROWSE_MUSIC, 282, 66, 58, 14
-    CONTROL "Use shared global weights in the music folder", IDC_SHARED_GLOBAL, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 10, 88, 330, 12
-    CONTROL "Use folder-local weight overrides", IDC_FOLDER_LOCAL, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 10, 104, 330, 12
-    CONTROL "Use AIMP-playlist-specific weight overrides", IDC_PLAYLIST_LOCAL, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 10, 120, 330, 12
-    LTEXT "Optional Windows overrides: folder-local values apply to the current list's common folder; a list spanning more folders uses their common parent. Playlist overrides also match the AIMP playlist name.", -1, 10, 140, 330, 28
-    PUSHBUTTON "Apply / reload", IDC_APPLY_STORAGE, 10, 174, 94, 16
-    PUSHBUTTON "Copy missing profile weights", IDC_COPY_PROFILE, 112, 174, 150, 16
-    EDITTEXT IDC_STORAGE_STATUS, 10, 198, 330, 38, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
-    LTEXT "Import/export:", -1, 10, 245, 70, 10
-    COMBOBOX IDC_WEIGHT_SCOPE, 84, 242, 88, 90, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    PUSHBUTTON "Import...", IDC_IMPORT, 180, 242, 64, 16
-    PUSHBUTTON "Export...", IDC_EXPORT, 252, 242, 64, 16
-    LTEXT "Default weight:", -1, 10, 271, 80, 10
-    EDITTEXT IDC_DEFAULT_WEIGHT, 96, 268, 78, 14, ES_AUTOHSCROLL | WS_TABSTOP
-    PUSHBUTTON "Apply default", IDC_APPLY_DEFAULT_WEIGHT, 182, 268, 88, 16
-    LTEXT "Used when no weight is saved. Initially 5. Values below the minimum eligible weight are excluded from shuffle.", -1, 10, 290, 330, 18
-    LTEXT "Minimum weight:", -1, 10, 315, 80, 10
-    EDITTEXT IDC_MINIMUM_WEIGHT, 96, 312, 78, 14, ES_AUTOHSCROLL | WS_TABSTOP
-    PUSHBUTTON "Apply minimum", IDC_APPLY_MINIMUM_WEIGHT, 182, 312, 88, 16
-    LTEXT "Initially 1. Any finite value greater than 0, including fractions. Tracks with weight at or above this minimum are eligible.", -1, 10, 334, 330, 18
-    DEFPUSHBUTTON "Close", IDOK, 274, 356, 66, 16
+    LTEXT "Weights are saved only in IgnorantShuffle.weights.tsv in each music root. For D:\\Music\\Artist\\Song.flac, add D:\\Music.", -1, 10, 8, 330, 24
+    LTEXT "Music roots (one folder per line; separate libraries use separate files):", -1, 10, 36, 330, 12
+    EDITTEXT IDC_MUSIC_FOLDER, 10, 52, 264, 42, ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON "Add...", IDC_BROWSE_MUSIC, 282, 52, 58, 16
+    PUSHBUTTON "Apply / reload", IDC_APPLY_STORAGE, 10, 102, 94, 16
+    EDITTEXT IDC_STORAGE_STATUS, 10, 126, 330, 40, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
+    LTEXT "Import/export music root:", -1, 10, 174, 330, 12
+    COMBOBOX IDC_TRANSFER_ROOT, 10, 190, 330, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON "Import...", IDC_IMPORT, 10, 210, 76, 16
+    PUSHBUTTON "Export...", IDC_EXPORT, 94, 210, 76, 16
+    LTEXT "Import replaces this root's file. Export copies it unchanged. Sync the file together with its music subfolders to share weights with Android.", -1, 10, 232, 330, 22
+    LTEXT "Default weight:", -1, 10, 264, 80, 10
+    EDITTEXT IDC_DEFAULT_WEIGHT, 96, 261, 78, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON "Apply default", IDC_APPLY_DEFAULT_WEIGHT, 182, 261, 88, 16
+    LTEXT "Used for songs without a saved weight. Initially 5.", -1, 10, 281, 330, 10
+    LTEXT "Minimum weight:", -1, 10, 299, 80, 10
+    EDITTEXT IDC_MINIMUM_WEIGHT, 96, 296, 78, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON "Apply minimum", IDC_APPLY_MINIMUM_WEIGHT, 182, 296, 88, 16
+    LTEXT "Initially 1. Must be greater than 0. Weights below this are excluded.", -1, 10, 317, 260, 16
+    DEFPUSHBUTTON "Close", IDOK, 274, 318, 66, 16
 END
 IDD_MONITOR DIALOGEX 0, 0, 260, 230
 STYLE DS_SETFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_VSCROLL
@@ -87,9 +81,6 @@ BEGIN
     CONTROL "8", IDC_QUICK_WEIGHT_8, "Button", BS_CHECKBOX | BS_PUSHLIKE | WS_TABSTOP, 207, 117, 24, 17
     CONTROL "9", IDC_QUICK_WEIGHT_9, "Button", BS_CHECKBOX | BS_PUSHLIKE | WS_TABSTOP, 234, 117, 24, 17
     CONTROL "10", IDC_QUICK_WEIGHT_10, "Button", BS_CHECKBOX | BS_PUSHLIKE | WS_TABSTOP, 261, 117, 24, 17
-    LTEXT "Edit:", IDC_SCOPE_LABEL, 18, 138, 20, 12
-    COMBOBOX IDC_WEIGHT_SCOPE, 42, 138, 95, 90, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    PUSHBUTTON "Inherit", IDC_RESET_LOCAL, 145, 138, 48, 15
     LTEXT "Cooldown (tracks):", IDC_COOLDOWN_LABEL, 10, 151, 85, 12
     EDITTEXT IDC_COOLDOWN, 98, 148, 48, 17, ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP | WS_GROUP
     PUSHBUTTON "Apply", IDC_APPLY_COOLDOWN, 154, 148, 45, 18

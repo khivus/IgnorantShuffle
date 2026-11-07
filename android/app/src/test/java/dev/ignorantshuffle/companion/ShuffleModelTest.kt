@@ -99,16 +99,6 @@ class ShuffleModelTest {
         val model = model(); model.confirmPlaying(a); model.disconnect()
         assertNull(model.currentKey); assertTrue(model.tracks.isEmpty()); assertTrue(model.recent.isEmpty()); assertNull(model.previous())
     }
-    @Test fun transfersPreserveZeroFractionAndLargeWeight() {
-        val values = mapOf(a.key to 0.0, b.key to 25.5)
-        assertEquals(values, WeightTransfer.parse(WeightTransfer.write(values)))
-    }
-    @Test fun invalidTransferIsRejectedAsAWhole() {
-        listOf("-1", "NaN", "Infinity", "1e999").forEach { value ->
-            assertThrows(IllegalArgumentException::class.java) { WeightTransfer.parse("1\t${a.key}\n$value\t${b.key}") }
-        }
-        assertThrows(IllegalArgumentException::class.java) { WeightTransfer.parse("5\tD:\\music\\a.mp3") }
-    }
     @Test fun settingsRejectInvalidValues() {
         assertThrows(IllegalArgumentException::class.java) { Settings(Double.NaN).validate() }
         assertThrows(IllegalArgumentException::class.java) { Settings(cooldown = 10001).validate() }

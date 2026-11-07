@@ -163,17 +163,13 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     std::recursive_mutex mutex_;
     ignorant::Weights weights_;
     ignorant::WeightStorage storage_;
-    std::filesystem::path music_folder_;
-    bool shared_global_ = true, folder_local_ = false, playlist_local_ = false;
-    ignorant::WeightScope edit_scope_ = ignorant::WeightScope::Global;
+    std::vector<std::filesystem::path> music_folders_;
     std::wstring storage_error_;
-    struct ContextCache { Ref<IAIMPPlaylist> playlist; int count; ignorant::WeightContext value; };
-    std::deque<ContextCache> weight_contexts_;
     Ref<IAIMPPlaylist> editor_playlist_;
     HWND storage_dialog_ = nullptr;
     TrackTable track_table_;
     bool editor_selection_pending_ = false;
-    std::filesystem::path weights_file_;
+    std::filesystem::path profile_dir_;
     std::filesystem::path preferences_file_;
     std::filesystem::path log_file_;
     ignorant::PluginLog log_;
@@ -239,11 +235,9 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         success = (WritePrivateProfileStringW(L"Shuffle", L"FinitePlaylist", finite_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Shuffle", L"DefaultWeight", weight_text(weights_.fallback()).c_str(), preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Shuffle", L"MinimumWeight", weight_text(minimum_weight_).c_str(), preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Storage", L"MusicFolder", music_folder_.c_str(), preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Storage", L"SharedGlobal", shared_global_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Storage", L"FolderLocal", folder_local_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Storage", L"PlaylistLocal", playlist_local_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Storage", L"EditScope", std::to_wstring(static_cast<int>(edit_scope_)).c_str(), preferences_file_.c_str()) != FALSE) && success;
+        std::wstring roots;
+        for (const auto& root : music_folders_) { if (!roots.empty()) roots += L"|"; roots += root.wstring(); }
+        success = (WritePrivateProfileStringW(L"Storage", L"MusicRoots", roots.c_str(), preferences_file_.c_str()) != FALSE) && success;
         RECT rectangle{};
         if (monitor_.handle()) {
             rectangle = monitor_.saved_bounds();
@@ -291,75 +285,41 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         }
         wchar_t folder[32768]{};
         GetPrivateProfileStringW(L"Storage", L"MusicFolder", L"", folder, 32768, preferences_file_.c_str());
-        music_folder_ = folder;
-        shared_global_ = GetPrivateProfileIntW(L"Storage", L"SharedGlobal", 1, preferences_file_.c_str()) != 0;
-        folder_local_ = GetPrivateProfileIntW(L"Storage", L"FolderLocal", 0, preferences_file_.c_str()) != 0;
-        playlist_local_ = GetPrivateProfileIntW(L"Storage", L"PlaylistLocal", 0, preferences_file_.c_str()) != 0;
-        edit_scope_ = static_cast<ignorant::WeightScope>(std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Storage", L"EditScope", 0, preferences_file_.c_str())), 0, 2));
+        wchar_t roots[32768]{};
+        GetPrivateProfileStringW(L"Storage", L"MusicRoots", folder, roots, static_cast<DWORD>(std::size(roots)), preferences_file_.c_str());
+        music_folders_ = parse_roots(roots, L'|');
     }
-    static std::wstring scope_label(ignorant::WeightScope scope) {
-        return scope == ignorant::WeightScope::Folder ? L"Folder" : scope == ignorant::WeightScope::Playlist ? L"AIMP playlist" : L"Global";
-    }
-    std::string playlist_name(IAIMPPlaylist* playlist) {
-        auto properties = query<IAIMPPropertyList>(playlist, IID_IAIMPPropertyList);
-        return utf8(wide(string_property(properties.get(), AIMP_PLAYLIST_PROPID_NAME).get()));
-    }
-    ignorant::WeightContext context_for(const Ref<IAIMPPlaylist>& playlist, const std::vector<std::string>* known_tracks = nullptr) {
-        if (!storage_.enabled() || !playlist || (!storage_.folders_enabled() && !storage_.playlists_enabled())) return {};
-        const auto name = playlist_name(playlist.get());
-        const auto count = playlist->GetItemCount();
-        if (!known_tracks) for (const auto& cached : weight_contexts_)
-            if (same_object(cached.playlist.get(), playlist.get()) && cached.count == count && cached.value.playlist == name) return cached.value;
-        std::vector<std::string> tracks;
-        if (!known_tracks) for (int i = 0; i < count; ++i) {
-            Ref<IAIMPPlaylistItem> item;
-            if (SUCCEEDED(playlist->GetItem(i, IID_IAIMPPlaylistItem, item.out())) && item) {
-                const auto key = track_key(item.get()); if (!key.empty()) tracks.push_back(key);
-            }
+    static std::vector<std::filesystem::path> parse_roots(const std::wstring& text, wchar_t separator = L'\n') {
+        std::vector<std::filesystem::path> result;
+        std::wistringstream lines(text); std::wstring line;
+        while (std::getline(lines, line, separator)) {
+            const auto first = line.find_first_not_of(L" \r\n\t"), last = line.find_last_not_of(L" \r\n\t");
+            if (first != std::wstring::npos) result.emplace_back(line.substr(first, last - first + 1));
         }
-        auto value = storage_.context(known_tracks ? *known_tracks : tracks, name);
-        for (auto it = weight_contexts_.begin(); it != weight_contexts_.end();) {
-            if (same_object(it->playlist.get(), playlist.get())) it = weight_contexts_.erase(it); else ++it;
-        }
-        weight_contexts_.push_back({playlist, count, value});
-        if (weight_contexts_.size() > 32) weight_contexts_.pop_front();
-        return value;
+        return result;
     }
-    ignorant::WeightScope scope_for(const ignorant::WeightContext& context) const {
-        return storage_.available(edit_scope_, context) ? edit_scope_ : ignorant::WeightScope::Global;
-    }
-    ignorant::WeightValue effective_weight(const std::string& track, const ignorant::WeightContext& context,
-        ignorant::WeightScope through = ignorant::WeightScope::Playlist) {
+    ignorant::WeightValue effective_weight(const std::string& track) {
         if (!storage_error_.empty()) throw std::runtime_error(utf8(storage_error_));
-        try { return storage_.resolve(weights_, track, context, through); }
+        try { return storage_.resolve(weights_, track); }
         catch (const std::exception& error) {
             storage_error_ = from_utf8(error.what());
             log_.write("storage.error", error.what()); request_monitor_update(); throw;
         }
     }
-    void set_storage(const std::filesystem::path& folder, bool global, bool local_folder, bool local_playlist) {
+    void set_storage(const std::vector<std::filesystem::path>& roots) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         ignorant::WeightStorage next;
-        // Shared global is preferred by default; until a root is chosen, keep
-        // using profile weights. Explicit saved opt-outs remain respected.
-        next.configure(folder, global && !folder.empty(), local_folder, local_playlist);
-        storage_ = std::move(next); music_folder_ = folder;
-        shared_global_ = global; folder_local_ = local_folder; playlist_local_ = local_playlist;
-        storage_error_.clear(); weight_contexts_.clear();
-        save_preferences(); changed();
-        refresh_cooldown_preview(); update_monitor();
-        log_.write("storage.configure", "global=" + std::to_string(global) + " folder=" + std::to_string(local_folder) + " playlist=" + std::to_string(local_playlist));
+        try { next.configure(roots); }
+        catch (const std::exception& error) { storage_error_ = from_utf8(error.what()); request_monitor_update(); throw; }
+        storage_ = std::move(next); music_folders_ = storage_.roots(); storage_error_.clear();
+        save_preferences(); changed(); refresh_cooldown_preview(); update_monitor();
+        log_.write("storage.configure", "music_roots=" + std::to_string(roots.size()));
     }
-    void set_track_weight(const std::string& track, const ignorant::WeightContext& context, int value) {
+    void set_track_weight(const std::string& track, int value) {
         if (value < 0 || value > 10) throw std::runtime_error("Enter a weight from 0 to 10.");
-        const auto scope = scope_for(context);
-        if (storage_.target(scope, track, context)) {
-            storage_.set(scope, track, context, value);
-            changed(); refresh_cooldown_preview();
-        } else {
-            auto next = weights_; next.set_from_editor(track, value); commit(std::move(next));
-        }
-        log_.write("weights.current", "scope=" + std::to_string(static_cast<int>(scope)) + " weight=" + std::to_string(value) + " track=" + track);
+        storage_.set_many({track}, value);
+        changed(); refresh_cooldown_preview();
+        log_.write("weights.current", "weight=" + std::to_string(value) + " track=" + track);
     }
     void reset_finite_progress() { active_pass_.reset(); ++finite_generation_; }
     void set_finite(bool enabled) {
@@ -441,8 +401,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             if (key.empty()) continue;
             keys.push_back(key);
         }
-        const auto context = context_for(playlist, &keys);
-        for (const auto& key : keys) weights.push_back(selection_weight(effective_weight(key, context).weight));
+        for (const auto& key : keys) weights.push_back(selection_weight(effective_weight(key).weight));
         cooldown_preview_ = ignorant::cooldown_pool(keys, weights, projected_recent(audible_), cooldown_);
         cooldown_preview_ready_ = true;
     }
@@ -489,8 +448,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         auto current = current_track();
         if (!current) throw std::runtime_error("No track is currently playing.");
         const auto key = track_key(current.get());
-        const auto context = context_for(playlist_for(current.get()));
-        if (storage_.target(scope_for(context), key, context) || weights_.get(key) != weight) set_track_weight(key, context, weight);
+        set_track_weight(key, weight);
         update_monitor();
     }
     void reroll_next() {
@@ -525,7 +483,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         state.notice = preferences_error_.empty() ? L"Minimum eligible weight: " + weight_text(minimum_weight_) + L". AIMP's manual queue and repeat settings can take priority." : preferences_error_;
         if (!log_.error().empty()) state.notice = L"Logging unavailable: " + from_utf8(log_.error());
         auto current = current_track();
-        state.can_set_weight = static_cast<bool>(current);
+        state.can_set_weight = current && storage_.target(track_key(current.get())).has_value();
         state.can_reroll = enabled_ && shuffle && current && !awaiting_stream_start_;
         state.current_track = current ? track_label(current.get()) : L"Nothing playing";
         if (current) state.current_key = wide(string_property(current.get(), AIMP_PLAYLISTITEM_PROPID_FILENAME).get());
@@ -533,29 +491,20 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (current) {
             try {
                 const auto key = track_key(current.get());
-                const auto context = context_for(playlist_for(current.get()));
-                const auto scope = scope_for(context);
-                const auto actual = effective_weight(key, context);
-                const auto editing = effective_weight(key, context, scope);
-                state.weight_scopes = {0};
-                if (storage_.available(ignorant::WeightScope::Folder, context)) state.weight_scopes.push_back(1);
-                if (storage_.available(ignorant::WeightScope::Playlist, context)) state.weight_scopes.push_back(2);
-                state.weight_scope = static_cast<int>(scope);
-                state.can_clear_override = scope != ignorant::WeightScope::Global && storage_.has_override(scope, key, context);
+                                const auto actual = effective_weight(key);
+                const auto editing = effective_weight(key);
                 weight << L"Current weight: " << std::setprecision(8) << actual.weight;
-                if (storage_.enabled()) weight << L" (" << scope_label(actual.scope) << L")";
+                weight << (actual.file.empty() ? L" (default)" : L" (music root)");
                 if (editing.weight <= 10 && editing.weight == std::floor(editing.weight)) state.selected_weight = static_cast<int>(editing.weight);
                 if (actual.weight < minimum_weight_) weight << L" (excluded)";
                 else if (actual.weight > 10) weight << L" (custom)";
-                if (scope != actual.scope || editing.weight != actual.weight)
-                    weight << L"\r\nEditing " << scope_label(scope) << L": " << editing.weight;
             } catch (const std::exception&) { weight << L"Weight unavailable"; state.can_set_weight = false; }
         } else weight << L"Current weight: -";
         state.current_weight = weight.str();
         if (!storage_error_.empty()) {
             state.notice = L"Shared weights error: " + storage_error_;
             state.next_track = L"Weighted selection stopped - check Weight storage";
-            state.decision = L"Fix the shared file or disable shared storage, then Apply / reload.";
+            state.decision = L"Fix the music-root file or folder access, then Apply / reload.";
             state.can_reroll = false; return state;
         }
         state.next_track = L"Waiting for AIMP to request a track";
@@ -714,7 +663,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 else if (id == IDC_UPDATE_INSTALL) {
                     const auto state = self->updater_.state();
                     if (state.phase == ignorant::UpdatePhase::Ready || state.phase == ignorant::UpdatePhase::HandedOff) self->install_requested_ = true;
-                    else if (!self->weights_file_.empty()) self->install_requested_ = self->updater_.download(self->weights_file_.parent_path() / L"Updates");
+                    else if (!self->profile_dir_.empty()) self->install_requested_ = self->updater_.download(self->profile_dir_ / L"Updates");
                 } else if (id == IDC_UPDATE_FOLDER) {
                     const auto state = self->updater_.state();
                     if (!state.package.empty() && reinterpret_cast<INT_PTR>(ShellExecuteW(window, L"open", state.package.parent_path().c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32)
@@ -767,19 +716,6 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             monitor_.on_weight = [this](int weight) { apply_current_weight(weight); };
             monitor_.on_cooldown = [this](int tracks) { set_cooldown(tracks); };
             monitor_.on_finite = [this](bool enabled) { set_finite(enabled); };
-            monitor_.on_scope = [this](int scope) {
-                std::lock_guard<std::recursive_mutex> lock(mutex_);
-                edit_scope_ = static_cast<ignorant::WeightScope>(std::clamp(scope, 0, 2));
-                save_preferences(); update_monitor();
-            };
-            monitor_.on_clear_override = [this] {
-                std::lock_guard<std::recursive_mutex> lock(mutex_);
-                const auto current = current_track(); if (!current) return;
-                const auto context = context_for(playlist_for(current.get()));
-                const auto scope = scope_for(context); if (scope == ignorant::WeightScope::Global) return;
-                storage_.clear(scope, track_key(current.get()), context);
-                changed(); refresh_cooldown_preview(); update_monitor();
-            };
             if (!monitor_.create(module)) throw std::runtime_error("Could not create the IgnorantShuffle floating window.");
             if (!preferences_file_.empty()) {
                 RECT bounds{}; GetWindowRect(monitor_.handle(), &bounds);
@@ -926,8 +862,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 const auto key = track_key(item.get()); if (!key.empty()) keys.push_back(key);
             }
         }
-        const auto context = context_for(playlist, &keys);
-        for (const auto& key : keys) if (effective_weight(key, context).weight >= minimum_weight_) return true;
+        for (const auto& key : keys) if (effective_weight(key).weight >= minimum_weight_) return true;
         return false;
     }
     std::shared_ptr<Occurrence> finite_end(const std::shared_ptr<Occurrence>& source, const Ref<IAIMPPlaylist>& playlist,
@@ -957,7 +892,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         const auto cached = source->next.lock();
         if (!reroll && target && cached && source->end_action == action && cached->pass && cached->pass != source->pass &&
             same_object(cached->playlist.get(), target.get()) && playlist_for(cached->item.get()) &&
-            effective_weight(track_key(cached->item.get()), context_for(target)).weight >= minimum_weight_) {
+            effective_weight(track_key(cached->item.get())).weight >= minimum_weight_) {
             source->decision = cached->incoming_decision; return cached;
         }
         source->end_action = action; source->next.reset();
@@ -984,8 +919,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             items.push_back(std::move(item));
             keys.push_back(key);
         }
-        const auto context = context_for(playlist, &keys);
-        for (const auto& key : keys) probabilities.push_back(selection_weight(effective_weight(key, context).weight));
+        for (const auto& key : keys) probabilities.push_back(selection_weight(effective_weight(key).weight));
         ignorant::CooldownPool pool;
         if (finite_) {
             ensure_pass(source, playlist);
@@ -1062,15 +996,6 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         log_.write("queue.next.draw", details.str());
         return next;
     }
-    void commit(ignorant::Weights next) {
-        // Validate UTF-8 before persisting or changing in-memory state.
-        for (const auto& [track, weight] : next.entries()) { (void)weight; from_utf8(track); }
-        next.save(weights_file_);
-        weights_ = std::move(next);
-        refresh_cooldown_preview();
-        log_.write("weights.saved", "entries=" + std::to_string(weights_.entries().size()));
-        changed();
-    }
     std::vector<int> selected_rows(HWND window) const {
         (void)window;
         auto rows = track_table_.selected();
@@ -1126,36 +1051,14 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (!std::isfinite(value) || value < 0) throw std::runtime_error("Weight must be finite and nonnegative.");
         const auto tracks = selected_tracks(window);
         if (tracks.empty()) throw std::runtime_error("Select one or more tracks first.");
-        const auto context = context_for(editor_playlist_);
-        const auto scope = scope_for(context);
-        std::vector<std::string> profile, shared;
-        for (const auto& track : tracks)
-            (storage_.target(scope, track, context) ? shared : profile).push_back(track);
-        auto next_profile = weights_;
-        for (const auto& track : profile) next_profile.set(track, value);
-        bool profile_saved = false;
-        try {
-            if (!profile.empty()) {
-                next_profile.save(weights_file_); weights_ = std::move(next_profile); profile_saved = true;
-            }
-            if (!shared.empty()) storage_.set_many(scope, shared, context, value);
-        } catch (const std::exception& error) {
-            // A global selection spanning the music root and outside it has two
-            // files. Report a completed profile save if the shared save fails.
-            if (profile_saved) {
-                changed();
-                try { update_monitor(); refresh(window); }
-                catch (const std::exception& display_error) { log_.write("weights.bulk.refresh.error", display_error.what()); }
-                throw std::runtime_error("Profile weights were saved, but shared weights were not: " + std::string(error.what()));
-            }
-            throw;
-        }
+        try { storage_.set_many(tracks, value); }
+        catch (...) { changed(); refresh_cooldown_preview(); update_monitor(); refresh(window); throw; }
         changed(); refresh_cooldown_preview(); update_monitor(); refresh(window);
         std::wostringstream status;
-        status << L"Saved weight " << std::setprecision(8) << value << L" to " << tracks.size() << L" selected entries | Editing " << scope_label(scope);
+        status << L"Saved weight " << std::setprecision(8) << value << L" to " << tracks.size() << L" selected entries in their music roots";
         SetDlgItemTextW(window, IDC_STATUS, status.str().c_str());
         std::ostringstream details;
-        details << std::setprecision(17) << "count=" << tracks.size() << " weight=" << value << " scope=" << static_cast<int>(scope);
+        details << std::setprecision(17) << "count=" << tracks.size() << " weight=" << value << " storage=music-roots";
         log_.write("weights.bulk", details.str());
     }
     static LRESULT CALLBACK list_proc(HWND list, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id, DWORD_PTR) {
@@ -1192,26 +1095,16 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 rows.push_back({std::move(label), path, {}, 0, 0});
             }
         }
-        const auto context = context_for(playlist, &tracks);
-        const auto editing_scope = scope_for(context);
         for (std::size_t i = 0; i < tracks.size(); ++i) {
-            const auto value = effective_weight(tracks[i], context);
-            rows[i].source = scope_label(value.scope);
+            const auto value = effective_weight(tracks[i]);
+            rows[i].source = value.file.empty() ? L"Default" : L"Music root";
             rows[i].weight = value.weight;
             rows[i].below_minimum = value.weight < minimum_weight_;
-            rows[i].editing_weight = effective_weight(tracks[i], context, editing_scope).weight;
+            rows[i].editing_weight = effective_weight(tracks[i]).weight;
         }
         track_table_.sort(rows);
         tracks.clear();
         for (const auto& row : rows) tracks.push_back(utf8(row.path));
-        SendDlgItemMessageW(window, IDC_WEIGHT_SCOPE, CB_RESETCONTENT, 0, 0);
-        for (const auto scope : {ignorant::WeightScope::Global, ignorant::WeightScope::Folder, ignorant::WeightScope::Playlist}) {
-            if (!storage_.available(scope, context)) continue;
-            const auto label = scope_label(scope);
-            const auto index = SendDlgItemMessageW(window, IDC_WEIGHT_SCOPE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
-            SendDlgItemMessageW(window, IDC_WEIGHT_SCOPE, CB_SETITEMDATA, index, static_cast<int>(scope));
-            if (scope == scope_for(context)) SendDlgItemMessageW(window, IDC_WEIGHT_SCOPE, CB_SETCURSEL, index, 0);
-        }
         std::vector<int> selected;
         std::vector<int> remapped(old_tracks.size(), -1);
         if (preserve) {
@@ -1226,9 +1119,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         const auto remap = [&](int old) { return old >= 0 && static_cast<std::size_t>(old) < remapped.size() ? remapped[old] : -1; };
         editor_playlist_ = playlist;
         visible_tracks_ = std::move(tracks);
-        const bool show_edit = storage_.available(ignorant::WeightScope::Folder, context) || storage_.available(ignorant::WeightScope::Playlist, context);
         track_table_.replace(std::move(rows), selected, remap(caret), remap(anchor), std::max(0, remap(top)),
-            show_edit, L"Edit " + scope_label(editing_scope));
+            false, L"");
         editor_selection_pending_ = false;
         selection(window);
     }
@@ -1238,20 +1130,21 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         for (int value = 0; value <= 10; ++value) EnableWindow(GetDlgItem(window, IDC_EDITOR_WEIGHT_0 + value), !tracks.empty());
         EnableWindow(GetDlgItem(window, IDC_APPLY_WEIGHT), !tracks.empty());
         EnableWindow(GetDlgItem(window, IDC_SELECT_ALL), !visible_tracks_.empty());
-        EnableWindow(GetDlgItem(window, IDC_RESET_LOCAL), FALSE);
+        EnableWindow(GetDlgItem(window, IDC_RESET_WEIGHT), FALSE);
         if (tracks.empty()) {
             SetDlgItemTextW(window, IDC_STATUS, L"No tracks selected. Use Ctrl/Shift-click or Select all, then click a weight."); return;
         }
-        const auto context = context_for(editor_playlist_);
-        const auto scope = scope_for(context);
-        const double weight = effective_weight(tracks.front(), context, scope).weight;
-        bool mixed = false, can_inherit = false;
+        const double weight = effective_weight(tracks.front()).weight;
+        bool mixed = false, can_reset = true;
         for (const auto& track : tracks) {
-            mixed = mixed || effective_weight(track, context, scope).weight != weight;
-            if (scope != ignorant::WeightScope::Global) can_inherit = can_inherit || storage_.has_override(scope, track, context);
+            mixed = mixed || effective_weight(track).weight != weight;
+            can_reset = can_reset && storage_.target(track).has_value();
         }
+        for (int value = 0; value <= 10; ++value) EnableWindow(GetDlgItem(window, IDC_EDITOR_WEIGHT_0 + value), can_reset);
+        EnableWindow(GetDlgItem(window, IDC_APPLY_WEIGHT), can_reset);
         std::wostringstream status;
-        status << tracks.size() << L" selected | Editing " << scope_label(scope) << L" | Weight: ";
+        if (!can_reset) status << L"Add every selected track's music root in Weight storage. ";
+        status << tracks.size() << L" selected | Weight: ";
         if (mixed) status << L"mixed"; else status << std::setprecision(8) << weight;
         if (GetFocus() != GetDlgItem(window, IDC_WEIGHT)) {
             std::wostringstream custom;
@@ -1259,7 +1152,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             SetDlgItemTextW(window, IDC_WEIGHT, custom.str().c_str());
         }
         SetDlgItemTextW(window, IDC_STATUS, status.str().c_str());
-        EnableWindow(GetDlgItem(window, IDC_RESET_LOCAL), can_inherit);
+        EnableWindow(GetDlgItem(window, IDC_RESET_WEIGHT), can_reset);
     }
     static std::wstring control_text(HWND window, int id) {
         const auto child = GetDlgItem(window, id);
@@ -1267,85 +1160,42 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         GetWindowTextW(child, text.data(), static_cast<int>(text.size()));
         return text.data();
     }
-    struct StorageView { ignorant::WeightContext context; std::vector<std::string> tracks; };
-    StorageView storage_view() {
-        auto current = current_track();
-        auto playlist = editor_playlist_ ? editor_playlist_ : playlist_for(current.get());
-        StorageView view;
-        if (playlist) for (int i = 0; i < playlist->GetItemCount(); ++i) {
-            Ref<IAIMPPlaylistItem> item;
-            if (SUCCEEDED(playlist->GetItem(i, IID_IAIMPPlaylistItem, item.out())) && item) {
-                auto key = track_key(item.get()); if (!key.empty()) view.tracks.push_back(std::move(key));
-            }
-        }
-        view.context = context_for(playlist, &view.tracks); return view;
+    void fill_transfer_roots(HWND window) {
+        SendDlgItemMessageW(window, IDC_TRANSFER_ROOT, CB_RESETCONTENT, 0, 0);
+        for (const auto& root : music_folders_)
+            SendDlgItemMessageW(window, IDC_TRANSFER_ROOT, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(root.c_str()));
+        if (!music_folders_.empty()) SendDlgItemMessageW(window, IDC_TRANSFER_ROOT, CB_SETCURSEL, 0, 0);
+        for (const auto id : {IDC_IMPORT, IDC_EXPORT}) EnableWindow(GetDlgItem(window, id), !music_folders_.empty());
     }
-    void fill_storage_scopes(HWND window) {
-        std::lock_guard<std::recursive_mutex> lock(mutex_);
-        const auto context = storage_view().context;
-        SendDlgItemMessageW(window, IDC_WEIGHT_SCOPE, CB_RESETCONTENT, 0, 0);
-        for (const auto scope : {ignorant::WeightScope::Global, ignorant::WeightScope::Folder, ignorant::WeightScope::Playlist}) {
-            if (!storage_.available(scope, context)) continue;
-            const auto label = scope_label(scope);
-            const auto index = SendDlgItemMessageW(window, IDC_WEIGHT_SCOPE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
-            SendDlgItemMessageW(window, IDC_WEIGHT_SCOPE, CB_SETITEMDATA, index, static_cast<int>(scope));
-            if (scope == scope_for(context)) SendDlgItemMessageW(window, IDC_WEIGHT_SCOPE, CB_SETCURSEL, index, 0);
-        }
-    }
-    void transfer_file(const std::filesystem::path& path, bool save, ignorant::WeightScope scope, const StorageView& view) {
-        if (save) {
-            storage_.snapshot(scope, weights_, view.tracks, view.context).save(path);
-        } else {
-            std::ifstream input(path, std::ios::binary);
-            if (!input) throw std::runtime_error("Could not open import file.");
-            const auto key = (music_folder_ / "import-target").u8string();
-            if (storage_.target(scope, key, view.context)) {
-                storage_.import(scope, key, view.context, input); changed(); refresh_cooldown_preview();
-            } else {
-                auto next = weights_; next.import(input); commit(std::move(next));
-            }
-            update_monitor();
-            if (dialog_) refresh(dialog_);
-        }
+    void transfer_file(const std::filesystem::path& path, bool save, const std::filesystem::path& root) {
+        storage_.transfer(root, path, save);
+        if (!save) { storage_error_.clear(); changed(); refresh_cooldown_preview(); update_monitor(); if (dialog_) refresh(dialog_); }
     }
     void storage_transfer(HWND window, bool save) {
-        StorageView view; ignorant::WeightScope scope;
-        {
-            std::lock_guard<std::recursive_mutex> lock(mutex_);
-            view = storage_view(); scope = scope_for(view.context);
-        }
-        // File dialogs must not hold the playback queue lock.
+        const auto index = SendDlgItemMessageW(window, IDC_TRANSFER_ROOT, CB_GETCURSEL, 0, 0);
+        if (index < 0 || static_cast<std::size_t>(index) >= music_folders_.size()) throw std::runtime_error("Select a music root for import/export.");
+        const auto root = music_folders_[index];
         const auto path = choose_file(window, save);
         if (path.empty()) return;
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        transfer_file(path, save, scope, view);
-        storage_status(window, (save ? L"Exported " : L"Imported into ") + scope_label(scope) + L" scope: " + path.wstring());
+        transfer_file(path, save, root);
+        storage_status(window, (save ? L"Copied weights file from " : L"Replaced weights file in ") + root.wstring());
     }
     void storage_status(HWND window, const std::wstring& prefix = L"") {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        const auto context = storage_view().context;
         std::wstring status = prefix;
         if (!status.empty()) status += L"\r\n";
         if (!storage_error_.empty()) status += L"Error: " + storage_error_ + L"\r\n";
-        status += L"Import/export scope: " + scope_label(scope_for(context)) + L" (applied settings)\r\n";
-        status += L"Global: " + (shared_global_ && !music_folder_.empty() ? music_folder_ / L"IgnorantShuffle.weights.tsv" : weights_file_).wstring();
-        if (shared_global_ && music_folder_.empty()) status += L"\r\nChoose the synchronized music root to activate shared weights; using profile for now.";
-        for (const auto scope : {ignorant::WeightScope::Folder, ignorant::WeightScope::Playlist}) {
-            status += L"\r\n" + scope_label(scope) + L": ";
-            if (storage_.available(scope, context)) status += storage_.target(scope, "", context)->wstring();
-            else status += L"disabled or no list inside the music folder";
-        }
+        if (music_folders_.empty()) status += L"Add music roots before saving track weights. Unconfigured tracks use the default weight.";
+        for (const auto& root : music_folders_) status += (root / L"IgnorantShuffle.weights.tsv").wstring() + L"\r\n";
         SetDlgItemTextW(window, IDC_STORAGE_STATUS, status.c_str());
     }
     void apply_storage_dialog(HWND window) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
-        set_storage(control_text(window, IDC_MUSIC_FOLDER),
-            IsDlgButtonChecked(window, IDC_SHARED_GLOBAL) == BST_CHECKED,
-            IsDlgButtonChecked(window, IDC_FOLDER_LOCAL) == BST_CHECKED,
-            IsDlgButtonChecked(window, IDC_PLAYLIST_LOCAL) == BST_CHECKED);
+        set_storage(parse_roots(control_text(window, IDC_MUSIC_FOLDER)));
         if (dialog_) refresh(dialog_);
-        fill_storage_scopes(window);
-        storage_status(window, L"Settings applied; shared files reloaded.");
+        fill_transfer_roots(window);
+        storage_status(window, L"Music roots applied; weights reloaded.");
     }
     void browse_music_folder(HWND window) {
         const auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -1360,7 +1210,9 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (FAILED(browser->GetResult(selected.put()))) return;
         PWSTR folder = nullptr;
         if (SUCCEEDED(selected->GetDisplayName(SIGDN_FILESYSPATH, &folder))) {
-            SetDlgItemTextW(window, IDC_MUSIC_FOLDER, folder); CoTaskMemFree(folder);
+            auto roots = control_text(window, IDC_MUSIC_FOLDER);
+            if (!roots.empty()) roots += L"\r\n";
+            roots += folder; SetDlgItemTextW(window, IDC_MUSIC_FOLDER, roots.c_str()); CoTaskMemFree(folder);
         }
     }
     static INT_PTR CALLBACK storage_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -1369,45 +1221,23 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             if (message == WM_INITDIALOG) {
                 self = reinterpret_cast<Plugin*>(lparam);
                 SetWindowLongPtrW(window, DWLP_USER, lparam); self->storage_dialog_ = window;
-                SetDlgItemTextW(window, IDC_MUSIC_FOLDER, self->music_folder_.c_str());
+                std::wstring roots;
+                for (const auto& root : self->music_folders_) { if (!roots.empty()) roots += L"\r\n"; roots += root.wstring(); }
+                SetDlgItemTextW(window, IDC_MUSIC_FOLDER, roots.c_str());
                 SetDlgItemTextW(window, IDC_DEFAULT_WEIGHT, weight_text(self->weights_.fallback()).c_str());
                 SetDlgItemTextW(window, IDC_MINIMUM_WEIGHT, weight_text(self->minimum_weight_).c_str());
-                CheckDlgButton(window, IDC_SHARED_GLOBAL, self->shared_global_ ? BST_CHECKED : BST_UNCHECKED);
-                CheckDlgButton(window, IDC_FOLDER_LOCAL, self->folder_local_ ? BST_CHECKED : BST_UNCHECKED);
-                CheckDlgButton(window, IDC_PLAYLIST_LOCAL, self->playlist_local_ ? BST_CHECKED : BST_UNCHECKED);
-                EnableWindow(GetDlgItem(window, IDC_COPY_PROFILE), self->shared_global_ && !self->music_folder_.empty());
-                self->fill_storage_scopes(window);
+                self->fill_transfer_roots(window);
                 self->storage_status(window); return TRUE;
             }
             if (!self) return FALSE;
             if (message == WM_COMMAND) {
                 const auto id = LOWORD(wparam);
                 if (id == IDOK || id == IDCANCEL) EndDialog(window, 0);
-                else if (id == IDC_SHARED_GLOBAL || (id == IDC_MUSIC_FOLDER && HIWORD(wparam) == EN_CHANGE))
-                    EnableWindow(GetDlgItem(window, IDC_COPY_PROFILE), IsDlgButtonChecked(window, IDC_SHARED_GLOBAL) == BST_CHECKED && !control_text(window, IDC_MUSIC_FOLDER).empty());
                 else if (id == IDC_BROWSE_MUSIC) self->browse_music_folder(window);
                 else if (id == IDC_APPLY_STORAGE) self->apply_storage_dialog(window);
                 else if (id == IDC_APPLY_DEFAULT_WEIGHT) self->apply_default_weight(window);
                 else if (id == IDC_APPLY_MINIMUM_WEIGHT && HIWORD(wparam) == BN_CLICKED) self->apply_minimum_weight(window);
                 else if (id == IDC_IMPORT || id == IDC_EXPORT) self->storage_transfer(window, id == IDC_EXPORT);
-                else if (id == IDC_WEIGHT_SCOPE && HIWORD(wparam) == CBN_SELCHANGE) {
-                    std::lock_guard<std::recursive_mutex> lock(self->mutex_);
-                    const auto index = SendDlgItemMessageW(window, id, CB_GETCURSEL, 0, 0);
-                    if (index >= 0) {
-                        self->edit_scope_ = static_cast<ignorant::WeightScope>(SendDlgItemMessageW(window, id, CB_GETITEMDATA, index, 0));
-                        self->save_preferences();
-                        if (self->dialog_) self->refresh(self->dialog_);
-                        self->update_monitor(); self->storage_status(window);
-                    }
-                }
-                else if (id == IDC_COPY_PROFILE) {
-                    std::lock_guard<std::recursive_mutex> lock(self->mutex_);
-                    self->apply_storage_dialog(window);
-                    const auto copied = self->storage_.copy_profile(self->weights_);
-                    self->changed(); self->refresh_cooldown_preview(); self->update_monitor();
-                    if (self->dialog_) self->refresh(self->dialog_);
-                    self->storage_status(window, L"Copied " + std::to_wstring(copied) + L" missing global weights; existing shared values kept.");
-                }
                 return TRUE;
             }
             if (message == WM_CLOSE) { EndDialog(window, 0); return TRUE; }
@@ -1430,7 +1260,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         options.Flags = OFN_EXPLORER | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
         return (save ? GetSaveFileNameW(&options) : GetOpenFileNameW(&options)) ? filename : std::filesystem::path{};
     }
-    void command(HWND window, int id, int notification) {
+    void command(HWND window, int id, int /*notification*/) {
         // Keep the options dialog and folder picker outside the queue lock.
         if (id == IDC_STORAGE) {
             DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_STORAGE), window, storage_proc, reinterpret_cast<LPARAM>(this)); return;
@@ -1444,20 +1274,10 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (id == IDC_SELECT_ALL) {
             track_table_.select_all(); selection(window);
         }
-        if (id == IDC_WEIGHT_SCOPE && notification == CBN_SELCHANGE) {
-            const auto index = SendDlgItemMessageW(window, id, CB_GETCURSEL, 0, 0);
-            if (index >= 0) {
-                edit_scope_ = static_cast<ignorant::WeightScope>(SendDlgItemMessageW(window, id, CB_GETITEMDATA, index, 0));
-                save_preferences(); refresh(window);
-                update_monitor();
-            }
-        }
-        if (id == IDC_RESET_LOCAL) {
+        if (id == IDC_RESET_WEIGHT) {
             const auto tracks = selected_tracks(window);
-            const auto context = context_for(editor_playlist_);
-            const auto scope = scope_for(context);
-            if (!tracks.empty() && scope != ignorant::WeightScope::Global) {
-                storage_.clear_many(scope, tracks, context);
+            if (!tracks.empty()) {
+                storage_.clear_many(tracks);
                 changed(); refresh_cooldown_preview(); refresh(window);
                 update_monitor();
             }
@@ -1552,16 +1372,14 @@ public:
             if (!playlists_ || !messages_ || !queue_) { Finalize(); return E_NOINTERFACE; }
             Ref<IAIMPString> profile;
             if (FAILED(core->GetPath(AIMP_CORE_PATH_PROFILE, profile.put())) || !profile) { Finalize(); return E_FAIL; }
-            weights_file_ = std::filesystem::path(wide(profile.get())) / L"IgnorantShuffle" / L"weights.tsv";
-            std::filesystem::create_directories(weights_file_.parent_path());
-            log_file_ = weights_file_.parent_path() / L"plugin.log";
+            profile_dir_ = std::filesystem::path(wide(profile.get())) / L"IgnorantShuffle";
+            std::filesystem::create_directories(profile_dir_);
+            log_file_ = profile_dir_ / L"plugin.log";
             log_.start(log_file_);
             log_.write("plugin.start", "version=" + std::string(ignorant::build_version) + " core=" + ignorant::core_version + " arch=" + std::string(sizeof(void*) == 8 ? "x64" : "x86") + " pid=" + std::to_string(GetCurrentProcessId()));
-            preferences_file_ = weights_file_.parent_path() / L"preferences.ini";
+            preferences_file_ = profile_dir_ / L"preferences.ini";
             load_preferences();
-            weights_.load(weights_file_);
-            for (const auto& entry : weights_.entries()) from_utf8(entry.first);
-            try { storage_.configure(music_folder_, shared_global_ && !music_folder_.empty(), folder_local_, playlist_local_); }
+            try { storage_.configure(music_folders_); }
             catch (const std::exception& error) { storage_error_ = from_utf8(error.what()); log_.write("storage.error", error.what()); }
             // Loading the plugin during playback must also cool down the track
             // already playing, even though we missed its stream-start event.
@@ -1603,7 +1421,7 @@ public:
         registered_ = false;
         history_.clear();
         reset_finite_progress();
-        weight_contexts_.clear(); editor_playlist_ = {};
+         editor_playlist_ = {};
         playing_.reset(); audible_.reset(); cursor_source_.reset(); beginning_.reset();
         recent_tracks_.clear(); prepared_track_ = {}; cooldown_preview_ready_ = false;
         queue_refresh_pending_ = false;
@@ -1649,7 +1467,6 @@ public:
                 history_.clear(); playing_.reset(); audible_.reset(); cursor_source_.reset(); beginning_.reset();
                 queue_refresh_pending_ = false;
             }
-            if (message == AIMP_MSG_EVENT_PLAYBACK_QUEUE) weight_contexts_.clear();
             if (message == AIMP_MSG_EVENT_STREAM_START || message == AIMP_MSG_EVENT_PLAYER_STATE ||
                 message == AIMP_MSG_EVENT_PLAYING_FILE_INFO || message == AIMP_MSG_EVENT_PLAYBACK_QUEUE ||
                 message == AIMP_MSG_EVENT_PROPERTY_VALUE) request_monitor_update();
@@ -1689,7 +1506,7 @@ public:
             auto source = source_for(current, flags, playlist);
             auto previous = source ? source->previous.lock() : nullptr;
             if (!previous || !previous->item) return handled({}, output);
-            if (effective_weight(track_key(previous->item.get()), context_for(previous->playlist)).weight < minimum_weight_) return handled({}, output);
+            if (effective_weight(track_key(previous->item.get())).weight < minimum_weight_) return handled({}, output);
             // Re-resolve membership so deleted items cannot be returned from history.
             if (!playlist_for(previous->item.get())) return handled({}, output);
             log_.write("queue.previous.choice", "source=" + context_id(source) + " previous=" + context_id(previous));

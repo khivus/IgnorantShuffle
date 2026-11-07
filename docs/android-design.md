@@ -34,16 +34,14 @@ Only observed PLAYING tracks advance history/cooldown/finite progress. Previewin
 rerolling, UI redraws and command dispatch do not consume tracks. One command can
 be pending at a time, with a bounded confirmation timeout.
 
-Queue IDs are volatile. Persistent Android keys include AIMP's exposed media ID
-or URI plus title and artist. Changed identities receive new keys to avoid
-silently assigning an old track's weight to another track. Some library edits
-therefore require weight reassignment for local-only values. v0.3 links identities
-to actual relative paths by indexing the selected music tree; unique title/artist
-tags match automatically and ambiguous entries require a manual file link. Both
-platforms prefer the root global TSV, pending folder selection. Unmatched entries
-keep local/default values. Shared-file I/O is serialized off the playback thread,
-with fresh-read merging, temporary verification, backup and rollback. Only root
-global weights are shared; see [folder storage](shared-music-folder.md).
+Queue IDs are volatile. Persistent Android identities are used only for file links
+and listening history. Each selected music root has its own file index and
+`IgnorantShuffle.weights.tsv`. Indexes, root selections and links are cached
+privately; track weights never are. Matching spans the selected roots and
+requires a unique file URI or title/artist pair, otherwise an explicit link.
+Weights I/O is serialized off the playback/UI thread. Each edit rereads its
+root file; import replaces it and export copies the original text. See
+[folder storage](shared-music-folder.md).
 
 The automatic lead is configurable from 0 to 5000 ms (300 by default). A scheduled
 roll captures its lead for deadline validation. Notifications can include paused

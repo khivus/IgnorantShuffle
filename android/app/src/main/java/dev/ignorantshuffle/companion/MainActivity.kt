@@ -69,12 +69,13 @@ class MainActivity : ComponentActivity() {
         if (uri != null) {
             // The document picker can recreate this Activity. Rebuild the text
             // from app state rather than keeping a transient multi-MB string.
-            val text = if (exportKind == "weights") monitor.exportWeights() else monitor.report(true)
-            Thread {
-                try {
-                    requireNotNull(contentResolver.openOutputStream(uri, "wt")).bufferedWriter(Charsets.UTF_8).use { it.write(text) }
-                    runOnUiThread { monitor.log("Export completed") }
-                } catch (e: Exception) { runOnUiThread { monitor.log("Export error: $e") } }
+            val write: (String) -> Unit = { text ->
+                requireNotNull(contentResolver.openOutputStream(uri, "wt")).bufferedWriter(Charsets.UTF_8).use { it.write(text) }
+            }
+            if (exportKind == "weights") monitor.exportWeights(write)
+            else Thread {
+                try { write(monitor.report(true)); runOnUiThread { monitor.log("Export completed") } }
+                catch (e: Exception) { runOnUiThread { monitor.log("Export error: $e") } }
             }.start()
         }
     }
@@ -86,11 +87,11 @@ class MainActivity : ComponentActivity() {
                     val buffer = ByteArray(8192)
                     while (true) {
                         val n = input.read(buffer); if (n < 0) break
-                        require(data.size() + n <= 2_000_000) { "Import is too large (maximum 2MB)" }
+                        require(data.size() + n <= 8_000_000) { "Import is too large (maximum 8MB)" }
                         data.write(buffer, 0, n)
                     }
                 }
-                val text = data.toString("UTF-8")
+                val text = Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(data.toByteArray())).toString()
                 runOnUiThread { monitor.importWeights(text) }
             } catch (e: Exception) { runOnUiThread { monitor.log("Import error: $e") } }
         }.start()
@@ -105,7 +106,7 @@ class MainActivity : ComponentActivity() {
             ShuffleTheme(monitor.preferences, window) { Surface(Modifier.fillMaxSize()) {
                 ShuffleScreen(monitor, ::openSettings, ::openAimp, ::copySummary,
                     { exportKind = "log"; export.launch(LogExport.filename()) },
-                    { exportKind = "weights"; export.launch("IgnorantShuffle-Android.weights.tsv") },
+                    { exportKind = "weights"; export.launch(PortableWeights.FILENAME) },
                     { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications, ::chooseMusicFolder,
                     batteryExempt, ::openBatterySettings, updates)
                 if (updates.visible) UpdatesScreen(updates, updates::prepareInstall, ::openUpdateRelease)

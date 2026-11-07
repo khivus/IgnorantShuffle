@@ -139,26 +139,3 @@ class ShuffleModel(private val planner: Planner) {
     fun requested(choice: Choice) { navigation = choice.historyIndex }
     fun cancelRequest() { navigation = null }
 }
-
-object WeightTransfer {
-    fun parse(text: String): Map<String, Double> {
-        val result = linkedMapOf<String, Double>()
-        text.removePrefix("\uFEFF").lineSequence().forEachIndexed { index, line ->
-            if (line.isBlank() || line.startsWith('#')) return@forEachIndexed
-            val parts = line.trimEnd('\r').split('\t', limit = 2)
-            require(parts.size == 2) { "Line ${index + 1}: expected weight<TAB>key" }
-            val number = parts[0].toDoubleOrNull()
-            require(number != null && number.isFinite() && number >= 0) { "Line ${index + 1}: invalid weight" }
-            require(parts[1].matches(Regex("android:v1:[a-f0-9]{64}"))) {
-                "Line ${index + 1}: this version imports Android identity keys only; Windows paths cannot be mapped automatically"
-            }
-            result[parts[1]] = number
-        }
-        return result
-    }
-
-    fun write(weights: Map<String, Double>): String = buildString {
-        appendLine("# IgnorantShuffle Android weights v1: weight<TAB>app-local track key (UTF-8)")
-        weights.toSortedMap().forEach { (key, value) -> appendLine("$value\t$key") }
-    }
-}

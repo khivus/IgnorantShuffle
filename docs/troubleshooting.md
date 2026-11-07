@@ -26,13 +26,13 @@ With **Attach to AIMP** enabled, the panel hides when AIMP's main window is mini
 
 ## A weight differs from the value being edited
 
-The editor's **Weight** column shows the value used for playback. **Edit** shows the selected scope, which can be overridden by a higher-priority layer. Check **Source** or hover the weight for details. See [Weight storage](weight-storage.md) for precedence and **Inherit** behavior.
+The editor's **Weight** column shows the playback value. **Source** distinguishes a saved music-root weight from the default. Add every selected song's music root before editing. See [Weight storage](weight-storage.md).
 
 ## Storage errors
 
-A malformed profile weights file prevents initialization and is not overwritten. Repair it or move it aside before restarting the plugin.
+A malformed music-root weights file stops weighted selection and is not overwritten by edits. Repair it and reload. Old profile weights files are no longer used.
 
-An unreadable or malformed shared file is reported in the panel and stops weighted selection. Fix it and use **Apply / reload**, or disable that shared-storage option to return to profile behavior. Use **Apply / reload** after files arrive from another device. See [Weight storage](weight-storage.md).
+An unreadable or malformed shared file is reported in the panel and stops weighted selection. Fix it and use **Apply / reload**. Removing a root returns its songs to the default weight. Use **Apply / reload** after files arrive from another device. See [Weight storage](weight-storage.md).
 
 ## Collecting diagnostic logs
 

@@ -19,7 +19,7 @@ The publisher regression is offline and does not authenticate or contact GitHub.
 
 Core tests cover weighted boundaries and a fixed-seed 100,000-draw distribution, zero/empty inputs, large imported values, invalid imports, transactional merging, round trips, and replacing an existing weights file.
 
-Default-weight tests cover finite nonnegative validation, fractional/large/zero fallbacks, explicit-weight and local-override precedence, inheritance, INI persistence and precision, invalid INI recovery, and immediate panel/table/queue updates through the settings dialog.
+Default-weight tests cover finite nonnegative validation, fractional/large/zero fallbacks, music-root weights and resetting entries to the default, INI persistence and precision, invalid INI recovery, and immediate panel/table/queue updates through the settings dialog.
 
 ### AIMP adapter and queue contracts
 
@@ -51,7 +51,7 @@ and actual HTTP streaming plus rejected redirects against localhost. Android's
 system installer and permission page require the [phone checks](android-updates.md#phone-checks).
 
 Shared-folder checks also exercise a single UTF-8 TSV fixture in Windows and
-Android, conservative/ambiguous file matching, source preservation after queue
+Android, conservative/ambiguous file matching, root isolation and source preservation after playlist
 additions, provider renames that change document IDs, failed temporary verification,
 promotion/rollback failures and synchronized changes arriving before replacement.
 The Android document-provider grant, actual tag reads and bidirectional phone/file

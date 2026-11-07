@@ -32,20 +32,29 @@ class MusicFolderStore(private val context: Context) {
     fun load(): Pair<FolderConfig, List<LibraryFile>> {
         if (!cache.baseFile.exists() && !File(cache.baseFile.path + ".bak").exists()) return FolderConfig() to emptyList()
         val json = JSONObject(cache.openRead().bufferedReader().use { it.readText() })
-        require(json.getInt("version") == 1) { "Unsupported music-folder settings version" }
-        val links = json.getJSONObject("links")
-        val config = FolderConfig(json.optString("root").takeIf { it.isNotBlank() }, json.getString("label"),
-            json.optBoolean("enabled", true), links.keys().asSequence().associateWith { links.getString(it) })
+        val version = json.getInt("version")
+        require(version in 1..2) { "Unsupported music-folder settings version" }
+        val roots = if (version == 1) json.optString("root").takeIf { it.isNotBlank() }?.let {
+            listOf(MusicRoot(it, json.getString("label")))
+        }.orEmpty() else json.getJSONArray("roots").let { array ->
+            (0 until array.length()).map { array.getJSONObject(it).let { item -> MusicRoot(item.getString("uri"), item.getString("label")) } }
+        }
+        val links = json.getJSONObject("links").let { obj -> obj.keys().asSequence().associateWith {
+            if (version == 1) "${roots.firstOrNull()?.uri}|${obj.getString(it)}" else obj.getString(it)
+        } }
+        val config = FolderConfig(roots, links, json.optString("transferRoot").takeIf { it.isNotBlank() })
         val files = json.getJSONArray("files")
         return config to (0 until files.length()).map { i -> files.getJSONObject(i).let {
             val path = it.getString("path"); require(PortableWeights.relative(path)) { "Invalid cached relative path" }
-            LibraryFile(path, it.getString("uri"), it.getString("title"), it.getString("artist"))
+            LibraryFile(path, it.getString("uri"), it.getString("title"), it.getString("artist"),
+                if (version == 1) roots.first().uri else it.getString("root"))
         } }
     }
     fun save(config: FolderConfig, files: List<LibraryFile>) {
-        val json = JSONObject().put("version", 1).put("root", config.root.orEmpty()).put("label", config.label)
-            .put("enabled", config.enabled).put("links", JSONObject(config.links)).put("files", JSONArray().apply {
-                files.forEach { put(JSONObject().put("path", it.path).put("uri", it.uri).put("title", it.title).put("artist", it.artist)) }
+        val json = JSONObject().put("version", 2).put("transferRoot", config.root.orEmpty())
+            .put("roots", JSONArray().apply { config.roots.forEach { put(JSONObject().put("uri", it.uri).put("label", it.label)) } })
+            .put("links", JSONObject(config.links)).put("files", JSONArray().apply {
+                files.forEach { put(JSONObject().put("path", it.path).put("uri", it.uri).put("title", it.title).put("artist", it.artist).put("root", it.root)) }
             })
         val stream = cache.startWrite()
         try { stream.write(json.toString().toByteArray(Charsets.UTF_8)); cache.finishWrite(stream) }
@@ -74,7 +83,7 @@ class MusicFolderStore(private val context: Context) {
                         artist = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST).orEmpty()
                     } catch (_: Exception) { /* Keep the real path for manual linking of unreadable tags. */ }
                     finally { runCatching { metadata.release() } }
-                    files.add(LibraryFile(path, node.uri.toString(), title, artist))
+                    files.add(LibraryFile(path, node.uri.toString(), title, artist, tree.toString()))
                     if (files.size % 20 == 0) progress(files.size)
                 }
             }

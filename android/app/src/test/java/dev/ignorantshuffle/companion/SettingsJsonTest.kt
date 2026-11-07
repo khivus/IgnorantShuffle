@@ -11,10 +11,9 @@ class SettingsJsonTest {
     }
 
     @Test fun savedMinimumSurvivesReloadIncludingSmallPositiveFractions() {
-        val weights = mapOf("excluded" to 0.0, "low" to 1.0, "high" to 25.5)
         for (minimum in listOf(1e-9, 0.1, 1.0, 2.5, 100.0)) {
             val settings = Settings(5.0, 7, true, minimum)
-            assertEquals(settings to weights, SettingsJson.decode(SettingsJson.encode(settings, weights)))
+            assertEquals(settings to emptyMap<String, Double>(), SettingsJson.decode(SettingsJson.encodeSettings(settings)))
         }
     }
 
@@ -25,4 +24,12 @@ class SettingsJsonTest {
             }
         }
     }
+    @org.junit.Test fun newSettingsStorageContainsRulesOnly() {
+        val settings = Settings(defaultWeight = 2.5, minimumWeight = 0.25)
+        val text = SettingsJson.encodeSettings(settings)
+        assertFalse(org.json.JSONObject(text).has("weights"))
+        assertEquals(settings, SettingsJson.decode(text).first)
+        assertTrue(SettingsJson.decode(text).second.isEmpty())
+    }
+
 }

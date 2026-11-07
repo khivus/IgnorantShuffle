@@ -16,8 +16,8 @@ Every new release includes both Windows and Android downloads and lists their in
 - Optional finite playlists: higher weights tend to play earlier, each eligible filename plays once per pass, then AIMP's end-of-playlist setting applies.
 - Current/next track details, selection probabilities, and a **Reroll next** button.
 - A compact, resizable panel with scrolling, always-on-top mode, and optional attachment beside AIMP.
-- Bulk weight editing, import/export, and optional folder-local and AIMP-playlist weight layers.
-- A shared global music-folder file preferred by default, with relative paths compatible with the Android companion. [Set up both devices](docs/shared-music-folder.md).
+- Bulk weight editing and exact weights-file import/export.
+- One weights file per music root, with relative paths compatible with the Android companion. [Set up both devices](docs/shared-music-folder.md).
 - Automatic update checks, with downloads and installation started only when you choose.
 
 ## Windows quick start
@@ -25,7 +25,7 @@ Every new release includes both Windows and Android downloads and lists their in
 1. Download the **AIMP installer package (.aimppack)** from a **Windows** entry in [Releases](https://github.com/khivus/IgnorantShuffle/releases). It contains both x64 and x86 builds. Historical `v...` releases are also Windows releases.
 2. Open it with AIMP or drop it onto AIMP's main window. Complete installation and restart if asked.
 3. Enable IgnorantShuffle in **Preferences → Plugins** if needed.
-4. Choose your main synchronized music root under **Track weights... > Weight storage...** to use the shared file. Profile weights work until then; **Copy missing profile weights** migrates saved values. Assign weights under **Track weights...**; unconfigured tracks default to **5**.
+4. Add your music roots under **Track weights... > Weight storage...**, one folder per line. Each root stores its own weights file. Assign weights under **Track weights...**; unconfigured tracks default to **5**.
 5. Turn on **AIMP Shuffle** and leave **Weighted shuffle enabled** checked in the plugin panel.
 
 Separate DLL downloads are available for manual installation. Choose the architecture of **AIMP**, which may differ from Windows. See the [installation guide](docs/installation.md) for details.
@@ -36,7 +36,7 @@ Separate DLL downloads are available for manual installation. Choose the archite
 | --- | --- |
 | [Installation](docs/installation.md) | AIMP package, manual DLL installation, and first use. |
 | [Using the plugin](docs/usage.md) | Weight rules, panel controls, bulk edits, cooldown, and window behavior. |
-| [Weight storage](docs/weight-storage.md) | Profile storage, portable music folders, local overrides, and import/export. |
+| [Weight storage](docs/weight-storage.md) | Music-root files, multiple libraries, defaults, and import/export. |
 | [Updates](docs/updates.md) | Automatic checks, manual checks, and installing a newer release. |
 | [Troubleshooting](docs/troubleshooting.md) | Common playback and window questions, storage errors, and diagnostic logs. |
 

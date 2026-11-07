@@ -264,6 +264,8 @@ public:
 };
 #undef STUB
 struct PluginChecks {
+    static void write_weight(Plugin& plugin, const std::string& track, double value) { plugin.storage_.set_many({track}, value); }
+
     static void minimum_weight_checks(Manager& manager, Messages& messages) {
         Track zero(L"minimum-zero.flac"), low(L"minimum-low.flac"), equal(L"minimum-equal.flac"), inherited(L"minimum-default.flac");
         EmptyPlaylist playlist; playlist.items = {&zero, &low, &equal, &inherited};
@@ -454,13 +456,17 @@ struct PluginChecks {
         panel.destroy();
     }
     static void sorting_checks(Manager& manager) {
-        Track first(L"Z:\\Music\\Zulu.flac"), second(L"A:\\Music\\alpha.flac"), third(L"M:\\Music\\Beta.flac");
+        const auto fixture = std::filesystem::current_path() / (L"sort-music-" + std::to_wstring(GetCurrentProcessId()));
+        std::filesystem::create_directories(fixture / L"A" / L"Music");
+        std::filesystem::create_directories(fixture / L"M" / L"Music");
+        std::filesystem::create_directories(fixture / L"Z" / L"Music");
+        Track first((fixture / L"Z" / L"Music" / L"Zulu.flac").wstring()), second((fixture / L"A" / L"Music" / L"alpha.flac").wstring()), third((fixture / L"M" / L"Music" / L"Beta.flac").wstring());
         EmptyPlaylist playlist; playlist.items = {&first, &second, &third, &second};
         manager.active = &playlist;
         Plugin plugin;
         plugin.playlists_ = query<IAIMPServicePlaylistManager>(&manager, IID_IAIMPServicePlaylistManager);
-        plugin.weights_file_ = std::filesystem::current_path() / L"sort-weights.tsv";
-        plugin.weights_.set(track_key(&first), 25); plugin.weights_.set(track_key(&second), 2.5); plugin.weights_.set(track_key(&third), 0);
+        plugin.storage_.configure({fixture});
+        write_weight(plugin, track_key(&first), 25); write_weight(plugin, track_key(&second), 2.5); write_weight(plugin, track_key(&third), 0);
         module = GetModuleHandleW(nullptr);
         const auto editor = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_SETTINGS), nullptr, Plugin::dialog_proc, reinterpret_cast<LPARAM>(&plugin));
         const auto table = GetDlgItem(editor, IDC_TRACKS);
@@ -480,7 +486,7 @@ struct PluginChecks {
         sort(0);
         check(plugin.visible_tracks_.front() == track_key(&first) && plugin.visible_tracks_.back() == track_key(&third), "Clicking the same header reverses sorting.");
         plugin.apply_editor_weight(editor, 10);
-        check(plugin.weights_.get(track_key(&first)) == 10 && plugin.weights_.get(track_key(&second)) == 10 && plugin.weights_.get(track_key(&third)) == 0,
+        check(plugin.effective_weight(track_key(&first)).weight == 10 && plugin.effective_weight(track_key(&second)).weight == 10 && plugin.effective_weight(track_key(&third)).weight == 0,
             "Bulk edits after sorting target the selected filenames and preserve the sort.");
         sort(1);
         check(plugin.visible_tracks_.front() == track_key(&second) && plugin.visible_tracks_.back() == track_key(&first), "Track titles sort without case sensitivity.");
@@ -496,13 +502,13 @@ struct PluginChecks {
         plugin.track_table_.sort_by(3); plugin.track_table_.sort(rows);
         check(rows.front().editing_weight == 0 && rows[1].editing_weight == 2.5 && rows.back().editing_weight == 25, "Edit values sort numerically independently of playback weights.");
         DestroyWindow(editor); plugin.Finalize(); manager.active = nullptr;
-        std::filesystem::remove(plugin.weights_file_);
+        std::filesystem::remove_all(fixture);
     }
     static void bulk_editor_checks(Manager& manager, Messages& messages) {
         namespace fs = std::filesystem;
         const auto fixture = fs::current_path() / (L"adapter-bulk-" + std::to_wstring(GetCurrentProcessId()));
         check(!fs::exists(fixture), "Bulk fixture must be new."); fs::create_directory(fixture);
-        Track first(L"bulk-first.flac"), second(L"bulk-second.flac"), third(L"bulk-third.flac"), fourth(L"bulk-fourth.flac");
+        Track first((fixture / L"bulk-first.flac").wstring()), second((fixture / L"bulk-second.flac").wstring()), third((fixture / L"bulk-third.flac").wstring()), fourth((fixture / L"bulk-fourth.flac").wstring());
         EmptyPlaylist playlist; playlist.items = {&first, &second, &third, &fourth};
         first.owner = second.owner = third.owner = fourth.owner = &playlist;
         second.index = 1; third.index = 2; fourth.index = 3;
@@ -512,16 +518,15 @@ struct PluginChecks {
         plugin.playlists_ = query<IAIMPServicePlaylistManager>(&manager, IID_IAIMPServicePlaylistManager);
         plugin.messages_ = query<IAIMPServiceMessageDispatcher>(&messages, IID_IAIMPServiceMessageDispatcher);
         plugin.queue_ = query<IAIMPServicePlaybackQueue2>(&queue, IID_IAIMPServicePlaybackQueue2);
-        plugin.weights_file_ = fixture / L"profile.tsv";
-        plugin.weights_.set("bulk-first.flac", 1); plugin.weights_.set("bulk-second.flac", 2);
-        plugin.weights_.set("bulk-third.flac", 3); plugin.weights_.set("bulk-fourth.flac", 4);
-        plugin.weights_.save(plugin.weights_file_);
+        plugin.storage_.configure({fixture}); plugin.music_folders_ = {fixture};
+        write_weight(plugin, track_key(&first), 1); write_weight(plugin, track_key(&second), 2);
+        write_weight(plugin, track_key(&third), 3); write_weight(plugin, track_key(&fourth), 4);
         module = GetModuleHandleW(nullptr);
         const auto editor = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_SETTINGS), nullptr, Plugin::dialog_proc, reinterpret_cast<LPARAM>(&plugin));
         const auto table = GetDlgItem(editor, IDC_TRACKS);
         check(editor && (GetWindowLongPtrW(table, GWL_STYLE) & LVS_TYPEMASK) == LVS_REPORT && !(GetWindowLongPtrW(table, GWL_STYLE) & LVS_SINGLESEL), "Track table supports Ctrl/Shift multi-selection.");
         auto cell = [&](int row, int column) { wchar_t text[1024]{}; ListView_GetItemText(table, row, column, text, 1024); return std::wstring(text); };
-        check(cell(0, 0) == L"1" && cell(0, 1) == L"bulk-first.flac" && cell(0, 2) == L"Global", "Numeric weight, track name and source occupy distinct readable columns.");
+        check(cell(0, 0) == L"1" && cell(0, 1) == L"bulk-first.flac" && cell(0, 2) == L"Music root", "Numeric weight, track name and source occupy distinct readable columns.");
         check(ListView_GetColumnWidth(table, 3) == 0, "The redundant edit-value column is hidden in profile-only mode.");
         check(!GetDlgItem(editor, IDC_IMPORT) && !GetDlgItem(editor, IDC_EXPORT), "Import/export no longer occupy track-view controls.");
         check(!IsWindowEnabled(GetDlgItem(editor, IDC_APPLY_WEIGHT)), "Applying a weight requires a selection.");
@@ -544,7 +549,7 @@ struct PluginChecks {
         }
         const auto before = queue.notifications;
         SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_EDITOR_WEIGHT_0 + 6, BN_CLICKED), 0);
-        check(plugin.weights_.get("bulk-first.flac") == 6 && plugin.weights_.get("bulk-third.flac") == 6 && plugin.weights_.get("bulk-second.flac") == 2 && plugin.weights_.get("bulk-fourth.flac") == 4,
+        check(plugin.effective_weight(track_key(&first)).weight == 6 && plugin.effective_weight(track_key(&third)).weight == 6 && plugin.effective_weight(track_key(&second)).weight == 2 && plugin.effective_weight(track_key(&fourth)).weight == 4,
             "A quick button assigns only the selected disjoint rows.");
         check(queue.notifications == before + 1 && plugin.selected_rows(editor) == std::vector<int>({0, 2}),
             "A batch refreshes the queue once and preserves the selected rows.");
@@ -552,13 +557,13 @@ struct PluginChecks {
             "Bulk edits preserve the keyboard caret and Shift-selection anchor.");
         SetDlgItemTextW(editor, IDC_WEIGHT, L"25.5");
         SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_APPLY_WEIGHT, BN_CLICKED), 0);
-        ignorant::Weights saved; saved.load(plugin.weights_file_);
+        ignorant::Weights saved; saved.load(fixture / L"IgnorantShuffle.weights.tsv");
         check(saved.get("bulk-first.flac") == 25.5 && saved.get("bulk-third.flac") == 25.5 && saved.get("bulk-second.flac") == 2,
             "Custom fractional weights above ten are saved for every selected row.");
         check(cell(0, 0) == L"25.5" && cell(2, 0) == L"25.5" && cell(1, 0) == L"2", "Fractional and imported weights update directly in their table cells.");
         SetFocus(GetDlgItem(editor, IDC_WEIGHT)); SetDlgItemTextW(editor, IDC_WEIGHT, L"2.5");
         SendMessageW(editor, WM_COMMAND, IDOK, 0);
-        check(IsWindow(editor) && plugin.weights_.get("bulk-first.flac") == 2.5 && plugin.weights_.get("bulk-third.flac") == 2.5,
+        check(IsWindow(editor) && plugin.effective_weight(track_key(&first)).weight == 2.5 && plugin.effective_weight(track_key(&third)).weight == 2.5,
             "Enter in the custom field applies its value without closing the track view.");
         for (const auto* bad : {L"", L"-1", L"NaN", L"inf", L"1e999", L"25junk"}) {
             const auto original = plugin.weights_.entries();
@@ -579,30 +584,26 @@ struct PluginChecks {
         NMLVGETINFOTIPW tip{}; tip.hdr.hwndFrom = table; tip.hdr.idFrom = IDC_TRACKS; tip.hdr.code = LVN_GETINFOTIPW;
         tip.iItem = 0; tip.pszText = tip_text; tip.cchTextMax = 1024;
         SendMessageW(editor, WM_NOTIFY, IDC_TRACKS, reinterpret_cast<LPARAM>(&tip));
-        check(std::wstring(tip_text).find(L"Playback weight: 0 (excluded)") != std::wstring::npos && std::wstring(tip_text).find(L"bulk-first.flac") != std::wstring::npos,
+        check(std::wstring(tip_text).find(L"Playback weight: 0 (excluded)") != std::wstring::npos && std::wstring(tip_text).find((fixture / L"bulk-first.flac").wstring()) != std::wstring::npos,
             "Weight tooltips expose the playback value, exclusion and full track identity.");
         ShowWindow(editor, SW_SHOWNOACTIVATE); UpdateWindow(editor); capture_preview(editor, L"track-weights-excluded.bmp");
         check(!IsWindowEnabled(GetDlgItem(editor, IDC_EDITOR_WEIGHT_10)) && !IsWindowEnabled(GetDlgItem(editor, IDC_APPLY_WEIGHT)),
             "Clearing selection disables bulk actions.");
         bool empty_rejected = false;
         try { plugin.apply_editor_weight(editor, 8); } catch (const std::exception&) { empty_rejected = true; }
-        check(empty_rejected && plugin.weights_.get("bulk-first.flac") == 0, "No-selection calls cannot change a focused but unselected row.");
+        check(empty_rejected && plugin.effective_weight(track_key(&first)).weight == 0, "No-selection calls cannot change a focused but unselected row.");
         SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_SELECT_ALL, BN_CLICKED), 0);
         SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_EDITOR_WEIGHT_10, BN_CLICKED), 0);
-        SendDlgItemMessageW(editor, IDC_WEIGHT_SCOPE, CB_SETCURSEL, 0, 0);
-        SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_WEIGHT_SCOPE, CBN_SELCHANGE), 0);
-        check(plugin.selected_rows(editor).size() == 4, "Scope refresh preserves the whole multi-selection.");
         const auto settings = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_STORAGE), editor, Plugin::storage_proc, reinterpret_cast<LPARAM>(&plugin));
-        check(settings && GetDlgItem(settings, IDC_IMPORT) && GetDlgItem(settings, IDC_EXPORT) && SendDlgItemMessageW(settings, IDC_WEIGHT_SCOPE, CB_GETCOUNT, 0, 0) == 1,
+        check(settings && GetDlgItem(settings, IDC_IMPORT) && GetDlgItem(settings, IDC_EXPORT) && SendDlgItemMessageW(settings, IDC_TRANSFER_ROOT, CB_GETCOUNT, 0, 0) == 1,
             "Weight storage exposes Import/Export with an explicit available scope selector.");
-        const auto view = plugin.storage_view();
         const auto exported = fixture / L"export.tsv";
-        plugin.transfer_file(exported, true, ignorant::WeightScope::Global, view);
+        plugin.transfer_file(exported, true, fixture);
         ignorant::Weights exported_weights; exported_weights.load(exported);
         check(exported_weights.entries().size() == 4 && exported_weights.get("bulk-third.flac") == 10, "Storage export includes the applied scope and current list.");
         { std::ofstream input(fixture / L"import.tsv"); input << "30.5\tbulk-first.flac\n0\tbulk-third.flac\n"; }
-        plugin.transfer_file(fixture / L"import.tsv", false, ignorant::WeightScope::Global, view);
-        check(plugin.weights_.get("bulk-first.flac") == 30.5 && plugin.weights_.get("bulk-third.flac") == 0 && plugin.selected_rows(editor).size() == 4,
+        plugin.transfer_file(fixture / L"import.tsv", false, fixture);
+        check(plugin.effective_weight(track_key(&first)).weight == 30.5 && plugin.effective_weight(track_key(&third)).weight == 0 && plugin.selected_rows(editor).size() == 4,
             "Storage import supports large/fractional/zero values and retains the editor's selected entries.");
         ShowWindow(editor, SW_SHOWNOACTIVATE); UpdateWindow(editor); capture_preview(editor, L"bulk-track-editor.bmp");
         ShowWindow(settings, SW_SHOWNOACTIVATE); UpdateWindow(settings); capture_preview(settings, L"bulk-weight-storage.bmp");
@@ -611,161 +612,59 @@ struct PluginChecks {
     }
     static void storage_checks(Manager& manager, Messages& messages) {
         namespace fs = std::filesystem;
-        using ignorant::WeightScope;
         const auto fixture = fs::current_path() / (L"adapter-storage-" + std::to_wstring(GetCurrentProcessId()));
         check(!fs::exists(fixture), "Storage fixture must be new.");
-        const auto music = fixture / L"Music", folder = music / L"Favorites", other = music / L"Other";
-        fs::create_directories(folder); fs::create_directories(other);
-        Track first((folder / L"first.flac").wstring()), second((folder / L"second.flac").wstring());
-        Track broad_first((folder / L"first.flac").wstring()), broad_second((other / L"other.flac").wstring());
-        EmptyPlaylist narrow, broad;
-        narrow.items = {&first, &second}; broad.items = {&broad_first, &broad_second};
-        first.owner = second.owner = &narrow; second.index = 1;
-        broad_first.owner = broad_second.owner = &broad; broad_second.index = 1;
-        Text narrow_name(L"Default"), broad_name(L"All music");
-        narrow.properties.name = query<IAIMPString>(&narrow_name, IID_IAIMPString);
-        broad.properties.name = query<IAIMPString>(&broad_name, IID_IAIMPString);
-        manager.active = &narrow;
+        const auto music = fixture / L"Music", other = fixture / L"Other";
+        fs::create_directories(music); fs::create_directories(other);
+        Track first((music / L"first.flac").wstring()), second((other / L"second.flac").wstring());
+        EmptyPlaylist playlist; playlist.items = {&first, &second}; first.owner = second.owner = &playlist; second.index = 1;
+        manager.active = &playlist;
         Player player; player.current = &first;
         Plugin plugin;
         plugin.playlists_ = query<IAIMPServicePlaylistManager>(&manager, IID_IAIMPServicePlaylistManager);
         plugin.messages_ = query<IAIMPServiceMessageDispatcher>(&messages, IID_IAIMPServiceMessageDispatcher);
         plugin.player_ = query<IAIMPServicePlayer>(&player, IID_IAIMPServicePlayer);
-        plugin.weights_file_ = fixture / L"profile.tsv";
         plugin.preferences_file_ = fixture / L"preferences.ini";
-        plugin.weights_.set(track_key(&first), 8); plugin.weights_.save(plugin.weights_file_);
-        module = GetModuleHandleW(nullptr);
-        QueueOutput selected, next;
-        HRESULT event = E_NOTIMPL;
-        auto play = [&](IAIMPPlaylistItem* item) {
-            QueueOutput manual; plugin.OnSelect(item, &manual);
-            plugin.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &event); player.current = item; plugin.update_monitor();
-        };
-        play(&first); plugin.open_monitor();
-        const auto panel = plugin.monitor_.handle();
-        check(plugin.shared_global_ && !plugin.storage_.enabled() && !plugin.folder_local_ && !plugin.playlist_local_ && !IsWindowVisible(GetDlgItem(panel, IDC_WEIGHT_SCOPE)),
-            "Shared global is preferred; an unset root uses profile weights without enabling local layers.");
-        const auto settings = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_STORAGE), panel, Plugin::storage_proc, reinterpret_cast<LPARAM>(&plugin));
-        check(settings != nullptr, "Storage settings dialog creates.");
-        check(IsDlgButtonChecked(settings, IDC_SHARED_GLOBAL) == BST_CHECKED && !IsWindowEnabled(GetDlgItem(settings, IDC_COPY_PROFILE)),
-            "New storage settings prefer shared global but require a folder before migration.");
-        SetDlgItemTextW(settings, IDC_MUSIC_FOLDER, music.c_str());
-        CheckDlgButton(settings, IDC_SHARED_GLOBAL, BST_UNCHECKED);
-        CheckDlgButton(settings, IDC_FOLDER_LOCAL, BST_CHECKED);
+        module = GetModuleHandleW(nullptr); plugin.open_monitor();
+        check(!plugin.monitor_state().can_set_weight, "Choose a root before editing; no private fallback exists.");
+        const auto settings = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_STORAGE), plugin.monitor_.handle(), Plugin::storage_proc, reinterpret_cast<LPARAM>(&plugin));
+        check(settings && !IsWindowEnabled(GetDlgItem(settings, IDC_IMPORT)), "Transfers require a music root.");
+        SetDlgItemTextW(settings, IDC_MUSIC_FOLDER, (music.wstring() + L"\r\n" + other.wstring()).c_str());
         SendMessageW(settings, WM_COMMAND, MAKEWPARAM(IDC_APPLY_STORAGE, BN_CLICKED), 0);
-        check(plugin.folder_local_ && !plugin.shared_global_ && plugin.storage_error_.empty(), "Folder overrides can be enabled independently of shared global storage.");
-        auto choose_scope = [&](int value) {
-            const auto count = SendDlgItemMessageW(panel, IDC_WEIGHT_SCOPE, CB_GETCOUNT, 0, 0);
-            for (LRESULT i = 0; i < count; ++i) if (SendDlgItemMessageW(panel, IDC_WEIGHT_SCOPE, CB_GETITEMDATA, i, 0) == value) {
-                SendDlgItemMessageW(panel, IDC_WEIGHT_SCOPE, CB_SETCURSEL, i, 0);
-                SendMessageW(panel, WM_COMMAND, MAKEWPARAM(IDC_WEIGHT_SCOPE, CBN_SELCHANGE), 0); return;
-            }
-            throw std::runtime_error("Expected weight scope is missing from the panel.");
-        };
-        choose_scope(1);
-        SendMessageW(panel, WM_COMMAND, MAKEWPARAM(IDC_QUICK_WEIGHT_0, BN_CLICKED), 0);
-        const auto context = plugin.context_for(query<IAIMPPlaylist>(&narrow, IID_IAIMPPlaylist));
-        check(plugin.weights_.get(track_key(&first)) == 8 && plugin.storage_.resolve(plugin.weights_, track_key(&first), context).weight == 0,
-            "Quick local edits keep the old profile/global value separate.");
-        check(IsWindowEnabled(GetDlgItem(panel, IDC_RESET_LOCAL)), "An explicit local override offers Inherit.");
-        plugin.GetNext(&first, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &next);
-        check(same_object(next.item.get(), &second), "The actual shuffle excludes a local weight-zero track.");
-        CheckDlgButton(settings, IDC_SHARED_GLOBAL, BST_CHECKED);
-        SendMessageW(settings, WM_COMMAND, MAKEWPARAM(IDC_SHARED_GLOBAL, BN_CLICKED), 0);
-        check(IsWindowEnabled(GetDlgItem(settings, IDC_COPY_PROFILE)), "Shared global storage enables the profile migration action.");
-        SendMessageW(settings, WM_COMMAND, MAKEWPARAM(IDC_COPY_PROFILE, BN_CLICKED), 0);
-        ignorant::Weights portable; portable.load(music / L"IgnorantShuffle.weights.tsv");
-        check(portable.get("Favorites/first.flac") == 8, "Copy existing profile weights creates portable relative keys.");
-        choose_scope(0);
-        SendMessageW(panel, WM_COMMAND, MAKEWPARAM(IDC_QUICK_WEIGHT_7, BN_CLICKED), 0);
-        check(plugin.monitor_state().selected_weight == 7 && plugin.storage_.resolve(plugin.weights_, track_key(&first), context).weight == 0,
-            "Editing global updates its selector value without bypassing an existing local exclusion.");
-        check(plugin.monitor_state().current_weight.find(L"Current weight: 0") != std::wstring::npos && plugin.monitor_state().current_weight.find(L"Editing Global: 7") != std::wstring::npos,
-            "The panel distinguishes the effective playback weight from the selected editing scope.");
-        play(&broad_first); manager.active = &broad;
-        const auto broad_context = plugin.context_for(query<IAIMPPlaylist>(&broad, IID_IAIMPPlaylist));
-        check(plugin.storage_.resolve(plugin.weights_, track_key(&broad_first), broad_context).weight == 7,
-            "The same file outside its folder's list uses its shared global weight.");
-        play(&first); manager.active = &narrow;
-        CheckDlgButton(settings, IDC_PLAYLIST_LOCAL, BST_CHECKED);
-        SendMessageW(settings, WM_COMMAND, MAKEWPARAM(IDC_APPLY_STORAGE, BN_CLICKED), 0);
-        choose_scope(2);
-        SendMessageW(panel, WM_COMMAND, MAKEWPARAM(IDC_QUICK_WEIGHT_9, BN_CLICKED), 0);
-        check(plugin.storage_.resolve(plugin.weights_, track_key(&first), context).weight == 9, "AIMP-playlist-specific edits override folder/global weights.");
-        SendMessageW(panel, WM_COMMAND, MAKEWPARAM(IDC_RESET_LOCAL, BN_CLICKED), 0);
-        check(plugin.storage_.resolve(plugin.weights_, track_key(&first), context).weight == 0, "Inherit removes a playlist override and restores the folder value.");
-        choose_scope(1);
-        SendMessageW(panel, WM_COMMAND, MAKEWPARAM(IDC_RESET_LOCAL, BN_CLICKED), 0);
-        check(plugin.storage_.resolve(plugin.weights_, track_key(&first), context).weight == 7, "Inherit removes a folder override and restores the global value.");
+        check(plugin.storage_.roots().size() == 2 && SendDlgItemMessageW(settings, IDC_TRANSFER_ROOT, CB_GETCOUNT, 0, 0) == 2,
+            "The real dialog applies several music roots and offers a transfer destination.");
+        check(plugin.monitor_state().can_set_weight, "A configured music-root track can be edited.");
+        SendDlgItemMessageW(plugin.monitor_.handle(), IDC_QUICK_WEIGHT_7, BM_CLICK, 0, 0);
+        check(plugin.effective_weight(track_key(&first)).weight == 7, "Quick weights write into the current song's root.");
         Plugin restored; restored.preferences_file_ = plugin.preferences_file_; restored.load_preferences();
-        check(restored.shared_global_ && restored.folder_local_ && restored.playlist_local_ && restored.music_folder_ == music && restored.edit_scope_ == WeightScope::Folder,
-            "Storage choices, root and editing scope survive restart.");
-        // Use the actual editor controls too, without invoking its modal loop.
-        const auto editor = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_SETTINGS), panel, Plugin::dialog_proc, reinterpret_cast<LPARAM>(&plugin));
-        check(editor && ListView_GetItemCount(GetDlgItem(editor, IDC_TRACKS)) == 2, "Editor lists the active folder's tracks.");
-        const auto table = GetDlgItem(editor, IDC_TRACKS);
-        ListView_SetItemState(table, 0, LVIS_SELECTED, LVIS_SELECTED);
-        SendMessageW(editor, WM_APP + 3, 0, 0);
-        SetDlgItemTextW(editor, IDC_WEIGHT, L"4");
-        SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_APPLY_WEIGHT, BN_CLICKED), 0);
-        check(plugin.storage_.resolve(plugin.weights_, track_key(&first), context).weight == 4 && plugin.weights_.get(track_key(&first)) == 8,
-            "The playlist editor honors the same selected local scope as quick controls.");
-        wchar_t name_text[1024]{}; ListView_GetItemText(table, 0, 1, name_text, 1024);
-        check(std::wstring(name_text) == L"first.flac" && ListView_GetColumnWidth(table, 3) > 0,
-            "Local-weight views show filenames without long path prefixes and expose a separate edit column.");
-        SendDlgItemMessageW(editor, IDC_WEIGHT_SCOPE, CB_SETCURSEL, 0, 0);
-        SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_WEIGHT_SCOPE, CBN_SELCHANGE), 0);
-        wchar_t used_text[64]{}, edit_text[64]{}, source_text[64]{};
-        ListView_GetItemText(table, 0, 0, used_text, 64); ListView_GetItemText(table, 0, 3, edit_text, 64); ListView_GetItemText(table, 0, 2, source_text, 64);
-        check(std::wstring(used_text) == L"4" && std::wstring(edit_text) == L"7" && std::wstring(source_text) == L"Folder",
-            "The table distinguishes the actual folder weight from the global value being edited.");
-        ShowWindow(editor, SW_SHOWNOACTIVATE); UpdateWindow(editor); capture_preview(editor, L"track-weights-scopes.bmp");
-        SendDlgItemMessageW(editor, IDC_WEIGHT_SCOPE, CB_SETCURSEL, 1, 0);
-        SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_WEIGHT_SCOPE, CBN_SELCHANGE), 0);
+        check(restored.music_folders_ == plugin.music_folders_, "Multiple roots survive preference reload.");
+        const auto editor = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_SETTINGS), nullptr, Plugin::dialog_proc, reinterpret_cast<LPARAM>(&plugin));
         SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_SELECT_ALL, BN_CLICKED), 0);
-        SetDlgItemTextW(editor, IDC_WEIGHT, L"25.5");
-        SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_APPLY_WEIGHT, BN_CLICKED), 0);
-        check(plugin.storage_.resolve(plugin.weights_, track_key(&first), context).weight == 25.5 && plugin.storage_.resolve(plugin.weights_, track_key(&second), context).weight == 25.5 && plugin.selected_rows(editor).size() == 2,
-            "Bulk custom edits update every folder-local entry and preserve multi-selection.");
-        SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_RESET_LOCAL, BN_CLICKED), 0);
-        check(plugin.storage_.resolve(plugin.weights_, track_key(&first), context).weight == 7 && plugin.storage_.resolve(plugin.weights_, track_key(&second), context).weight == 5,
-            "Bulk Inherit restores the separate global values for every selected track.");
-        SendDlgItemMessageW(editor, IDC_WEIGHT_SCOPE, CB_SETCURSEL, 2, 0);
-        SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_WEIGHT_SCOPE, CBN_SELCHANGE), 0);
-        SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_EDITOR_WEIGHT_0, BN_CLICKED), 0);
-        plugin.GetNext(&first, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &next);
-        check(!next.item && plugin.weights_.get(track_key(&first)) == 8,
-            "Playlist-scoped bulk zero changes playback without touching the profile fallback.");
-        SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_RESET_LOCAL, BN_CLICKED), 0);
-        SendDlgItemMessageW(settings, IDC_WEIGHT_SCOPE, CB_SETCURSEL, 1, 0);
-        SendMessageW(settings, WM_COMMAND, MAKEWPARAM(IDC_WEIGHT_SCOPE, CBN_SELCHANGE), 0);
-        const auto transfer = plugin.storage_view();
-        plugin.transfer_file(fixture / L"folder-export.tsv", true, WeightScope::Folder, transfer);
-        ignorant::Weights folder_export; folder_export.load(fixture / L"folder-export.tsv");
-        check(folder_export.get("first.flac") == 7 && folder_export.get("second.flac") == 5,
-            "Storage export for a folder uses relative keys and the chosen layer.");
-        { std::ofstream input(fixture / L"folder-import.tsv"); input << "2.5\tfirst.flac\n25\tsecond.flac\n"; }
-        plugin.transfer_file(fixture / L"folder-import.tsv", false, WeightScope::Folder, transfer);
-        check(plugin.storage_.resolve(plugin.weights_, track_key(&first), context).weight == 2.5 && plugin.storage_.resolve(plugin.weights_, track_key(&second), context).weight == 25 && plugin.selected_rows(editor).size() == 2 && plugin.weights_.get(track_key(&first)) == 8,
-            "Storage import updates only its selected shared layer and preserves bulk selection.");
-        capture_preview(panel, L"monitor-shared-weights.bmp");
-        ShowWindow(settings, SW_SHOWNOACTIVATE); UpdateWindow(settings);
-        capture_preview(settings, L"weight-storage-settings.bmp");
-        ShowWindow(editor, SW_SHOWNOACTIVATE); UpdateWindow(editor);
-        capture_preview(editor, L"weight-storage-editor.bmp");
+        plugin.apply_editor_weight(editor, 25.5);
+        check(plugin.effective_weight(track_key(&first)).weight == 25.5 && plugin.effective_weight(track_key(&second)).weight == 25.5,
+            "Mixed-library bulk selection writes one file per root.");
+        SendMessageW(editor, WM_COMMAND, MAKEWPARAM(IDC_RESET_WEIGHT, BN_CLICKED), 0);
+        check(plugin.effective_weight(track_key(&first)).weight == 5 && plugin.effective_weight(track_key(&second)).weight == 5, "Use default clears root entries.");
+        { std::ofstream input(fixture / L"import.tsv", std::ios::binary); input << "# imported\r\n0\tfirst.flac\r\n"; }
+        plugin.transfer_file(fixture / L"import.tsv", false, music);
+        plugin.transfer_file(fixture / L"export.tsv", true, music);
+        std::ifstream exported(fixture / L"export.tsv", std::ios::binary);
+        const std::string exact{std::istreambuf_iterator<char>(exported), {}}; exported.close();
+        check(exact == "# imported\r\n0\tfirst.flac\r\n" && plugin.effective_weight(track_key(&first)).weight == 0,
+            "Transfers copy exactly and refresh real playback weights.");
+        check(!fs::exists(fixture / L"weights.tsv") && !fs::exists(fixture / L"profile.tsv"), "No private weights files were created.");
+        ShowWindow(settings, SW_SHOWNOACTIVATE); UpdateWindow(settings); capture_preview(settings, L"weight-storage-settings.bmp");
+        ShowWindow(editor, SW_SHOWNOACTIVATE); UpdateWindow(editor); capture_preview(editor, L"weight-storage-editor.bmp");
         DestroyWindow(editor); DestroyWindow(settings);
-        { std::ofstream corrupt(folder / L"IgnorantShuffle.folder.weights.tsv"); corrupt << "invalid weights\n"; }
-        bool rejected = false;
-        try { plugin.set_storage(music, true, true, true); } catch (const std::exception&) { rejected = true; }
-        check(rejected && !plugin.storage_error_.empty(), "Malformed shared weights produce a visible storage error.");
+        { std::ofstream corrupt(music / L"IgnorantShuffle.weights.tsv"); corrupt << "invalid weights\n"; }
+        bool rejected = false; try { plugin.set_storage({music, other}); } catch (const std::exception&) { rejected = true; }
+        check(rejected && !plugin.storage_error_.empty(), "Malformed root weights have a visible error.");
+        QueueOutput next;
         check(plugin.GetNext(&first, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &next) == TRUE && !next.item,
-            "Malformed shared weights stop weighted selection instead of silently bypassing exclusions.");
-        check(plugin.monitor_state().next_track.find(L"check Weight storage") != std::wstring::npos, "Panel gives a recovery instruction for a malformed shared file.");
-        plugin.set_storage({}, false, false, false);
-        check(plugin.storage_error_.empty() && plugin.effective_weight(track_key(&first), {}).weight == 8,
-            "Disabling shared options restores the untouched original profile behavior.");
-        plugin.Finalize(); manager.active = nullptr;
-        fs::remove_all(fixture);
+            "Malformed root weights stop selection rather than bypass exclusions.");
+        plugin.set_storage({});
+        check(plugin.storage_error_.empty() && !plugin.monitor_state().can_set_weight, "Removing roots restores defaults and requires a root for edits.");
+        plugin.Finalize(); manager.active = nullptr; fs::remove_all(fixture);
     }
     static void capture_preview(HWND window, const wchar_t* name) {
         wchar_t requested[2]{};
@@ -1012,7 +911,9 @@ struct PluginChecks {
         std::filesystem::remove(plugin.preferences_file_);
     }
     static void quick_controls_checks(Manager& manager, Messages& messages) {
-        Track first(L"quick-first.flac"), second(L"quick-second.flac"), excluded(L"quick-excluded.flac");
+        const auto fixture = std::filesystem::current_path() / (L"quick-music-" + std::to_wstring(GetCurrentProcessId()));
+        std::filesystem::create_directory(fixture);
+        Track first((fixture / L"quick-first.flac").wstring()), second((fixture / L"quick-second.flac").wstring()), excluded((fixture / L"quick-excluded.flac").wstring());
         EmptyPlaylist playlist;
         playlist.items = {&first, &second, &excluded};
         first.owner = second.owner = excluded.owner = &playlist;
@@ -1025,8 +926,8 @@ struct PluginChecks {
         plugin.messages_ = query<IAIMPServiceMessageDispatcher>(&messages, IID_IAIMPServiceMessageDispatcher);
         plugin.player_ = query<IAIMPServicePlayer>(&player, IID_IAIMPServicePlayer);
         plugin.queue_ = query<IAIMPServicePlaybackQueue2>(&queue, IID_IAIMPServicePlaybackQueue2);
-        plugin.weights_file_ = std::filesystem::current_path() / (L"quick-weights-" + std::to_wstring(GetCurrentProcessId()) + L".tsv");
-        plugin.weights_.set("quick-excluded.flac", 0);
+        plugin.storage_.configure({fixture});
+        write_weight(plugin, track_key(&excluded), 0);
         QueueOutput manual, next;
         plugin.OnSelect(&first, &manual);
         HRESULT result = E_NOTIMPL;
@@ -1054,19 +955,19 @@ struct PluginChecks {
             if (weight > 1) check(bounds.top == previous.top && bounds.left >= previous.right, "Weight buttons must form one nonoverlapping row.");
             previous = bounds;
         }
-        plugin.weights_.set("quick-first.flac", 25);
+        write_weight(plugin, track_key(&first), 25);
         plugin.update_monitor();
         check(plugin.monitor_state().selected_weight == -1 && plugin.monitor_state().current_weight.find(L"25") != std::wstring::npos,
             "Imported weights above ten must display exactly without a misleading button highlight.");
         for (int weight = 0; weight <= 10; ++weight) check(IsDlgButtonChecked(window, IDC_QUICK_WEIGHT_0 + weight) == BST_UNCHECKED, "Imported weight must not be clamped to an editor button.");
         const auto before_edit = queue.notifications;
         click(IDC_QUICK_WEIGHT_3);
-        check(plugin.weights_.get("quick-first.flac") == 3 && plugin.weights_.get("quick-second.flac") == 5, "One click edits the actual current track only.");
+        check(plugin.effective_weight(track_key(&first)).weight == 3 && plugin.effective_weight(track_key(&second)).weight == 5, "One click edits the actual current track only.");
         check(IsDlgButtonChecked(window, IDC_QUICK_WEIGHT_3) == BST_CHECKED && IsDlgButtonChecked(window, IDC_QUICK_WEIGHT_5) == BST_UNCHECKED, "Applied weight must be highlighted immediately.");
-        ignorant::Weights saved; saved.load(plugin.weights_file_);
+        ignorant::Weights saved; saved.load(fixture / L"IgnorantShuffle.weights.tsv");
         check(saved.get("quick-first.flac") == 3 && queue.notifications == before_edit + 1, "Quick edits save and invalidate lookahead immediately.");
         click(IDC_QUICK_WEIGHT_0);
-        check(plugin.weights_.get("quick-first.flac") == 0 && IsDlgButtonChecked(window, IDC_QUICK_WEIGHT_0) == BST_CHECKED, "Zero exclusion must remain one click away.");
+        check(plugin.effective_weight(track_key(&first)).weight == 0 && IsDlgButtonChecked(window, IDC_QUICK_WEIGHT_0) == BST_CHECKED, "Zero exclusion must remain one click away.");
         plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_CURSOR, &next);
         check(same_object(next.item.get(), &second) && player.current == &first, "Excluding the current track changes future selection without interrupting it.");
         click(IDC_QUICK_WEIGHT_10);
@@ -1096,7 +997,7 @@ struct PluginChecks {
         check(IsDlgButtonChecked(window, IDC_QUICK_WEIGHT_5) == BST_CHECKED, "Selector follows the newly playing track, including while paused.");
         check(GetFocus() != GetDlgItem(window, IDC_QUICK_WEIGHT_10), "Changing tracks clears focus from the previous track's weight button.");
         SendDlgItemMessageW(window, IDC_QUICK_WEIGHT_7, BM_CLICK, 0, 0);
-        check(plugin.weights_.get("quick-second.flac") == 7 && plugin.weights_.get("quick-first.flac") == 10, "Quick edit follows the real player item after a transition.");
+        check(plugin.effective_weight(track_key(&second)).weight == 7 && plugin.effective_weight(track_key(&first)).weight == 10, "Quick edit follows the real player item after a transition.");
         for (int repeat = 0; repeat < 3; ++repeat) {
             plugin.update_monitor();
             for (int value = 0; value <= 10; ++value) {
@@ -1107,7 +1008,7 @@ struct PluginChecks {
         }
         capture_preview(window, L"monitor-weight-selection.bmp");
         // Only one positive candidate: reroll retains that track rather than stopping.
-        plugin.weights_.set("quick-first.flac", 0); plugin.changed();
+        write_weight(plugin, track_key(&first), 0); plugin.changed();
         plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_CURSOR, &next);
         click(IDC_REROLL_NEXT);
         check(plugin.playing_->next.lock() && same_object(plugin.playing_->next.lock()->item.get(), &second), "Reroll keeps the sole eligible track.");
@@ -1120,9 +1021,9 @@ struct PluginChecks {
         plugin.update_monitor();
         check(IsWindowEnabled(GetDlgItem(window, IDC_QUICK_WEIGHT_4)) && !IsWindowEnabled(GetDlgItem(window, IDC_REROLL_NEXT)), "Weights can be edited with the plugin off, while reroll stays disabled.");
         click(IDC_QUICK_WEIGHT_4);
-        check(plugin.weights_.get("quick-second.flac") == 4 && !plugin.enabled_, "Weight editing must not enable the plugin.");
+        check(plugin.effective_weight(track_key(&second)).weight == 4 && !plugin.enabled_, "Weight editing must not enable the plugin.");
         plugin.Finalize();
-        std::filesystem::remove(plugin.weights_file_);
+        std::filesystem::remove_all(fixture);
     }
     static void transition_trace_checks(Manager& manager, Messages& messages, int cooldown = 0, bool finite = false) {
         Track first(L"trace-first.flac"), second(L"trace-second.flac"), third(L"trace-third.flac");
@@ -1404,6 +1305,8 @@ struct PluginChecks {
             return ignorant::HttpReply{404, {}};
         });
         check(plugin.Initialize(&core) == S_OK, "Plugin initialization with host services.");
+        const auto old_weights = profile / L"IgnorantShuffle" / L"weights.tsv";
+        check(!std::filesystem::exists(old_weights), "Initialization never creates a private weights file.");
         const auto window = plugin.monitor_.handle();
         check(window && IsWindowVisible(window), "Initialization automatically opens the floating window.");
         check(plugin.updater_.state().phase == ignorant::UpdatePhase::Checking && !finish_check,
@@ -1424,12 +1327,18 @@ struct PluginChecks {
         check(queue.notifications > notifications, "Toggling invalidates AIMP's prefetched queue.");
         check(plugin.Finalize() == S_OK && !IsWindow(window), "Finalization destroys the floating window.");
         check(!messages.observer && !core.extension, "Finalization removes host hooks and extensions.");
+        { std::ofstream legacy(old_weights); legacy << "legacy private weights are untouched\n"; }
         Plugin opted_out([&](const auto&, auto, const auto&, const auto&) { ++requests; return ignorant::HttpReply{404, {}}; });
         check(opted_out.Initialize(&core) == S_OK && !opted_out.auto_updates_ && requests == 1,
             "Startup still honors the persisted automatic-check opt-out.");
         check(Plugin::control_text(opted_out.monitor_.handle(), IDC_UPDATE_SUMMARY) == L"Automatic update checks are off. Use Check now.",
             "A configured source with automatic checks off never appears unconfigured.");
         opted_out.Finalize();
+        {
+            std::ifstream legacy(old_weights); std::string line; std::getline(legacy, line);
+            check(line == "legacy private weights are untouched", "Legacy private weights are neither loaded nor overwritten, even if malformed.");
+        }
+        std::filesystem::remove(old_weights);
         {
             std::ifstream input(profile / L"IgnorantShuffle" / L"plugin.log", std::ios::binary);
             const std::string contents{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
@@ -1600,7 +1509,7 @@ struct PluginChecks {
         plugin.messages_ = query<IAIMPServiceMessageDispatcher>(&messages, IID_IAIMPServiceMessageDispatcher);
         plugin.auto_updates_ = false; plugin.update_repository_ = "example/shuffle";
         const auto folder = std::filesystem::current_path() / L"update-install-ui-fixture";
-        plugin.weights_file_ = folder / L"weights.tsv";
+        plugin.profile_dir_ = folder;
         module = GetModuleHandleW(nullptr);
         const auto window = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_UPDATES), nullptr, Plugin::updates_procedure, reinterpret_cast<LPARAM>(&plugin));
         check(window != nullptr, "Create installation dialog.");
