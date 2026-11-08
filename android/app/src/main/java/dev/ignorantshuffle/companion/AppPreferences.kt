@@ -10,7 +10,17 @@ data class RollStats(val artist: Boolean = true, val weight: Boolean = true, val
 data class AppPreferences(val logging: Boolean = true, val theme: ThemeMode = ThemeMode.SYSTEM,
     val accent: Accent = Accent.ORANGE, val notifyRoll: Boolean = false, val stats: RollStats = RollStats(),
     val notificationVisibility: RollVisibility = RollVisibility.ALWAYS, val leadMs: Long = EndTiming.LEAD_MS,
-    val automatic: Boolean = true, val debugPlayback: Boolean = false, val lockScreenControls: Boolean = true)
+    val automatic: Boolean = true, val debugPlayback: Boolean = false,
+    val reactivePlayback: Boolean = false, val correctionDelayMs: Long = ReactivePlayback.SETTLE_MS,
+    val notificationNext: Boolean = true, val notificationPrevious: Boolean = true)
+
+data class NotificationButtons(val next: Boolean, val previous: Boolean) {
+    companion object {
+        fun create(preferences: AppPreferences, pending: Boolean, hasNext: Boolean, hasPrevious: Boolean) =
+            NotificationButtons(preferences.notifyRoll && !pending && hasNext && preferences.notificationNext,
+                preferences.notifyRoll && !pending && hasPrevious && preferences.notificationPrevious)
+    }
+}
 
 enum class RollVisibility(val label: String) {
     ALWAYS("Always while connected"), PLAYING_OR_PAUSED("Playing or paused"), PLAYING_ONLY("Playing only");

@@ -39,7 +39,8 @@ class SessionAccessService : NotificationListenerService() {
     override fun onDestroy() { controller.stop("Notification listener destroyed"); super.onDestroy() }
 }
 
-private data class Pending(val label: String, val target: String?, val before: Playback)
+private data class Pending(val label: String, val target: String?, val before: Playback,
+    val correctivePause: Boolean = false, val reactiveCorrection: Boolean = false)
 
 class AimpController(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
@@ -53,6 +54,7 @@ class AimpController(private val context: Context) {
     private val notifications = RollNotifications(context) { log(it) }
     private val issueNotifications = PlaybackIssueNotifications(context)
     private val audit = PlaybackAudit()
+    private val reactive = ReactivePlayback()
     private val runId = UUID.randomUUID().toString().take(8)
     private val notificationToken = UUID.randomUUID().toString()
     private val power = context.getSystemService(PowerManager::class.java)
@@ -125,8 +127,9 @@ class AimpController(private val context: Context) {
     }
 
     fun changePreferences(value: AppPreferences) = guarded {
-        if (value.leadMs != preferences.leadMs) check(!pending) { "Wait for the pending playback command" }
-        val timingChanged = value.leadMs != preferences.leadMs
+        val timingChanged = value.leadMs != preferences.leadMs || value.reactivePlayback != preferences.reactivePlayback ||
+            value.correctionDelayMs != preferences.correctionDelayMs
+        if (timingChanged) check(!pending) { "Wait for the pending playback command" }
         val debugChanged = value.debugPlayback != preferences.debugPlayback
         preferenceStore.save(value)
         if (!value.logging) log("Automatic logging disabled by user")
@@ -139,7 +142,11 @@ class AimpController(private val context: Context) {
         }
         if (value.logging) log("App preferences updated: $value")
         refreshNotifications()
-        if (timingChanged) { log("Automatic switch lead changed to ${value.leadMs}ms"); scheduleTimer() }
+        if (timingChanged) {
+            reactive.reset(); handler.removeCallbacks(reactivePoll)
+            log("Automatic playback mode changed: combined=${value.reactivePlayback}; lead=${value.leadMs}ms; correctionDelay=${value.correctionDelayMs}ms")
+            read()
+        }
     }
 
     fun refreshNotifications() {
@@ -242,7 +249,7 @@ class AimpController(private val context: Context) {
 
     private fun uri(value: String?): String? = value?.takeIf { it.isNotBlank() && !Uri.parse(it).scheme.isNullOrBlank() }
 
-    private fun read(rearm: Boolean = true, refreshQueue: Boolean = false) {
+    private fun read(rearm: Boolean = true, refreshQueue: Boolean = false, react: Boolean = true) {
         val c = native ?: return
         val mode = AimpShuffleMode.fromSession(runCatching { compat?.shuffleMode ?: -1 }.getOrDefault(-1))
         if (aimpShuffle != mode) log("AIMP shuffle mode: $aimpShuffle -> $mode")
@@ -278,6 +285,42 @@ class AimpController(private val context: Context) {
         actions = state?.actions ?: 0
         if (next.title != playback.title || next.state != playback.state || next.track?.key != playback.track?.key)
             log("Observed state=${next.state}; title=${next.title}; id=$mediaId; queueId=${current?.queueId}; position=${next.position}; actions=0x${actions.toString(16)}")
+        val reactiveReady = automatic && preferences.reactivePlayback && automaticPlaybackAllowed() &&
+            connected && permission && storageError == null && !folder.blocked
+        if (!reactiveReady) {
+            reactive.reset(); handler.removeCallbacks(reactivePoll)
+        } else if (react && (!pending || reactive.correcting)) {
+            val target = reactive.roll?.choice?.track
+            if (target != null && tracks.none { it.key == target.key }) {
+                log("REACTIVE cancelled: captured target removed from AIMP playlist")
+                reactive.reset()
+            }
+            when (val decision = reactive.observe(next, SystemClock.elapsedRealtime(), preferences.correctionDelayMs)) {
+                ReactiveDecision.Wait -> {
+                    handler.removeCallbacks(endTimer); scheduled = null
+                    playback = next
+                    scheduleReactivePoll(); sustainCpu()
+                    return // Do not count the rejected fragment in history/cooldown/finite progress.
+                }
+                is ReactiveDecision.Correct -> {
+                    playback = next
+                    log("REACTIVE roll=${decision.roll.sequence}; observed=${decision.rejected}; target=${decision.roll.choice.track?.key}; stable=${preferences.correctionDelayMs}ms")
+                    if (decision.roll.choice.track == null) {
+                        disableAutomatic("Reactive mode: no eligible tracks / finite pass complete")
+                        check(supportsBasic(false)) { "AIMP does not advertise Pause" }
+                        begin("Pause", null, correctivePause = true)
+                        c.transportControls.pause()
+                    } else {
+                        playChoice(decision.roll.choice, correction = decision)
+                        scheduleReactivePoll()
+                    }
+                    return
+                }
+                is ReactiveDecision.Accept -> if (decision.manualOverride) {
+                    log("REACTIVE manual override accepted: ${next.track?.key} selected again within ${ReactivePlayback.OVERRIDE_MS}ms")
+                }
+            }
+        }
         // AIMP can cross the deadline before our timed dispatch runs. Audit the
         // captured roll too, so an unexpected natural next track is visible.
         val plan = scheduled
@@ -286,19 +329,24 @@ class AimpController(private val context: Context) {
         }
         playback = next
         observeAudit()
-        if (next.state == PlaybackState.STATE_PLAYING && current != null) {
+        if (next.state == PlaybackState.STATE_PLAYING && current != null && operation?.correctivePause != true) {
             val op = operation
-            val restarted = op != null && op.target == current.key && op.before.track?.key == current.key &&
-                op.before.position >= 3000 && next.position in 0..999
+            val restarted = op != null && op.target == current.key && model.currentKey == current.key &&
+                (op.reactiveCorrection || (op.before.track?.key == current.key &&
+                    op.before.position >= 3000 && next.position in 0..999))
             model.confirmPlaying(current, restarted)
         }
+        var commandConfirmed = false
         operation?.let { op ->
             val verified = PlaybackEvidence.confirmed(op.label, op.target, op.before, next)
             log("VERIFY ${op.label}; expected=${op.target}; actual=${next.track?.key}; state=${next.state}; position=${next.position}; matched=$verified")
-            if (verified) finish("OBSERVED: ${op.label} matched subsequent playback")
+            if (verified) {
+                finish("OBSERVED: ${op.label} matched subsequent playback")
+                commandConfirmed = true
+            }
         }
         updatePreview("Playback/catalog observation")
-        if (rearm) scheduleTimer()
+        if (rearm || commandConfirmed) scheduleTimer()
     }
 
     private fun updatePreview(reason: String = "Settings changed") {
@@ -322,6 +370,7 @@ class AimpController(private val context: Context) {
     }
     private fun folderChanged() {
         if (folder.blocked) {
+            reactive.reset(); handler.removeCallbacks(reactivePoll)
             handler.removeCallbacks(endTimer); scheduled = null; preview = Choice(null)
             if (folder.error != null) disableAutomatic("Music-root weights unavailable; restore access and reload")
             refreshNotifications(); return
@@ -373,7 +422,7 @@ class AimpController(private val context: Context) {
     fun play(track: Track) = guarded { if (!pending) playChoice(Choice(track)) }
 
     fun playNotificationRoll(action: RollAction) = guarded {
-        if (!notificationActionsAvailable() ||
+        if (!notificationActionsAvailable() || !preferences.notificationNext ||
             !action.matches(notificationToken, rollSequence, preview)) {
             log("Ignored unavailable or outdated notification roll #${action.sequence}")
             return@guarded
@@ -386,7 +435,7 @@ class AimpController(private val context: Context) {
 
     fun playNotificationPrevious(action: PreviousRollAction) = guarded {
         val previous = model.previous()
-        if (!notificationActionsAvailable() || !action.matches(notificationToken, rollSequence, playback.track?.key, previous)) {
+        if (!notificationActionsAvailable() || !preferences.notificationPrevious || !action.matches(notificationToken, rollSequence, playback.track?.key, previous)) {
             log("Ignored unavailable or outdated notification Previous for roll #${action.sequence}")
             return@guarded
         }
@@ -394,18 +443,21 @@ class AimpController(private val context: Context) {
     }
 
     private fun playChoice(choice: Choice, planned: ScheduledRoll? = null, notificationAction: RollAction? = null,
-        previousAction: PreviousRollAction? = null) {
+        previousAction: PreviousRollAction? = null, correction: ReactiveDecision.Correct? = null) {
         check(storageError == null && !folder.blocked) { "Storage is loading/unavailable; playback selection disabled" }
         val target = choice.track ?: run { result = "No eligible tracks / finite pass complete"; return }
         // Manual requests refresh the queue. Timed requests already performed a
         // lightweight source read; do not refetch/hash the whole queue twice here.
-        if (planned == null) read(refreshQueue = true)
+        if (planned == null && correction == null) {
+            reactive.reset(); handler.removeCallbacks(reactivePoll)
+            read(refreshQueue = true, react = false)
+        }
         if (pending) return
-        if (notificationAction != null && (!notificationActionsAvailable() || !notificationAction.matches(notificationToken, rollSequence, preview))) {
+        if (notificationAction != null && (!notificationActionsAvailable() || !preferences.notificationNext || !notificationAction.matches(notificationToken, rollSequence, preview))) {
             log("Notification roll #${notificationAction.sequence} cancelled after playback/catalog changed")
             return
         }
-        if (previousAction != null && (!notificationActionsAvailable() ||
+        if (previousAction != null && (!notificationActionsAvailable() || !preferences.notificationPrevious ||
             !previousAction.matches(notificationToken, rollSequence, playback.track?.key, model.previous()))) {
             log("Notification Previous cancelled after playback/catalog/history changed")
             return
@@ -416,11 +468,17 @@ class AimpController(private val context: Context) {
         val fresh = tracks.firstOrNull { it.key == target.key } ?: error("Queue changed; choose again")
         val c = native ?: error("No AIMP session")
         check(granted()) { "Notification access was revoked" }
+        if (correction != null) check(automatic && preferences.reactivePlayback && automaticPlaybackAllowed() &&
+            playback.track?.key == correction.rejected && playback.state == PlaybackState.STATE_PLAYING) {
+            "Reactive correction cancelled: playback or mode changed"
+        }
+        else reactive.reset()
         val transport = c.transportControls
-        log("DISPATCH roll=${planned?.sequence ?: rollSequence}; source=${playback.track}; target=$fresh; choice=$choice")
+        val sequence = correction?.roll?.sequence ?: planned?.sequence ?: rollSequence
+        log("DISPATCH roll=$sequence; source=${playback.track}; target=$fresh; choice=$choice")
         model.requested(choice)
-        if (preferences.debugPlayback) armAudit(playback, fresh, planned?.sequence ?: rollSequence)
-        begin("Play ${fresh.title}", fresh.key)
+        if (preferences.debugPlayback) armAudit(playback, fresh, sequence)
+        begin("Play ${fresh.title}", fresh.key, reactiveCorrection = correction != null)
         when {
             fresh.mediaId != null && actions and PlaybackState.ACTION_PLAY_FROM_MEDIA_ID != 0L -> transport.playFromMediaId(fresh.mediaId, null)
             fresh.queueId >= 0 && actions and PlaybackState.ACTION_SKIP_TO_QUEUE_ITEM != 0L -> transport.skipToQueueItem(fresh.queueId)
@@ -432,7 +490,9 @@ class AimpController(private val context: Context) {
     fun basic(play: Boolean, expectedSource: String? = null) = guarded {
         if (pending) return@guarded
         val c = native ?: error("No AIMP session")
-        read(); check(granted())
+        reactive.reset(); handler.removeCallbacks(reactivePoll)
+        read(react = false); check(granted())
+        reactive.reset()
         if (expectedSource != null && (!automaticPlaybackAllowed() || !EndTiming.due(timing(), expectedSource, SystemClock.elapsedRealtime(), preferences.leadMs))) {
             log("Timed pause cancelled: source/timing changed during revalidation"); return@guarded
         }
@@ -447,9 +507,9 @@ class AimpController(private val context: Context) {
         guarded { read() }
         if (pending) finish("INCONCLUSIVE after 8 seconds; no confirming playback. No retry sent.")
     }
-    private fun begin(label: String, key: String?) {
+    private fun begin(label: String, key: String?, correctivePause: Boolean = false, reactiveCorrection: Boolean = false) {
         handler.removeCallbacks(endTimer); scheduled = null
-        operation = Pending(label, key, playback); pending = true
+        operation = Pending(label, key, playback, correctivePause, reactiveCorrection); pending = true
         result = "Waiting for AIMP: $label"
         log("COMMAND $label; target=$key")
         handler.postDelayed(timeout, 8000)
@@ -471,13 +531,14 @@ class AimpController(private val context: Context) {
         log("USER saved timed automatic preference=$enabled")
         if (!enabled) { disableAutomatic("Timed automatic mode is off"); return@guarded }
         automatic = true
-        log("USER ENABLED timed shuffle; lead=${preferences.leadMs}ms; CPU protection while playing; no queue insertion")
+        log("USER ENABLED weighted shuffle; reactive=${preferences.reactivePlayback}; lead=${preferences.leadMs}ms; CPU protection while playing; no queue insertion")
         read()
         refreshNotifications()
     }
 
     private fun disableAutomatic(reason: String) {
         handler.removeCallbacks(endTimer); scheduled = null
+        reactive.reset(); handler.removeCallbacks(reactivePoll)
         if (automatic) log(reason)
         automatic = false; automaticStatus = reason
         cpu.update(false)
@@ -494,17 +555,31 @@ class AimpController(private val context: Context) {
         sustainCpu()
         if (!automatic || !connected || !permission || storageError != null || pending || folder.blocked) return
         if (!automaticPlaybackAllowed()) {
+            reactive.reset(); handler.removeCallbacks(reactivePoll)
             automaticStatus = if (aimpShuffle == AimpShuffleMode.OFF) "Waiting: turn Shuffle on in AIMP" else "Waiting for AIMP to report its shuffle mode"
             return
         }
+        if (preferences.reactivePlayback) {
+            if (playback.state == PlaybackState.STATE_PLAYING && playback.track != null) {
+                // Settings/reroll can run while an unexpected fragment is settling.
+                // Keep the last accepted source, not that unaccepted fragment.
+                model.currentKey?.let { reactive.arm(it, preview, model.choiceSequence) }
+            }
+            if (!reactive.timedPlaybackReady(playback, model.currentKey)) {
+                automaticStatus = "Combined: waiting for playback / early-skip correction"
+                return
+            }
+        }
         val delay = EndTiming.delayMillis(timing(), SystemClock.elapsedRealtime(), preferences.leadMs)
         if (delay == null) {
-            automaticStatus = "Waiting for PLAYING state with a known track, position, speed and duration"
+            automaticStatus = if (preferences.reactivePlayback)
+                "Combined: early-skip correction active; waiting for usable track-end timing"
+                else "Waiting for PLAYING state with a known track, position, speed and duration"
             return
         }
         scheduled = ScheduledRoll(requireNotNull(playback.track).key, preview, model.choiceSequence,
             SystemClock.elapsedRealtime() + delay, SystemClock.uptimeMillis() + delay, preferences.leadMs)
-        automaticStatus = "Timed switch in approximately ${delay / 1000}s; lead ${preferences.leadMs}ms. AIMP/Android timing can differ."
+        automaticStatus = "${if (preferences.reactivePlayback) "Combined: " else ""}Timed switch in approximately ${delay / 1000}s; lead ${preferences.leadMs}ms. AIMP/Android timing can differ."
         log("TIMER armed roll=$rollSequence target=${preview.track}; delay=$delay; scheduled=$scheduled; sample=${timing()}")
         handler.postDelayed(endTimer, delay)
     }
@@ -514,7 +589,19 @@ class AimpController(private val context: Context) {
         // Keep the bounded command-confirmation window awake through that state.
         val ready = automatic && automaticPlaybackAllowed() && connected && permission && storageError == null && !folder.blocked
         cpu.update((preferences.debugPlayback && audit.active && connected && permission) ||
-            CpuProtection.needed(ready, pending, timing(), SystemClock.elapsedRealtime(), preferences.leadMs))
+            if (preferences.reactivePlayback) ready && (pending || reactive.waiting || playback.state == PlaybackState.STATE_PLAYING)
+            else CpuProtection.needed(ready, pending, timing(), SystemClock.elapsedRealtime(), preferences.leadMs))
+    }
+
+    private fun scheduleReactivePoll() {
+        handler.removeCallbacks(reactivePoll)
+        if (reactive.waiting) handler.postDelayed(reactivePoll,
+            reactive.nextCheckDelayMillis(SystemClock.elapsedRealtime(), preferences.correctionDelayMs))
+    }
+
+    // Poll only during settling, a bounded AIMP pause gap, or correction confirmation.
+    private val reactivePoll = Runnable {
+        if (automatic && preferences.reactivePlayback && connected) guarded { read() }
     }
 
     fun dismissDebugIssue() { debugIssue = null; issueNotifications.clear() }
@@ -567,7 +654,8 @@ class AimpController(private val context: Context) {
                         armAudit(beforeHandoff, requireNotNull(planned.choice.track), planned.sequence)
                         observeAudit()
                     }
-                    log("HANDOFF CANCELLED: planned=$planned; actual=$playback; currentRoll=${model.choiceSequence}. AIMP/manual playback left unchanged.")
+                    log("HANDOFF CANCELLED: planned=$planned; actual=$playback; currentRoll=${model.choiceSequence}. " +
+                        if (preferences.reactivePlayback) "Combined mode follows observed playback." else "AIMP/manual playback left unchanged.")
                     scheduleTimer()
                 }
             }
@@ -602,7 +690,9 @@ class AimpController(private val context: Context) {
         if (!full && tracks.size > 20) appendLine("Queue truncated in summary; export full log for every track")
         appendLine("Queue: ${tracks.size}; explicit weights: ${weights.size}; current-pass starts: ${model.played.size}")
         appendLine("Weighted shuffle enabled: $automatic; AIMP shuffle=$aimpShuffle; $automaticStatus")
-        appendLine("Immediate companion controls; AIMP's own next-track selection is independent.")
+        appendLine("Experimental combined playback: ${preferences.reactivePlayback}; settle=${preferences.correctionDelayMs}ms; override=${ReactivePlayback.OVERRIDE_MS}ms; pauseGrace=${ReactivePlayback.PAUSE_GRACE_MS}ms")
+        appendLine(if (preferences.reactivePlayback) "Timed track-end switches plus early AIMP-skip corrections."
+            else "Immediate companion controls; AIMP's own next-track selection is independent.")
         if (full) appendLine(journal.contents())
         else events.takeLast(100).forEach { appendLine(it) }
     }

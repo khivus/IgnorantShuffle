@@ -102,8 +102,8 @@ and invalid values while retaining existing weights and shuffle rules.
 Previous-notification tests also bind the action to the current source track and
 exact history occurrence, rejecting source/history changes while accepting queue
 renumbering. A finished finite pass keeps the notification available for Previous.
-Preference tests cover lock-screen visibility choices and migration with controls
-off for existing saved preferences. First-launch battery-exemption prompts,
+Preference tests cover independent Next/Previous choices, migration from the removed
+lock-screen setting, and hiding buttons while commands are pending. First-launch battery-exemption prompts,
 actual screen-off transitions, notification expansion/buttons on a locked phone,
 and Android/OEM visibility overrides require the [phone checks](../android/README.md#phone-acceptance-checks).
 

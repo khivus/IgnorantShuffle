@@ -16,17 +16,22 @@ object PreferenceJson {
             RollVisibility.entries.firstOrNull { it.name == json.optString("notificationVisibility") } ?: RollVisibility.ALWAYS,
             json.optLong("leadMs", EndTiming.LEAD_MS).also { require(it in 0..5000) { "Invalid saved switch lead" } },
             json.optBoolean("automatic", true), json.optBoolean("debugPlayback", false),
-            // Keep lock-screen controls off for existing installations.
-            json.optBoolean("lockScreenControls", false))
+            json.optBoolean("reactivePlayback", false),
+            json.optLong("correctionDelayMs", ReactivePlayback.SETTLE_MS).also {
+                require(it in 0..ReactivePlayback.MAX_DELAY_MS) { "Invalid saved correction delay" }
+            }, json.optBoolean("notificationNext", true), json.optBoolean("notificationPrevious", true))
     }
 
     fun encode(value: AppPreferences): String {
         val s = value.stats
         require(value.leadMs in 0..5000) { "Switch lead must be between 0 and 5000 ms" }
+        require(value.correctionDelayMs in 0..ReactivePlayback.MAX_DELAY_MS) { "Correction delay must be between 0 and 2000 ms" }
         return JSONObject().put("logging", value.logging).put("theme", value.theme.name)
             .put("accent", value.accent.name).put("notifyRoll", value.notifyRoll).put("automatic", value.automatic)
             .put("debugPlayback", value.debugPlayback)
-            .put("lockScreenControls", value.lockScreenControls)
+            .put("reactivePlayback", value.reactivePlayback)
+            .put("correctionDelayMs", value.correctionDelayMs)
+            .put("notificationNext", value.notificationNext).put("notificationPrevious", value.notificationPrevious)
             .put("notificationVisibility", value.notificationVisibility.name).put("leadMs", value.leadMs)
             .put("stats", JSONObject().put("artist", s.artist).put("weight", s.weight).put("chance", s.chance)
                 .put("pool", s.pool).put("cooldown", s.cooldown).put("remaining", s.remaining).put("mode", s.mode)).toString()

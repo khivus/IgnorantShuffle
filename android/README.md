@@ -47,11 +47,74 @@ or auto-start permission. Unrestricted timed playback can use more battery.
 
 Use Play in the next-roll card or **Next track** in IgnorantShuffle's notification
 for weighted selection. **Previous track** returns through confirmed listening
-history. Enable **Alerts > Show next-roll notification > Lock-screen controls**
-to show these buttons and track details while locked; expand the notification
-if needed. AIMP's separate media card, its own Next button, and headset controls
-remain under AIMP's own control. Queue editing is not used.
+history. Use **Alerts > Show Next button / Show Previous button** to enable each
+notification button independently; expand the notification if needed.
+AIMP's separate media card, its own Next button, and headset controls
+remain under AIMP's own control unless combined switching below is enabled.
+Queue editing is not used.
 The first version cannot provide Windows's native pre-playback queue hook.
+
+## Experimental combined switching
+
+Enable **Shuffle > Automatic switching > Combined switching (experimental)**,
+with **Player > Enable weighted shuffle** and AIMP Shuffle on. This saved, opt-in
+mode combines the existing end timer with correction after early AIMP/headset
+skips. Normal endings switch to the weighted choice using **Switch before track
+end** (0–5000 ms; default 300). An early change is compared with the previously
+displayed weighted choice, and one correction requests that saved target. The end
+timer is canceled while a change is settling or a correction is awaiting confirmation.
+It also corrects a natural AIMP transition if the end timer was missed.
+
+**Correction delay after track change** is separate: choose **0–2000 ms** (default
+200), then **Apply correction delay**. Presets are 0/25/50/100/200 ms. Lower values
+reduce the unwanted fragment. Zero requests the target as soon as a different
+PLAYING track is identified, with more risk of reacting to temporary metadata.
+Small delays are not rounded up to 100 ms. This delay begins on an identified
+PLAYING observation; AIMP's own metadata and command latency still add time.
+Both timings persist independently. Existing experimental-mode users automatically
+get combined switching with the previous 200 ms correction delay. Debug mode is
+independent. Phone testing is needed for audible latency and screen-off reliability.
+
+To select a specific track in AIMP, select it again **within five seconds after
+the correcting weighted track starts**. That second distinct selection is accepted
+and the next roll is calculated from it. Repeated metadata callbacks are not
+counted as selections. Explicit Play/Previous/Next commands in IgnorantShuffle
+remain direct requests. AIMP briefly reports PAUSED during many skips: pause gaps
+under one second preserve the saved target and second-selection override, without
+sending commands while paused. A pause lasting one second, explicit app Pause,
+stop, mode disable, disconnect and permission loss discard pending transition
+decisions. A failed/unconfirmed correction stops the
+automatic run after the existing eight-second confirmation timeout, without
+retries. Rejected fragments do not advance history, cooldown or finite-pass progress.
+
+This mode uses the existing CPU protection while playing, including tracks with
+unknown duration, and still needs unrestricted background battery use. The end
+lead can clip the source ending; early-skip corrections may play part of AIMP's
+next track first. Unknown duration prevents the end timer but still allows skip
+correction. At finite-pass completion or an empty eligible pool, Pause is requested
+at the estimated end, or after an early AIMP transition. Turn combined mode off
+to use only the end timer with the saved lead.
+The separate AIMP manual-queue limitation below still applies.
+
+Phone checks for this mode:
+
+1. Note the weighted choice and let a track finish: it should switch using the
+   configured end lead. Then use AIMP/headset Next early: the final track should
+   match the saved choice. Compare correction delays 200/50/25/0 with screen on/off;
+   export logs containing `TIMER`, `REACTIVE` and `DISPATCH`. Near-end skips must not
+   produce duplicate commands. Restart to verify both timing values persist.
+2. Select another track in AIMP, wait for correction, then select the rejected track
+   again within five seconds. It should remain playing. Wait over five seconds
+   before repeating to verify the override expires. Try a different second track too.
+3. Test pause/resume, direct app Play/Previous/notification Next, reroll, weights,
+   finite-pass completion and an empty pool. Rejected fragments must not appear in
+   app listening history or consume pass entries. A failed command must not loop.
+4. Turn AIMP Shuffle off/on, disable the app switch, disconnect/reconnect, and
+   restart the app. Verify the mode preference persists, stale corrections do not
+   run, and turning the experimental setting off restores timed switching.
+5. Skip repeatedly through AIMP, including immediately after a correction. Each
+   settled unexpected track should still be corrected despite AIMP's brief PAUSED
+   state. Pause for over one second and resume; no stale correction should fire.
 
 ## App updates
 
@@ -59,8 +122,9 @@ Enable **Logs > Playback debug mode** to check each companion selection and
 captured timed handoff against AIMP's observed PLAYING track. A stable mismatch
 or missing confirmation after eight seconds produces a persistent in-app banner
 and a separate debug notification (allow notifications when asked). This also
-works when next-roll notifications or file logging are off. The debug check never
-retries or changes playback. Disconnecting or turning debug off cancels checks.
+works when next-roll notifications or file logging are off. The debug check itself
+never retries or changes playback; experimental switching is a separate option.
+Disconnecting or turning debug off cancels debug checks.
 External manual track changes during a timed handoff can also produce a warning.
 
 Debug details and expected/observed identities appear in diagnostic exports.
@@ -178,12 +242,12 @@ are ignored after the roll, current track or history changes, the session
 disconnects or the app process restarts. Artist, weight, chance at roll,
 pool counts, cooldown, finite-pass remaining count, and playback mode are individually
 selectable. A single notification is updated; it does not own a MediaSession or
-intercept AIMP's controls. **Lock-screen controls** allows the buttons and track
-details to appear while locked. It defaults on for new installs; existing saved
-preferences keep lock-screen controls off until you enable it. Turning it off
-hides this notification from the lock screen. Android's lock-screen/channel settings
-still take priority: allow lock-screen notifications and check whether silent
-notifications are hidden. Some phones may require unlocking before an action.
+intercept AIMP's controls. **Show Next button** and **Show Previous button** are
+independent saved settings, both on by default. Disabling a button hides it
+immediately and rejects its older actions. The next-roll preview remains visible
+when both are off. Previous requires available listening history. The separate
+Lock-screen controls setting has been removed; Android controls display and
+privacy while locked. Some phones may require unlocking before an action.
 This is a separate notification, not a replacement for AIMP's media card. On Android
 13+ POST_NOTIFICATIONS is requested only when the user enables this option.
 Denial or a disabled channel does not block shuffle. Android settings can override
@@ -254,10 +318,10 @@ new APK has been tested on a phone.
     Reopen **Player > Background playback**, allow battery exemption, and verify
     the status after returning. Test denial/cancellation, an already exempt app,
     rotation during the prompt and several background/screen-off transitions.
-14. Enable roll notifications and **Lock-screen controls**; confirm Previous/Next
-    in the expanded lock-screen notification with Android lock-screen visibility
-    allowed. Test both buttons while playing/paused, a pending command, reroll,
-    a manual AIMP track change, no history, finite-pass completion, reconnection
-    and process restart. Turn lock-screen controls off to check the notification
-    is hidden while locked, then restart to verify both choices persist. Also test
-    notifications denied, channel blocked and silent lock-screen alerts hidden.
+14. Enable roll notifications; test **Show Next button / Show Previous button**
+    with both on, each individually on, and both off. Expand the notification:
+    only enabled, available buttons should appear; with both off the next-roll
+    preview should remain. Test playing/paused, pending commands, reroll, manual
+    AIMP changes, no history, finite-pass completion, reconnection and restart.
+    Verify both choices persist and old actions cannot run after disabling a
+    button. Also test notification denial and a blocked channel.

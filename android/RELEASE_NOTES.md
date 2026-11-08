@@ -1,27 +1,24 @@
-# IgnorantShuffle Android v0.8.0
+# IgnorantShuffle Android v0.9.0
 
-## Clearer weighted shuffle
+## Combined switching
 
-- Rename the Player switch to Enable weighted shuffle and explain that it changes tracks the configured number of milliseconds before track end.
-- Run automatic switching only while AIMP reports Shuffle on. Wait while Shuffle is off or unknown, and resume when it turns on.
+- Add experimental Combined switching under Shuffle: switch before normal track endings and correct early AIMP/headset skips to the saved weighted choice.
+- Tune the separate correction delay from 0–2000 ms. Zero requests the target immediately after detecting a different playing track; AIMP response time still adds delay.
+- To keep a specific rejected track, select it again within five seconds after the correcting weighted track starts.
 
-## Simpler music-folder weights
+## Notification buttons
 
-- Manage several music roots with a separate IgnorantShuffle.weights.tsv file in each. Save song weights only in their linked music root.
-- Move Import weights and Export weights to Shuffle, beside the music-folder controls. Show a plain name for one root or radio choices for several roots.
-- Confirm root removal before clearing its assignment/index, and explain that adding it again requires indexing. Cancel keeps the assignment and cached index.
-- Keep folder names and transfer buttons readable on narrow screens and with larger text.
+- Choose Show Next button and Show Previous button independently under Alerts. Both default on; hide both to keep only the next-roll preview.
+- Remove the Lock-screen controls setting. Android controls notification display while locked.
 
 ## Fixes
 
-- Fix the startup crash caused by overlapping music-folder loading and the first screen resume.
-- Apply a selected import after returning from the file picker, even when the app is reloading weights.
+- Keep corrections working across repeated skips when AIMP briefly reports a paused state between tracks.
+- Keep rejected fragments out of listening history, cooldown and finite-pass progress. Stop after an unconfirmed command instead of retrying.
 
-Existing root files stay compatible. Old private app weights remain untouched but
-are no longer used; see the [migration guide](../docs/weight-storage.md#existing-installations).
-Import replaces the selected root's file; Export copies it unchanged.
-
-Android app version: **0.8.0** (versionCode **10**). Bundled shuffle core:
-**0.1.0** (unchanged). Requires Android 8.0 / API 26+. The application ID and pinned
-update signing key stay the same. AIMP's separate manual queue is not exposed to
-the companion; disable automatic weighted shuffle while listening to queued requests.
+Android app version: **0.9.0** (versionCode **11**). Bundled core: **0.1.0**.
+Requires Android 8.0 / API 26+. The application ID and pinned update signing key
+stay the same. Combined switching is optional and off by default; existing users
+who enabled the experimental mode keep it enabled. Normal track-end lead and
+correction delay are saved separately. AIMP's separate manual queue is not exposed;
+disable weighted shuffle while listening to queued requests.

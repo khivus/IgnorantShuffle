@@ -160,10 +160,14 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
         }
         item {
             Section {
-                Toggle("Enable weighted shuffle", "Automatically play the weighted choice ${m.preferences.leadMs} ms before track end while AIMP Shuffle is on.", m.automatic,
+                Toggle("Enable weighted shuffle", if (m.preferences.reactivePlayback)
+                    "Combined: switch ${m.preferences.leadMs} ms before track end and correct early AIMP skips after ${m.preferences.correctionDelayMs} ms while AIMP Shuffle is on."
+                    else "Automatically play the weighted choice ${m.preferences.leadMs} ms before track end while AIMP Shuffle is on.", m.automatic,
                     enabled = m.automatic || ready, onChange = m::changeAutomatic)
                 Text(m.automaticStatus, style = MaterialTheme.typography.bodySmall)
-                Text("CPU protection supports screen-off timing and uses more battery. It releases on pause, disable or disconnect. Headset Next keeps AIMP's own order.",
+                Text(if (m.preferences.reactivePlayback)
+                    "AIMP Next and headset skips are corrected too. To keep a specific track, select it again within 5 seconds after correction. CPU protection uses more battery."
+                    else "CPU protection supports screen-off timing and uses more battery. It releases on pause, disable or disconnect. Headset Next keeps AIMP's own order.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -239,6 +243,8 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
     var finite by rememberSaveable(m.settings.finite) { mutableStateOf(m.settings.finite) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var lead by rememberSaveable(m.preferences.leadMs) { mutableStateOf(m.preferences.leadMs.toString()) }
+    var correctionDelay by rememberSaveable(m.preferences.correctionDelayMs) { mutableStateOf(m.preferences.correctionDelayMs.toString()) }
+    var correctionError by rememberSaveable { mutableStateOf<String?>(null) }
     var removingRoot by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Intro("Shuffle rules", "Shared selection rules with the Windows plugin") }
@@ -295,6 +301,32 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
             }
         }
         item {
+            Section("Automatic switching") {
+                Toggle("Combined switching (experimental)",
+                    "Switch before a normal track end, and correct early AIMP/headset skips to the saved weighted choice. Requires Enable weighted shuffle and AIMP Shuffle.",
+                    m.preferences.reactivePlayback, enabled = !m.pending,
+                    onChange = { m.changePreferences(m.preferences.copy(reactivePlayback = it)) })
+                if (m.preferences.reactivePlayback) {
+                    OutlinedTextField(correctionDelay, { correctionDelay = it }, label = { Text("Correction delay after track change (ms)") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(0, 25, 50, 100, 200).forEach { ms ->
+                            StateChip(selected = correctionDelay == ms.toString(), onClick = { correctionDelay = ms.toString() }, label = { Text("$ms") })
+                        }
+                    }
+                    Text("0–2000 ms; default 200. Lower values reduce the audible fragment. Zero sends immediately when a different PLAYING track is identified, but may react to temporary metadata. AIMP response time still adds delay.", style = MaterialTheme.typography.bodySmall)
+                    correctionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    ActionButton(onClick = {
+                        val ms = correctionDelay.toLongOrNull()
+                        if (ms == null || ms !in 0..ReactivePlayback.MAX_DELAY_MS) correctionError = "Enter 0–2000 ms"
+                        else { correctionError = null; m.changePreferences(m.preferences.copy(correctionDelayMs = ms)) }
+                    }, enabled = !m.pending) { Text("Apply correction delay") }
+                    Text("You may hear a short fragment before correction. To choose a specific track in AIMP, select it again within 5 seconds after the weighted track starts. The second selection is allowed to play.", style = MaterialTheme.typography.bodySmall)
+                    Text("One correction per change; an unconfirmed command stops automatic switching. Keep battery optimization disabled for screen-off playback.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        item {
             Section("Switch before track end") {
                 OutlinedTextField(lead, { lead = it }, label = { Text("Lead before track end (ms)") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -339,7 +371,9 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
             Section("How it behaves") {
                 Text("Preview and reroll do not consume a track. Only observed playback advances history and cooldown.")
                 Text("Weights below ${m.settings.minimumWeight} are excluded from weighted choices; you can still use Play now on any exposed track.")
-                Text("Weighted shuffle requests Pause at the estimated end when the pass completes or no eligible tracks remain.")
+                Text(if (m.preferences.reactivePlayback)
+                    "When the pass completes or no eligible tracks remain, Pause is requested at the estimated end, or after an early AIMP skip. Rejected fragments do not count toward history or the pass."
+                    else "Weighted shuffle requests Pause at the estimated end when the pass completes or no eligible tracks remain.")
             }
             Spacer(Modifier.height(8.dp)); Text(m.result, style = MaterialTheme.typography.bodySmall)
         }
@@ -368,8 +402,10 @@ private fun AlertsPage(m: AimpController, permission: () -> Unit) {
                 })
                 Text(m.notificationStatus, style = MaterialTheme.typography.bodySmall)
                 if (m.preferences.notifyRoll && !m.notificationsAllowed) ActionButton(onClick = permission) { Text("Allow / Android notification settings") }
-                Toggle("Lock-screen controls", "Show track details and Previous / Next while the phone is locked", m.preferences.lockScreenControls,
-                    onChange = { m.changePreferences(m.preferences.copy(lockScreenControls = it)) })
+                Toggle("Show Next button", "Play the displayed weighted choice from the notification", m.preferences.notificationNext,
+                    onChange = { m.changePreferences(m.preferences.copy(notificationNext = it)) })
+                Toggle("Show Previous button", "Return through listening history from the notification", m.preferences.notificationPrevious,
+                    onChange = { m.changePreferences(m.preferences.copy(notificationPrevious = it)) })
                 TextButton(onClick = permission) { Text("Android notification settings") }
                 Text("Show notification when:", style = MaterialTheme.typography.titleSmall)
                 RollVisibility.entries.forEach { visibility ->
@@ -390,7 +426,7 @@ private fun AlertsPage(m: AimpController, permission: () -> Unit) {
                 Toggle("Playback mode", "Timed/manual and finite/endless", stats.mode) { m.changePreferences(m.preferences.copy(stats = stats.copy(mode = it))) }
             }
         }
-        item { Text("Next track plays the displayed weighted choice; Previous track goes back through confirmed listening history. Expand the IgnorantShuffle notification to see its buttons on the lock screen. Allow lock-screen notifications in Android settings; if missing, check whether silent notifications are hidden. Android or your phone may require unlocking. AIMP's separate media card and headset buttons keep AIMP's own order.", style = MaterialTheme.typography.bodySmall) }
+        item { Text("Expand the notification to see enabled buttons. Next plays the displayed weighted choice; Previous returns through confirmed listening history when available. Both hide while a command is pending. Android controls notification display while the phone is locked. Combined switching can correct early skips from AIMP's media card and headset buttons.", style = MaterialTheme.typography.bodySmall) }
     }
 }
 

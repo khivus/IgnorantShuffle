@@ -4,6 +4,14 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.9.0 (versionCode 11)
+
+- Add optional experimental combined switching: keep timed switches before normal endings and correct early AIMP/headset skips to the saved weighted choice.
+- Save a separate correction delay from 0–2000 ms, including an immediate 0 ms option. Select the same rejected track again within five seconds after correction to keep it playing.
+- Preserve the saved target through AIMP's brief PAUSED transitions, and keep rejected fragments out of history, cooldown and finite-pass progress. Stop after an unconfirmed command instead of retrying.
+- Add separate Show Next button and Show Previous button notification settings, enabled by default. Reject outdated or disabled notification actions.
+- Remove the Lock-screen controls setting; notification display while locked follows Android settings.
+
 ## 0.8.0 (versionCode 10)
 
 - Clarify Enable weighted shuffle and its millisecond lead before track end; run automatic switching only while AIMP Shuffle is on, waiting while off or unknown.

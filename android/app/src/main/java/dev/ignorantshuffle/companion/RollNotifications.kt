@@ -28,14 +28,15 @@ class RollNotifications(private val context: Context, private val event: (String
             clear(); return "Hidden for current playback state (${preferences.notificationVisibility.label})"
         }
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Next weighted roll", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "Weighted next choice and Previous / Next playback controls, including on the lock screen"
+            description = "Weighted next choice and optional Previous / Next playback controls"
             setSound(null, null); enableVibration(false)
         })
         if (!allowed()) { clear(); return "Notifications blocked by Android permission/channel settings" }
-        val history = previous?.takeIf { sourceKey != null && it.historyIndex != null }
+        val history = previous?.takeIf { preferences.notificationPrevious && sourceKey != null && it.historyIndex != null }
         val text = RollNotificationText.create(choice, weight, settings, automatic, preferences.stats, sequence, history?.track)
             ?: run { clear(); return "Waiting for an eligible next roll" }
-        val fingerprint = "$sequence/$text/${preferences.accent}/$actionToken/$pending/$sourceKey/${history?.track?.key}/${history?.historyIndex}/${preferences.lockScreenControls}"
+        val buttons = NotificationButtons.create(preferences, pending, choice.track != null, history?.track != null)
+        val fingerprint = "$sequence/$text/${preferences.accent}/$actionToken/$pending/$sourceKey/${history?.track?.key}/${history?.historyIndex}/$buttons"
         if (fingerprint == last) return "Next-roll notification active"
         try {
             val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java),
@@ -45,15 +46,17 @@ class RollNotifications(private val context: Context, private val event: (String
                 .setStyle(Notification.BigTextStyle().bigText(text.body)).setContentIntent(open)
                 .setOnlyAlertOnce(true).setAutoCancel(false).setShowWhen(false)
                 .setColor(preferences.accent.argb.toInt())
-                .setVisibility(if (preferences.lockScreenControls) Notification.VISIBILITY_PUBLIC else Notification.VISIBILITY_SECRET)
+                .setVisibility(Notification.VISIBILITY_PRIVATE)
                 .setCategory(Notification.CATEGORY_STATUS)
-            if (!pending) {
+            if (buttons.previous) {
                 history?.track?.let { track ->
                     val previousIntent = actionIntent(RollActionReceiver.PREVIOUS, actionToken, sequence, track.key)
                         .putExtra(RollActionReceiver.SOURCE, sourceKey)
                         .putExtra(RollActionReceiver.HISTORY_INDEX, requireNotNull(history.historyIndex))
                     notification.addAction(action(1, android.R.drawable.ic_media_previous, "Previous track", previousIntent))
                 }
+            }
+            if (buttons.next) {
                 choice.track?.let { track ->
                     notification.addAction(action(0, android.R.drawable.ic_media_next, "Next track",
                         actionIntent(RollActionReceiver.NEXT, actionToken, sequence, track.key)))

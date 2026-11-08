@@ -5,9 +5,9 @@ belongs to its component; it does not need to match either of the others.
 
 | Component | Single version source | Current development version | Release tag |
 | --- | --- | --- | --- |
-| Combined release | [release.properties](../versions/release.properties) | 0.16.0 | `v0.16.0` |
+| Combined release | [release.properties](../versions/release.properties) | 0.17.0 | `v0.17.0` |
 | Windows AIMP plugin | [windows.properties](../versions/windows.properties) | 0.14.0 | Included in the same stable bundle |
-| Android companion | [android.properties](../versions/android.properties) | 0.8.0, code 10 | Included in the same stable bundle |
+| Android companion | [android.properties](../versions/android.properties) | 0.9.0, code 11 | Included in the same stable bundle |
 | Shared C++ selection core | [core.properties](../versions/core.properties) | 0.1.0 | Included in the same stable bundle |
 
 These are source/build versions, not a statement that a release has been published.
