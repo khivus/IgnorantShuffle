@@ -21,7 +21,7 @@ Download the official **AIMP 5.40 SDK** from the [AIMP SDK page](https://aimp.ru
 
 The default SDK location is `.deps\aimp_sdk_540`; keep the versioned directory name. The expected header is `.deps\aimp_sdk_540\Sources\Cpp\apiPlaylists.h`.
 
-`prepare-sdk.ps1` verifies the archive's pinned SHA256 from the official 2026-10-22 listing. If AIMP replaces that download, verify the new official hash before updating the pin. You can also use a downloaded archive:
+`prepare-sdk.ps1` accepts only explicitly pinned SHA256 hashes. It supports the original 2026-10-22 archive and the verified 2026-11-09 help-file refresh: all 121 remaining files, including the API headers, match, with changes limited to the two compiled help files. Unknown archives are still rejected. Audit future official downloads before adding a pin. You can also use a downloaded archive:
 
 ```powershell
 .\tools\prepare-sdk.ps1 -ArchivePath C:\Downloads\aimp_sdk.zip
