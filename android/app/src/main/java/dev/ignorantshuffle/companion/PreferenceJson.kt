@@ -19,7 +19,7 @@ object PreferenceJson {
             json.optBoolean("reactivePlayback", false),
             json.optLong("correctionDelayMs", ReactivePlayback.SETTLE_MS).also {
                 require(it in 0..ReactivePlayback.MAX_DELAY_MS) { "Invalid saved correction delay" }
-            }, json.optBoolean("notificationNext", true), json.optBoolean("notificationPrevious", true))
+            }, json.optBoolean("notificationNext", true), json.optBoolean("notificationPrevious", true), json.optBoolean("balanceListening", false))
     }
 
     fun encode(value: AppPreferences): String {
@@ -29,6 +29,7 @@ object PreferenceJson {
         return JSONObject().put("logging", value.logging).put("theme", value.theme.name)
             .put("accent", value.accent.name).put("notifyRoll", value.notifyRoll).put("automatic", value.automatic)
             .put("debugPlayback", value.debugPlayback)
+            .put("balanceListening", value.balanceListening)
             .put("reactivePlayback", value.reactivePlayback)
             .put("correctionDelayMs", value.correctionDelayMs)
             .put("notificationNext", value.notificationNext).put("notificationPrevious", value.notificationPrevious)

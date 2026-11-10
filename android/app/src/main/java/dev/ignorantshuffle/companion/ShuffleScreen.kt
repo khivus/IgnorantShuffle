@@ -7,13 +7,15 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,68 +25,74 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private val pages = listOf("Player", "Shuffle", "Playlist", "Alerts", "Theme", "Logs")
+private val destinations = listOf("Player", "Playlist", "Queue", "Statistics", "Shuffle rules", "Music folders", "Playback", "Notifications", "Appearance", "Diagnostics", "Logs")
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () -> Unit, copy: () -> Unit,
     exportLog: () -> Unit, exportWeights: () -> Unit, importWeights: () -> Unit, requestNotifications: () -> Unit,
-    chooseMusicFolder: () -> Unit, batteryExempt: Boolean, batterySettings: () -> Unit, updates: AppUpdates) {
-    val pager = rememberPagerState(pageCount = { pages.size })
+    chooseMusicFolder: () -> Unit, batteryExempt: Boolean, batterySettings: () -> Unit, updates: AppUpdates,
+    exportStatistics: (String) -> Unit) {
+    var page by rememberSaveable { mutableStateOf("Player") }
+    val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Track?>(null) }
-    Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(42.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-                Text("IS", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
-            }
-            Column(Modifier.weight(1f)) {
-                Text("IgnorantShuffle", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(Modifier.size(7.dp).background(if (m.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape))
-                    Text(if (m.connected) "AIMP connected · ${if (m.automatic) "timed" else "manual"}" else "AIMP not connected",
-                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val pageState = rememberSaveableStateHolder()
+    BackHandler(drawer.isOpen || page != "Player") {
+        if (drawer.isOpen) scope.launch { drawer.close() } else page = "Player"
+    }
+    ModalNavigationDrawer(drawerState = drawer, drawerContent = {
+        ModalDrawerSheet {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
+                Text("IgnorantShuffle", Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
+                destinations.forEachIndexed { index, title ->
+                    if (index == 0 || index == 4 || index == 9) Text(
+                        when (index) { 0 -> "Listen & explore"; 4 -> "Settings"; else -> "Support" },
+                        Modifier.padding(16.dp), style = MaterialTheme.typography.labelLarge)
+                    NavigationDrawerItem(label = { Text(title) }, selected = page == title,
+                        onClick = { page = title; scope.launch { drawer.close() } })
                 }
-            }
-            TextButton(onClick = { if (updates.release != null || updates.busy) updates.open() else updates.check(true) }) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(when {
-                        updates.busy -> "Updating…"
-                        updates.downloaded != null -> "Install ↑"
-                        updates.release != null -> "Update ↑"
-                        else -> "Updates"
-                    }, style = MaterialTheme.typography.labelLarge)
-                    Text("v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall)
+                TextButton(onClick = { scope.launch { drawer.close() }; if (updates.release != null || updates.busy) updates.open() else updates.check(true) }) {
+                    Text("Updates · v${BuildConfig.VERSION_NAME}")
                 }
             }
         }
-        m.debugIssue?.let { issue ->
-            Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(issue, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                    TextButton(onClick = m::dismissDebugIssue) { Text("Dismiss") }
+    }) {
+        Scaffold(modifier = Modifier.fillMaxSize(), topBar = {
+            TopAppBar(title = { Text(page) }, navigationIcon = {
+                IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(painterResource(R.drawable.ic_menu), "Open navigation drawer") }
+            }, actions = {
+                Text(if (m.connected) "AIMP connected" else "Disconnected", Modifier.padding(end = 16.dp), style = MaterialTheme.typography.labelSmall)
+            })
+        }) { insets ->
+            Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
+                m.debugIssue?.let { issue ->
+                    Surface(color = MaterialTheme.colorScheme.errorContainer) {
+                        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(issue, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            TextButton(onClick = m::dismissDebugIssue) { Text("Dismiss") }
+                        }
+                    }
                 }
-            }
-        }
-        PrimaryScrollableTabRow(selectedTabIndex = pager.currentPage, edgePadding = 12.dp,
-            containerColor = MaterialTheme.colorScheme.background) {
-            pages.forEachIndexed { index, title ->
-                Tab(selected = index == pager.currentPage, onClick = { scope.launch { pager.animateScrollToPage(index) } }, text = { Text(title) })
-            }
-        }
-        HorizontalPager(pager, modifier = Modifier.weight(1f).fillMaxWidth(), beyondViewportPageCount = 1) { page ->
-            when (page) {
-                0 -> PlayerPage(m, settings, openAimp, batteryExempt, batterySettings) { editing = it }
-                1 -> ShufflePage(m, chooseMusicFolder, importWeights, exportWeights)
-                2 -> PlaylistPage(m) { editing = it }
-                3 -> AlertsPage(m, requestNotifications)
-                4 -> ThemePage(m)
-                else -> LogsPage(m, copy, exportLog, requestNotifications)
+                Box(Modifier.weight(1f)) { pageState.SaveableStateProvider(page) {
+                    when (page) {
+                        "Player" -> PlayerPage(m, settings, openAimp, batteryExempt, batterySettings) { editing = it }
+                        "Playlist" -> PlaylistPage(m) { editing = it }
+                        "Queue" -> QueuePage(m)
+                        "Statistics" -> StatisticsPage(m, exportStatistics)
+                        "Shuffle rules", "Music folders", "Playback" -> ShufflePage(m, chooseMusicFolder, importWeights, exportWeights, page, batteryExempt, batterySettings)
+                        "Notifications" -> AlertsPage(m, requestNotifications)
+                        "Appearance" -> ThemePage(m)
+                        "Diagnostics" -> DiagnosticsPage(m, requestNotifications)
+                        "Logs" -> LogsPage(m, copy, exportLog)
+                    }
+                } }
             }
         }
     }
@@ -146,7 +154,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                 Text(choice.track?.title ?: "No eligible next track", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 choice.track?.artist?.takeIf(String::isNotBlank)?.let { Text(it) }
                 choice.track?.let { Text("Weight ${m.weight(it)}", fontWeight = FontWeight.SemiBold) }
-                Text(if (choice.historyIndex != null) "Forward in listening history" else
+                Text(if (choice.queueEntryId != null) "Next in app queue" else if (choice.historyIndex != null) "Forward in listening history" else
                     "${String.format(Locale.ROOT, "%.1f", choice.probability * 100)}% at roll · ${choice.eligible} eligible · ${choice.blocked} cooling",
                     style = MaterialTheme.typography.bodySmall)
                 if (choice.cooldownFallback) Text("Short playlist: cooldown fallback is active.", style = MaterialTheme.typography.bodySmall)
@@ -155,7 +163,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                     ActionButton(onClick = m::smartPrevious, enabled = ready && m.canPrevious, modifier = Modifier.weight(1f)) { Text("Previous") }
                     ActionButton(onClick = m::smartNext, enabled = ready && choice.track != null, modifier = Modifier.weight(1f)) { Text("Play") }
                 }
-                TextButton(onClick = m::reroll, enabled = ready && choice.track != null) { Text("Reroll next choice") }
+                TextButton(onClick = m::reroll, enabled = ready && choice.track != null && choice.queueEntryId == null) { Text("Reroll next choice") }
             }
         }
         item {
@@ -169,15 +177,6 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                     "AIMP Next and headset skips are corrected too. To keep a specific track, select it again within 5 seconds after correction. CPU protection uses more battery."
                     else "CPU protection supports screen-off timing and uses more battery. It releases on pause, disable or disconnect. Headset Next keeps AIMP's own order.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        item {
-            Section("Background playback") {
-                Text(if (batteryExempt) "Battery optimization is disabled for IgnorantShuffle." else
-                    "Battery optimization is enabled. Android may delay background shuffle and let AIMP skip the weighted choice.")
-                Text("For reliable screen-off switching, allow unrestricted battery use for IgnorantShuffle. In Android settings, choose this app and select Don't optimize / Unrestricted. Some phones also have a separate background or auto-start setting.",
-                    style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = batterySettings) { Text(if (batteryExempt) "Battery settings" else "Disable battery optimization") }
             }
         }
         item {
@@ -196,17 +195,17 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
 private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
     var search by rememberSaveable { mutableStateOf("") }
     var linking by remember { mutableStateOf<Track?>(null) }
+    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
     val visible = remember(search, m.tracks) { m.tracks.filter { search.isBlank() || it.title.contains(search, true) || it.artist.contains(search, true) } }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Spacer(Modifier.height(16.dp))
-        Intro("Playlist", "${m.tracks.size} entries exposed by AIMP")
+
         OutlinedTextField(search, { search = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-            label = { Text("Search title or artist") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+            label = { Text("Search ${m.tracks.size} tracks by title or artist") }, singleLine = true, shape = RoundedCornerShape(16.dp))
         if (visible.isEmpty()) Text(if (m.tracks.isEmpty()) "Start music in AIMP and refresh to load its playlist." else "No matching tracks.", Modifier.padding(vertical = 16.dp))
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-            itemsIndexed(visible) { _, track ->
+            itemsIndexed(visible, key = { index, track -> "${track.key}:$index" }, contentType = { _, _ -> "track" }) { _, track ->
                 val current = m.playback.track?.key == track.key
-                Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(
+                Card(modifier = Modifier.fillMaxWidth().clickable { expanded = if (expanded == track.key) null else track.key }, shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(
                     containerColor = if (current) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         if (current) Text("PLAYING", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
@@ -216,6 +215,8 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
                             FilledTonalButton(onClick = { edit(track) }, enabled = !m.pending && m.storageError == null && !m.folder.blocked) { Text("Weight ${m.weight(track)}") }
                             ActionButton(onClick = { m.play(track) }, enabled = m.ready() && track.selectable) { Text("Play now") }
                         }
+                        TextButton(onClick = { m.enqueue(track) }, enabled = track.selectable && !m.pending) { Text("Add to queue") }
+                        if (expanded == track.key) {
                         Text(m.weightSource(track), style = MaterialTheme.typography.labelSmall)
                         if (m.weight(track) < m.settings.minimumWeight)
                             Text("Excluded from shuffle (weight < ${m.settings.minimumWeight})", style = MaterialTheme.typography.bodySmall)
@@ -226,17 +227,18 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
                                 Text(if (match.path == null) "Link music file" else "Change file link")
                             }
                         }
+                        }
                     }
                 }
             }
-            item { Text("Shared weights use real paths relative to your music folder. Unmatched entries use the default weight until linked; ambiguous tags require a file link.", style = MaterialTheme.typography.bodySmall) }
+            item { Text("Tap a track for file and weight details. Shared weights use real paths relative to your music folder. Unmatched entries use the default weight until linked; ambiguous tags require a file link.", style = MaterialTheme.typography.bodySmall) }
         }
     }
     linking?.let { track -> FileLinkDialog(m, track) { linking = null } }
 }
 
 @Composable
-private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, importWeights: () -> Unit, exportWeights: () -> Unit) {
+private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, importWeights: () -> Unit, exportWeights: () -> Unit, group: String, batteryExempt: Boolean, batterySettings: () -> Unit) {
     var default by rememberSaveable(m.settings.defaultWeight) { mutableStateOf(m.settings.defaultWeight.toString()) }
     var minimum by rememberSaveable(m.settings.minimumWeight) { mutableStateOf(m.settings.minimumWeight.toString()) }
     var cooldown by rememberSaveable(m.settings.cooldown) { mutableStateOf(m.settings.cooldown.toString()) }
@@ -247,8 +249,17 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
     var correctionError by rememberSaveable { mutableStateOf<String?>(null) }
     var removingRoot by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Intro("Shuffle rules", "Shared selection rules with the Windows plugin") }
-        item {
+        item { Intro(group, "Changes are saved on this device") }
+        if (group == "Playback") item {
+            Section("Background playback") {
+                Text(if (batteryExempt) "Battery optimization is disabled for IgnorantShuffle." else
+                    "Battery optimization is enabled. Android may delay background shuffle and let AIMP skip the weighted choice.")
+                Text("For reliable screen-off switching, allow unrestricted battery use for IgnorantShuffle. In Android settings, choose this app and select Don't optimize / Unrestricted. Some phones also have a separate background or auto-start setting.",
+                    style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = batterySettings) { Text(if (batteryExempt) "Battery settings" else "Disable battery optimization") }
+            }
+        }
+        if (group == "Music folders") item {
             Section("Music-folder weights") {
                 Text("Each song has its own weight: 10 gives twice the chance of 5 when both are eligible; 0 excludes a song.")
                 Text("For Music/Artist/Song.flac, add Music. Each separate music root stores its song weights in ${PortableWeights.FILENAME}.", style = MaterialTheme.typography.bodySmall)
@@ -300,7 +311,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
                 Text("Edit song weights in Playlist. Link unresolved songs to their files first. Reload weights after syncing the file from another device; reindex after adding or retagging music.", style = MaterialTheme.typography.bodySmall)
             }
         }
-        item {
+        if (group == "Playback") item {
             Section("Automatic switching") {
                 Toggle("Combined switching (experimental)",
                     "Switch before a normal track end, and correct early AIMP/headset skips to the saved weighted choice. Requires Enable weighted shuffle and AIMP Shuffle.",
@@ -326,7 +337,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
                 }
             }
         }
-        item {
+        if (group == "Playback") item {
             Section("Switch before track end") {
                 OutlinedTextField(lead, { lead = it }, label = { Text("Lead before track end (ms)") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -343,8 +354,11 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
                 }, enabled = !m.pending) { Text("Apply timing") }
             }
         }
-        item {
+        if (group == "Shuffle rules") item {
             Section("Weights & cooldown") {
+                Toggle("Balance listening frequency", "Less-played tracks gain selection weight; often-played tracks lose it. Uses all-time qualified local plays, with a 0.25–4× multiplier. Saved weights and eligibility are unchanged.", m.preferences.balanceListening,
+                    enabled = !m.pending, onChange = { m.changePreferences(m.preferences.copy(balanceListening = it)) })
+                if (m.preferences.balanceListening) Text("Pause statistics to freeze learning; clear statistics to reset it. Collecting resumes only when enabled on Statistics.", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(default, { default = it }, label = { Text("Default weight") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Text("Used for tracks without a saved weight. Fractions and values above 10 are supported.", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(minimum, { minimum = it }, label = { Text("Minimum eligible weight") },
@@ -361,13 +375,13 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
                 }, enabled = !m.pending && m.storageError == null, modifier = Modifier.fillMaxWidth()) { Text("Apply shuffle settings") }
             }
         }
-        if (m.settings.finite) item {
+        if (group == "Shuffle rules" && m.settings.finite) item {
             Section("Current pass") {
                 Text("${m.passCount} identities heard · ${m.preview.remaining} eligible tracks remaining")
                 ActionButton(onClick = m::newPass, enabled = !m.pending) { Text("Start a new pass") }
             }
         }
-        item {
+        if (group == "Shuffle rules") item {
             Section("How it behaves") {
                 Text("Preview and reroll do not consume a track. Only observed playback advances history and cooldown.")
                 Text("Weights below ${m.settings.minimumWeight} are excluded from weighted choices; you can still use Play now on any exposed track.")
@@ -462,22 +476,9 @@ private fun ThemePage(m: AimpController) {
 }
 
 @Composable
-private fun LogsPage(m: AimpController, copy: () -> Unit, export: () -> Unit, permission: () -> Unit) {
-    var query by rememberSaveable { mutableStateOf("") }
-    var group by rememberSaveable { mutableStateOf("All") }
-    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
-    var saved by remember { mutableStateOf<List<String>?>(null) }
-    val source = saved ?: m.events
-    val visible = source.asReversed().filter { line ->
-        line.contains(query, ignoreCase = true) && when (group) {
-            "Rolls" -> line.contains("ROLL") || line.contains("HANDOFF")
-            "Commands" -> listOf("COMMAND", "DISPATCH", "VERIFY", "RESULT").any { line.contains(it) }
-            "Errors" -> listOf("ERROR", "EXCEPTION", "failed", "CANCELLED").any { line.contains(it, true) }
-            else -> true
-        }
-    }
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Intro("Automatic diagnostics", "Persistent logs · newest events first")
+private fun DiagnosticsPage(m: AimpController, permission: () -> Unit) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { Section("Playback & logging") {
         Toggle("Playback debug mode", "Check selected tracks against actual playback; warn here and by notification", m.preferences.debugPlayback,
             onChange = {
                 m.changePreferences(m.preferences.copy(debugPlayback = it))
@@ -489,27 +490,59 @@ private fun LogsPage(m: AimpController, copy: () -> Unit, export: () -> Unit, pe
         }
         Toggle("Log automatically", "Enabled by default · retains two files of about 2MB", m.preferences.logging,
             onChange = { m.changePreferences(m.preferences.copy(logging = it)) })
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ActionButton(onClick = export) { Text("Export full log") }
-            ActionButton(onClick = copy) { Text("Copy summary") }
+        } }
+    }
+}
+
+@Composable
+private fun LogsPage(m: AimpController, copy: () -> Unit, export: () -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var group by rememberSaveable { mutableStateOf("All") }
+    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
+    var saved by remember { mutableStateOf<List<String>?>(null) }
+    var menu by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val source = saved ?: m.events
+    val visible by produceState(emptyList<String>(), source, query, group) {
+        value = withContext(Dispatchers.Default) { source.asReversed().filter { line ->
+            line.contains(query, ignoreCase = true) && when (group) {
+                "Rolls" -> line.contains("ROLL") || line.contains("HANDOFF")
+                "Commands" -> listOf("COMMAND", "DISPATCH", "VERIFY", "RESULT").any { line.contains(it) }
+                "Errors" -> listOf("ERROR", "EXCEPTION", "failed", "CANCELLED").any { line.contains(it, true) }
+                else -> true
+            }
+        } }
+    }
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(query, { query = it }, label = { Text("Search log") }, singleLine = true, modifier = Modifier.weight(1f))
+            Box {
+                TextButton(onClick = { menu = true }) { Text("Tools") }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text("Export full log") }, onClick = { menu = false; export() })
+                    DropdownMenuItem(text = { Text("Copy summary") }, onClick = { menu = false; copy() })
+                    DropdownMenuItem(text = { Text("Live events") }, onClick = { saved = null; menu = false })
+                    DropdownMenuItem(text = { Text("Load saved history") }, enabled = !loading, onClick = {
+                        menu = false; loading = true
+                        scope.launch { try { saved = withContext(Dispatchers.IO) { m.savedEvents() } } finally { loading = false } }
+                    })
+                    HorizontalDivider()
+                    listOf("All", "Rolls", "Commands", "Errors").forEach { name ->
+                        DropdownMenuItem(text = { Text(if (group == name) "✓ $name" else name) }, onClick = { group = name; menu = false })
+                    }
+                }
+            }
         }
+        Text(if (loading) "Loading saved events…" else "${visible.size}/${source.size} · $group · ${if (saved == null) "Live" else "Saved snapshot"} · Tap to expand", style = MaterialTheme.typography.labelSmall)
         m.logError?.let { Text("Log storage error: $it", color = MaterialTheme.colorScheme.error) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StateChip(saved == null, { saved = null }, label = { Text("Live") })
-            StateChip(saved != null, { saved = m.savedEvents() }, label = { Text("Saved history") })
-        }
-        OutlinedTextField(query, { query = it }, label = { Text("Search log") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("All", "Rolls", "Commands", "Errors").forEach { name -> StateChip(group == name, { group = name }, label = { Text(name) }) }
-        }
-        Text("${visible.size} / ${source.size} events · ${if (saved == null) "live view" else "saved snapshot; tap Saved history to reload"}. Tap an entry to expand.", style = MaterialTheme.typography.labelSmall)
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            itemsIndexed(visible) { _, line ->
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
+            itemsIndexed(visible, contentType = { _, _ -> "log" }) { _, line ->
                 Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
                     modifier = Modifier.fillMaxWidth().clickable { expanded = if (expanded == line) null else line }) {
                     SelectionContainer {
                         Text(line, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall,
-                            maxLines = if (expanded == line) Int.MAX_VALUE else 5, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(12.dp))
+                            maxLines = if (expanded == line) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(12.dp))
                     }
                 }
             }
@@ -539,7 +572,13 @@ private fun WeightDialog(m: AimpController, track: Track, close: () -> Unit) {
                 ?: "Link this entry to a file in a music root before saving a weight.",
                 style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(text, { text = it; error = null }, label = { Text("Weight") }, singleLine = true, isError = error != null)
-            Row { listOf(0, 1, 5, 10).forEach { value -> TextButton(onClick = { text = value.toString() }) { Text("$value") } } }
+            (0..10).chunked(4).forEach { values ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    values.forEach { value ->
+                        StateChip(text.toDoubleOrNull() == value.toDouble(), { text = value.toString() }, label = { Text("$value") }, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
             TextButton(onClick = {
                 m.setWeight(track, "", inherit = true)
                 if (m.folder.busy || !m.weights.containsKey(track.key)) close() else error = m.result

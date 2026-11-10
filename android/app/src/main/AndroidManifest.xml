@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <queries><package android:name="com.aimp.player" /></queries>
     <application android:name=".ShuffleApplication" android:label="IgnorantShuffle"
-        android:allowBackup="false" android:fullBackupContent="false" android:icon="@drawable/ic_shuffle"
+        android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/no_backup" android:icon="@drawable/ic_shuffle"
         android:usesCleartextTraffic="false" android:supportsRtl="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <provider android:name=".UpdateFileProvider" android:authorities="${applicationId}.updates"
             android:exported="false" android:grantUriPermissions="true">

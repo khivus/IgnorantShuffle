@@ -40,7 +40,7 @@ class SessionAccessService : NotificationListenerService() {
 }
 
 private data class Pending(val label: String, val target: String?, val before: Playback,
-    val correctivePause: Boolean = false, val reactiveCorrection: Boolean = false)
+    val correctivePause: Boolean = false, val reactiveCorrection: Boolean = false, val fallback: Boolean = false)
 
 class AimpController(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
@@ -101,11 +101,44 @@ class AimpController(private val context: Context) {
     var result by mutableStateOf("Ready"); private set
     var storageError by mutableStateOf<String?>(null); private set
     var events by mutableStateOf(emptyList<String>()); private set
+    var appQueue by mutableStateOf(emptyList<QueueEntry>()); private set
+    private var statisticsCounts: Map<String, Long> = emptyMap()
+    private var passCompleted = false
+    private var passStarted = false
+    val statistics = StatisticsRepository(context) { counts ->
+        statisticsCounts = counts
+        model.balance(preferences.balanceListening, counts)
+        if (connected && !pending) { updatePreview("Listening totals changed"); scheduleTimer() }
+    }
+    private val queueStore = context.getSharedPreferences("app-queue", Context.MODE_PRIVATE)
+
+    private val statisticsPoll = Runnable { if (connected) guarded { read(rearm = false) } }
+    fun enqueue(track: Track) = guarded {
+        check(track.selectable && !pending) { "Wait for playback confirmation" }
+        saveQueue(appQueue + QueueEntry.from(track))
+    }
+    fun removeQueue(id: String) = guarded { check(!pending); saveQueue(appQueue.filterNot { it.id == id }) }
+    fun clearQueue() = guarded { check(!pending); saveQueue(emptyList()) }
+    fun moveQueue(index: Int, direction: Int) = guarded {
+        check(!pending)
+        val value = appQueue.toMutableList()
+        val target = index + direction
+        require(index in value.indices && target in value.indices)
+        val entry = value.removeAt(index); value.add(target, entry); saveQueue(value)
+    }
+    private fun saveQueue(value: List<QueueEntry>) {
+        queueStore.edit().putString("entries", QueueEntry.encode(value)).apply()
+        appQueue = value; model.setQueue(value)
+        if (connected) { updatePreview("App queue changed"); scheduleTimer() }
+    }
 
     init {
         events = journal.tail()
         runCatching { preferenceStore.load() }.onSuccess { preferences = it }
             .onFailure { log("Preference read failed; using defaults: $it") }
+        runCatching { QueueEntry.decode(queueStore.getString("entries", "[]") ?: "[]") }
+            .onSuccess { appQueue = it; model.setQueue(it) }.onFailure { log("App queue could not be read: $it") }
+        model.balance(preferences.balanceListening, statisticsCounts)
         automatic = preferences.automatic
         automaticStatus = if (automatic) "Waiting for a connected AIMP session" else "Timed automatic mode is off"
         log("Restored automatic preference: ${preferences.automatic}")
@@ -134,6 +167,8 @@ class AimpController(private val context: Context) {
         preferenceStore.save(value)
         if (!value.logging) log("Automatic logging disabled by user")
         preferences = value
+        model.balance(value.balanceListening, statisticsCounts)
+        if (connected && !pending) { updatePreview("Preferences changed"); scheduleTimer() }
         if (debugChanged) {
             audit.cancel(); handler.removeCallbacks(auditPoll)
             debugStatus = if (value.debugPlayback) "Waiting for the next selected track" else "Playback debug mode is off"
@@ -222,6 +257,7 @@ class AimpController(private val context: Context) {
     }
 
     private fun detach(reason: String) {
+        handler.removeCallbacks(statisticsPoll); statistics.engine.disconnect(); passCompleted = false; passStarted = false
         audit.cancel(); handler.removeCallbacks(auditPoll)
         debugStatus = if (preferences.debugPlayback) "Waiting for a connected AIMP session" else "Playback debug mode is off"
         if (pending) finish("INCONCLUSIVE: $reason")
@@ -297,12 +333,14 @@ class AimpController(private val context: Context) {
             }
             when (val decision = reactive.observe(next, SystemClock.elapsedRealtime(), preferences.correctionDelayMs)) {
                 ReactiveDecision.Wait -> {
+                    statistics.engine.reject()
                     handler.removeCallbacks(endTimer); scheduled = null
                     playback = next
                     scheduleReactivePoll(); sustainCpu()
                     return // Do not count the rejected fragment in history/cooldown/finite progress.
                 }
                 is ReactiveDecision.Correct -> {
+                    statistics.engine.reject()
                     playback = next
                     log("REACTIVE roll=${decision.roll.sequence}; observed=${decision.rejected}; target=${decision.roll.choice.track?.key}; stable=${preferences.correctionDelayMs}ms")
                     if (decision.roll.choice.track == null) {
@@ -329,23 +367,38 @@ class AimpController(private val context: Context) {
         }
         playback = next
         observeAudit()
+        var restartedObservation = false
         if (next.state == PlaybackState.STATE_PLAYING && current != null && operation?.correctivePause != true) {
+            if (settings.finite && !passStarted) { passStarted = true; statistics.shuffle("pass_started") }
             val op = operation
             val restarted = op != null && op.target == current.key && model.currentKey == current.key &&
                 (op.reactiveCorrection || (op.before.track?.key == current.key &&
                     op.before.position >= 3000 && next.position in 0..999))
             model.confirmPlaying(current, restarted)
+            restartedObservation = restarted
+            if (model.queue != appQueue) saveQueue(model.queue)
         }
+        val observed = current ?: title.takeIf { it.isNotBlank() }?.let { Track(-1, mediaId, mediaUri, it, next.artist) }
+        if (operation?.correctivePause != true && (operation?.target == null || operation?.target == observed?.key))
+            statistics.engine.observe(next.copy(track = observed), SystemClock.elapsedRealtime(), System.currentTimeMillis(), restartedObservation)
+        else statistics.engine.reject()
+        handler.removeCallbacks(statisticsPoll)
+        if (next.state == PlaybackState.STATE_PLAYING) handler.postDelayed(statisticsPoll, 1000)
         var commandConfirmed = false
         operation?.let { op ->
             val verified = PlaybackEvidence.confirmed(op.label, op.target, op.before, next)
             log("VERIFY ${op.label}; expected=${op.target}; actual=${next.track?.key}; state=${next.state}; position=${next.position}; matched=$verified")
             if (verified) {
+                if (op.fallback) statistics.shuffle("cooldown_fallback")
                 finish("OBSERVED: ${op.label} matched subsequent playback")
                 commandConfirmed = true
             }
         }
         updatePreview("Playback/catalog observation")
+        if (settings.finite && !passCompleted && model.tracks.any(model::eligible) &&
+            model.tracks.filter(model::eligible).all { it.key in model.played }) {
+            passCompleted = true; statistics.shuffle("pass_completed")
+        }
         if (rearm || commandConfirmed) scheduleTimer()
     }
 
@@ -393,6 +446,11 @@ class AimpController(private val context: Context) {
     fun configure(value: Settings) = guarded {
         check(storageError == null) { "Saved settings could not be read; existing data is preserved" }
         store.save(value)
+        if (value.finite != settings.finite) {
+            passCompleted = false
+            passStarted = value.finite
+            if (value.finite) statistics.shuffle("pass_started")
+        }
         settings = value; model.configure(value, weights)
         updatePreview(); scheduleTimer(); log("Settings changed: $value")
     }
@@ -415,8 +473,8 @@ class AimpController(private val context: Context) {
         check(!pending && storageError == null && !folder.blocked)
         folder.export(copy)
     }
-    fun newPass() = guarded { model.newPass(); updatePreview(); scheduleTimer(); log("Started a new finite pass; current track counted") }
-    fun reroll() = guarded { if (!pending) { model.next(true); updatePreview("User reroll"); scheduleTimer() } }
+    fun newPass() = guarded { model.newPass(); passCompleted = false; passStarted = settings.finite; if (settings.finite) statistics.shuffle("pass_started"); updatePreview(); scheduleTimer(); log("Started a new finite pass; current track counted") }
+    fun reroll() = guarded { if (!pending && preview.queueEntryId == null) { statistics.shuffle("reroll"); model.next(true); updatePreview("User reroll"); scheduleTimer() } }
     fun smartNext() = guarded { if (!pending) playChoice(model.next()) }
     fun smartPrevious() = guarded { if (!pending) model.previous()?.let(::playChoice) }
     fun play(track: Track) = guarded { if (!pending) playChoice(Choice(track)) }
@@ -478,7 +536,7 @@ class AimpController(private val context: Context) {
         log("DISPATCH roll=$sequence; source=${playback.track}; target=$fresh; choice=$choice")
         model.requested(choice)
         if (preferences.debugPlayback) armAudit(playback, fresh, sequence)
-        begin("Play ${fresh.title}", fresh.key, reactiveCorrection = correction != null)
+        begin("Play ${fresh.title}", fresh.key, reactiveCorrection = correction != null, fallback = choice.cooldownFallback)
         when {
             fresh.mediaId != null && actions and PlaybackState.ACTION_PLAY_FROM_MEDIA_ID != 0L -> transport.playFromMediaId(fresh.mediaId, null)
             fresh.queueId >= 0 && actions and PlaybackState.ACTION_SKIP_TO_QUEUE_ITEM != 0L -> transport.skipToQueueItem(fresh.queueId)
@@ -507,9 +565,9 @@ class AimpController(private val context: Context) {
         guarded { read() }
         if (pending) finish("INCONCLUSIVE after 8 seconds; no confirming playback. No retry sent.")
     }
-    private fun begin(label: String, key: String?, correctivePause: Boolean = false, reactiveCorrection: Boolean = false) {
+    private fun begin(label: String, key: String?, correctivePause: Boolean = false, reactiveCorrection: Boolean = false, fallback: Boolean = false) {
         handler.removeCallbacks(endTimer); scheduled = null
-        operation = Pending(label, key, playback, correctivePause, reactiveCorrection); pending = true
+        operation = Pending(label, key, playback, correctivePause, reactiveCorrection, fallback); pending = true
         result = "Waiting for AIMP: $label"
         log("COMMAND $label; target=$key")
         handler.postDelayed(timeout, 8000)

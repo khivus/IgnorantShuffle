@@ -23,7 +23,7 @@ data class Settings(val defaultWeight: Double = 5.0, val cooldown: Int = 0, val 
 
 data class Choice(val track: Track?, val probability: Double = 0.0, val eligible: Int = 0,
     val excluded: Int = 0, val blocked: Int = 0, val cooldownFallback: Boolean = false,
-    val remaining: Int = 0, val historyIndex: Int? = null)
+    val remaining: Int = 0, val historyIndex: Int? = null, val queueEntryId: String? = null)
 
 fun interface Planner {
     fun choose(tracks: List<Track>, weights: DoubleArray, recent: List<String>, played: List<String>,
@@ -57,11 +57,34 @@ class ShuffleModel(private val planner: Planner) {
     private val timeline = mutableListOf<String>()
     private var cursor = -1
     private var navigation: Int? = null
+    private var requestedQueue: String? = null
+    var queue: List<QueueEntry> = emptyList(); private set
+    private var balanced = false
+    private var playCounts: Map<String, Long> = emptyMap()
+    private var balanceMean = 0.0
     private var preview: Choice? = null
     var choiceSequence: Long = 0; private set
 
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
     fun eligible(track: Track) = weight(track) >= settings.minimumWeight
+
+    fun balance(enabled: Boolean, counts: Map<String, Long>) {
+        if (balanced == enabled && playCounts == counts) return
+        val changedMode = balanced != enabled
+        balanced = enabled; playCounts = counts.toMap(); balanceMean = ListeningBalance.mean(playCounts, tracks)
+        // Newly learned totals affect the next roll; keep the currently published commitment.
+        if (changedMode) preview = null
+    }
+    fun selectionWeight(track: Track): Double = when {
+        !eligible(track) -> 0.0
+        !balanced -> weight(track)
+        else -> (weight(track) * ListeningBalance.factor(track.key, playCounts, balanceMean)).coerceAtMost(Double.MAX_VALUE / 4)
+    }
+
+    fun setQueue(entries: List<QueueEntry>) {
+        if (entries == queue) return
+        queue = entries.toList(); preview = null
+    }
 
     fun configure(settings: Settings, weights: Map<String, Double>, preservePreview: Boolean = false) {
         settings.validate()
@@ -79,6 +102,7 @@ class ShuffleModel(private val planner: Planner) {
     fun catalog(value: List<Track>) {
         val changed = tracks.map { it.key }.sorted() != value.map { it.key }.sorted()
         tracks = value
+        balanceMean = ListeningBalance.mean(playCounts, tracks)
         // A published roll is a commitment, not a request to draw again on queue
         // reorder/addition. Removal of its target requires an explicit new roll.
         if (changed && preview?.track?.let { chosen -> value.none { it.key == chosen.key } } != false) preview = null
@@ -96,6 +120,11 @@ class ShuffleModel(private val planner: Planner) {
             cursor = timeline.lastIndex
         }
         navigation = null
+        requestedQueue?.let { id ->
+            if (queue.any { it.id == id && it.key == key }) {
+                queue = queue.filterNot { it.id == id }; requestedQueue = null
+            }
+        }
         currentKey = key
         recent.add(key)
         if (recent.size > 10001) recent.removeAt(0)
@@ -111,19 +140,22 @@ class ShuffleModel(private val planner: Planner) {
 
     fun disconnect() {
         tracks = emptyList(); currentKey = null; recent.clear(); played.clear(); timeline.clear()
-        cursor = -1; navigation = null; preview = null
+        cursor = -1; navigation = null; requestedQueue = null; preview = null
     }
 
     fun next(reroll: Boolean = false): Choice {
         val old = preview
         if (!reroll && old != null) return old.copy(track = old.track?.let { t -> tracks.firstOrNull { it.key == t.key } })
+        queue.firstNotNullOfOrNull { entry -> tracks.firstOrNull { it.key == entry.key && it.selectable }?.let {
+            Choice(it, remaining = tracks.filter(::eligible).count { t -> t.key !in played }, queueEntryId = entry.id)
+        } }?.let { preview = it; choiceSequence++; return it }
         if (!reroll && cursor >= 0 && cursor < timeline.lastIndex) {
             val forward = tracks.firstOrNull { it.key == timeline[cursor + 1] && eligible(it) }
             if (forward != null) return Choice(forward, historyIndex = cursor + 1).also { preview = it; choiceSequence++ }
         }
         // Apply the eligibility cutoff before native cooldown/finite-pass rules,
         // while preserving the actual stored weights and their relative chances.
-        val selectionWeights = tracks.map { if (eligible(it)) weight(it) else 0.0 }.toDoubleArray()
+        val selectionWeights = tracks.map(::selectionWeight).toDoubleArray()
         return planner.choose(tracks, selectionWeights, recent.toList(), played.toList(),
             settings, if (reroll) old?.track?.key.orEmpty() else "").also { preview = it; choiceSequence++ }
     }
@@ -136,6 +168,6 @@ class ShuffleModel(private val planner: Planner) {
         return null
     }
 
-    fun requested(choice: Choice) { navigation = choice.historyIndex }
-    fun cancelRequest() { navigation = null }
+    fun requested(choice: Choice) { navigation = choice.historyIndex; requestedQueue = choice.queueEntryId }
+    fun cancelRequest() { navigation = null; requestedQueue = null }
 }

@@ -25,6 +25,8 @@ android {
         targetSdk = 36
         versionCode = androidVersionCode
         versionName = androidVersion
+        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+        testInstrumentationRunnerArguments["package"] = "dev.ignorantshuffle.companion"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         externalNativeBuild { cmake { cppFlags += "-std=c++17" } }
     }
@@ -37,6 +39,9 @@ android {
     }
 }
 dependencies {
+    // Platform instrumentation runner: exercise SQLite and real Compose navigation without another runtime dependency.
+    androidTestCompileOnly(files(androidComponents.sdkComponents.sdkDirectory.map { it.file("platforms/android-${android.compileSdk}/optional/android.test.base.jar") }))
+    androidTestCompileOnly(files(androidComponents.sdkComponents.sdkDirectory.map { it.file("platforms/android-${android.compileSdk}/optional/android.test.runner.jar") }))
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.media:media:1.7.0")
     implementation(platform("androidx.compose:compose-bom:2026.02.01"))

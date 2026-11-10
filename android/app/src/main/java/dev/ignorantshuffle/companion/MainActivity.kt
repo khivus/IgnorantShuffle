@@ -64,7 +64,8 @@ class MainActivity : ComponentActivity() {
     private val export = registerForActivityResult(object : ActivityResultContracts.CreateDocument("text/plain") {
         override fun createIntent(context: Context, input: String): Intent = super.createIntent(context, input)
             // The default MIME preserves the supplied .log extension; text/plain appends .txt.
-            .setType(if (exportKind == "log") "application/octet-stream" else "text/tab-separated-values")
+            .setType(when(exportKind) { "log" -> "application/octet-stream"; "json" -> "application/json"; "csv" -> "text/csv"; else -> "text/tab-separated-values" })
+            .apply { if (exportKind == "json" || exportKind == "csv") putExtra(Intent.EXTRA_LOCAL_ONLY, true) }
     }) { uri ->
         if (uri != null) {
             // The document picker can recreate this Activity. Rebuild the text
@@ -73,6 +74,7 @@ class MainActivity : ComponentActivity() {
                 requireNotNull(contentResolver.openOutputStream(uri, "wt")).bufferedWriter(Charsets.UTF_8).use { it.write(text) }
             }
             if (exportKind == "weights") monitor.exportWeights(write)
+            else if (exportKind == "json" || exportKind == "csv") monitor.statistics.export(exportKind, write)
             else Thread {
                 try { write(monitor.report(true)); runOnUiThread { monitor.log("Export completed") } }
                 catch (e: Exception) { runOnUiThread { monitor.log("Export error: $e") } }
@@ -108,7 +110,8 @@ class MainActivity : ComponentActivity() {
                     { exportKind = "log"; export.launch(LogExport.filename()) },
                     { exportKind = "weights"; export.launch(PortableWeights.FILENAME) },
                     { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications, ::chooseMusicFolder,
-                    batteryExempt, ::openBatterySettings, updates)
+                    batteryExempt, ::openBatterySettings, updates,
+                    { format -> exportKind = format; export.launch("ignorant-shuffle-statistics.$format") })
                 if (updates.visible) UpdatesScreen(updates, updates::prepareInstall, ::openUpdateRelease)
                 if (showBatteryPrompt && !updates.visible) AlertDialog(
                     onDismissRequest = ::dismissBatteryPrompt,
