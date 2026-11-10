@@ -50,13 +50,16 @@ class LibraryMatcher(files: List<LibraryFile>) {
     private fun metadata(title: String, artist: String) = normalized(title) to normalized(artist)
     private val tags = files.filter { it.title.isNotBlank() }.groupBy { metadata(it.title, it.artist) }
     fun match(track: Track, links: Map<String, String>): FileMatch {
-        links[track.key]?.let {
+        return match(track.key,track.uri,track.title,track.artist,links)
+    }
+    fun match(key: String,uri: String?,title: String,artist: String,links: Map<String,String>): FileMatch {
+        links[key]?.let {
             return paths[it]?.let { file -> FileMatch(file.path, "Manually linked", file.root) } ?: FileMatch(null, "Linked file is missing; link again")
         }
-        val direct = track.uri?.let { uris[it] }
+        val direct = uri?.let { uris[it] }
         if (direct?.size == 1) return FileMatch(direct.single().path, "Media URI", direct.single().root)
-        if (track.title.isBlank()) return FileMatch(null, "Missing track title; link a file")
-        val matches = tags[metadata(track.title, track.artist)].orEmpty()
+        if (title.isBlank()) return FileMatch(null, "Missing track title; link a file")
+        val matches = tags[metadata(title,artist)].orEmpty()
         return when (matches.size) {
             1 -> FileMatch(matches.single().path, "Unique title + artist match", matches.single().root)
             0 -> FileMatch(null, "No matching file; link a file")
@@ -67,6 +70,7 @@ class LibraryMatcher(files: List<LibraryFile>) {
 
 /** Provider operations are isolated so replacement/rollback can be tested on the JVM. */
 interface WeightDocuments {
+    fun names(): List<String> = emptyList()
     fun find(name: String): String?
     fun read(id: String): String
     fun create(name: String): String

@@ -18,7 +18,7 @@ Every new release includes both Windows and Android downloads and lists their in
 - A compact, resizable panel with scrolling, always-on-top mode, and optional attachment beside AIMP.
 - Bulk weight editing and exact weights-file import/export.
 - One weights file per music root, with relative paths compatible with the Android companion. [Set up both devices](docs/shared-music-folder.md).
-- Android navigation drawer, app queue, listening-balance mode and private [listening statistics](docs/android-statistics.md).
+- Android navigation drawer and app queue; configurable listening balance, smart weights and [statistics on both versions](docs/statistics-files.md). Statistics sidecars live alongside weights for folder synchronization.
 - Automatic update checks, with downloads and installation started only when you choose.
 
 ## Windows quick start

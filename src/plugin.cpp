@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cmath>
 #include <deque>
+#include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <iterator>
@@ -22,6 +23,9 @@
 #include <stdexcept>
 #include <utility>
 #include "weights.h"
+#include "windows_statistics.h"
+#include "statistics_files.h"
+#include "statistics_window.h"
 #include "weight_storage.h"
 #include "track_table.h"
 #include "resource.h"
@@ -106,6 +110,7 @@ struct Occurrence {
     bool started = false;
     bool planned = false;
     bool rerolled = false;
+    bool incoming_fallback = false;
     std::shared_ptr<FinitePass> pass;
     std::shared_ptr<std::vector<std::string>> pass_path;
     std::size_t pass_position = 0;
@@ -193,6 +198,13 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     bool cooldown_preview_ready_ = false;
     std::wstring preferences_error_;
     MonitorWindow monitor_;
+    ignorant::LibraryStatistics statistics_;
+    StatisticsWindow statistics_window_;
+    std::string statistics_origin_="windows-"+ignorant::statistics_guid();
+    bool selected_replay_=false, selected_automatic_=false;
+    std::shared_ptr<FinitePass> counted_pass_;
+    bool counted_pass_end_=false;
+
     ignorant::UpdateClient updater_;
     ignorant::UpdateLauncher update_launcher_;
     std::string update_repository_ = ignorant::default_update_repository;
@@ -203,6 +215,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     std::mt19937_64 random_{std::random_device{}()};
     bool registered_ = false;
     HWND dialog_ = nullptr;
+    RECT editor_client_{};std::vector<std::pair<HWND,RECT>> editor_geometry_;
     std::vector<std::string> visible_tracks_;
     // Bounded occurrence history also keeps prefetched answers stable.
     std::deque<std::shared_ptr<Occurrence>> history_;
@@ -235,6 +248,11 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         success = (WritePrivateProfileStringW(L"Shuffle", L"FinitePlaylist", finite_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Shuffle", L"DefaultWeight", weight_text(weights_.fallback()).c_str(), preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Shuffle", L"MinimumWeight", weight_text(minimum_weight_).c_str(), preferences_file_.c_str()) != FALSE) && success;
+        auto save=[&](const wchar_t* section,const wchar_t* key,const std::wstring& value) {success=(WritePrivateProfileStringW(section,key,value.c_str(),preferences_file_.c_str())!=FALSE)&&success;};
+        const auto& o=statistics_.options;
+        save(L"Statistics",L"Device",from_utf8(statistics_origin_));save(L"Statistics",L"Collecting",statistics_.collecting?L"1":L"0");
+        for(const auto& option:std::vector<std::pair<const wchar_t*,bool>>{{L"Balance",o.balance},{L"Smart",o.smart},{L"Skips",o.skips},{L"Completions",o.completions},{L"Replays",o.replays},{L"Volume",o.volume}})save(L"Learning",option.first,option.second?L"1":L"0");
+        save(L"Learning",L"BalanceStrength",weight_text(o.balance_strength));save(L"Learning",L"Strength",weight_text(o.strength));save(L"Learning",L"Limit",weight_text(o.limit));
         std::wstring roots;
         for (const auto& root : music_folders_) { if (!roots.empty()) roots += L"|"; roots += root.wstring(); }
         success = (WritePrivateProfileStringW(L"Storage", L"MusicRoots", roots.c_str(), preferences_file_.c_str()) != FALSE) && success;
@@ -251,6 +269,16 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     }
     void load_preferences() {
         if (preferences_file_.empty()) return;
+        wchar_t device[256]{};GetPrivateProfileStringW(L"Statistics",L"Device",L"",device,256,preferences_file_.c_str());
+        statistics_origin_=utf8(device);
+        try {ignorant::statistics_shard(statistics_origin_);}catch(...) {statistics_origin_="windows-"+ignorant::statistics_guid();}
+        statistics_.collecting=GetPrivateProfileIntW(L"Statistics",L"Collecting",1,preferences_file_.c_str())!=0;
+        auto& learning=statistics_.options;
+        auto flag=[&](const wchar_t* key,bool fallback){return GetPrivateProfileIntW(L"Learning",key,fallback?1:0,preferences_file_.c_str())!=0;};
+        learning.balance=flag(L"Balance",false);learning.smart=flag(L"Smart",false);learning.skips=flag(L"Skips",true);learning.completions=flag(L"Completions",true);learning.replays=flag(L"Replays",true);learning.volume=flag(L"Volume",true);
+        auto number=[&](const wchar_t* key,const wchar_t* fallback){wchar_t value[128]{};GetPrivateProfileStringW(L"Learning",key,fallback,value,128,preferences_file_.c_str());return parse_custom_weight(value);};
+        try {learning.balance_strength=number(L"BalanceStrength",L"1");learning.strength=number(L"Strength",L"1");learning.limit=number(L"Limit",L"0.15");learning.validate();}
+        catch(const std::exception& e){learning.balance_strength=1;learning.strength=1;learning.limit=.15;log_.write("preferences.learning.error",e.what());}
         auto_updates_ = GetPrivateProfileIntW(L"Updates", L"Automatic", 1, preferences_file_.c_str()) != 0;
         wchar_t repository[512]{};
         GetPrivateProfileStringW(L"Updates", L"Repository", from_utf8(ignorant::default_update_repository).c_str(), repository, 512, preferences_file_.c_str());
@@ -312,6 +340,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         try { next.configure(roots); }
         catch (const std::exception& error) { storage_error_ = from_utf8(error.what()); request_monitor_update(); throw; }
         storage_ = std::move(next); music_folders_ = storage_.roots(); storage_error_.clear();
+        statistics_.configure(statistics_origin_,profile_dir_/L"statistics-cache",music_folders_);statistics_.poll(true);
         save_preferences(); changed(); refresh_cooldown_preview(); update_monitor();
         log_.write("storage.configure", "music_roots=" + std::to_string(roots.size()));
     }
@@ -359,7 +388,11 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (audible_) { ensure_pass(audible_, playlist); active_pass_ = audible_->pass; }
         else if (!active_pass_ || !same_object(active_pass_->playlist.get(), playlist.get())) active_pass_ = new_pass(playlist);
         const auto key = track_key(item.get());
+        if(counted_pass_!=active_pass_) {counted_pass_=active_pass_;counted_pass_end_=false;statistics_.counter("pass_started",key);}
         if (!key.empty()) active_pass_->played.insert(key);
+        std::set<std::string> eligible;
+        for(int i=0;i<playlist->GetItemCount();++i){Ref<IAIMPPlaylistItem> entry;if(SUCCEEDED(playlist->GetItem(i,IID_IAIMPPlaylistItem,entry.out())) && entry){const auto k=track_key(entry.get());if(selection_weight(effective_weight(k).weight)>0)eligible.insert(k);}}
+        if(!counted_pass_end_ && !eligible.empty() && std::all_of(eligible.begin(),eligible.end(),[&](const auto& k){return active_pass_->played.count(k)>0;})){counted_pass_end_=true;statistics_.counter("pass_completed",key);}
         log_.write("shuffle.finite.played", "count=" + std::to_string(active_pass_->played.size()) + " track=" + key);
     }
     void set_cooldown(int tracks) {
@@ -401,7 +434,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             if (key.empty()) continue;
             keys.push_back(key);
         }
-        for (const auto& key : keys) weights.push_back(selection_weight(effective_weight(key).weight));
+        const auto mean=statistics_.mean(keys);
+        for (const auto& key : keys) weights.push_back(learned_weight(key,mean));
         cooldown_preview_ = ignorant::cooldown_pool(keys, weights, projected_recent(audible_), cooldown_);
         cooldown_preview_ready_ = true;
     }
@@ -465,6 +499,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         // request sees this same choice instead of drawing a second one.
         changed(false, false);
         choose_next(source, playlist, previous_choice ? previous_choice->item : Ref<IAIMPPlaylistItem>{}, true);
+        statistics_.counter("reroll",track_key(current.get()));
         if (queue_) queue_->NotifyChanged(static_cast<IAIMPExtensionPlaybackQueue*>(this));
         request_monitor_update();
         update_monitor();
@@ -692,10 +727,47 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             throw std::runtime_error("Could not open update settings.");
         update_monitor();
     }
+    void statistics_tick(bool restarted=false) {
+        statistics_.poll();if(!player_)return;
+        ignorant::ListeningSample sample;sample.elapsed=static_cast<std::int64_t>(GetTickCount64());sample.wall=ignorant::statistics_wall();sample.day=ignorant::statistics_day();
+        const auto seconds=static_cast<std::time_t>(sample.wall/1000);std::tm day{};localtime_s(&day,&seconds);day.tm_hour=day.tm_min=day.tm_sec=0;day.tm_isdst=-1;sample.day_start_wall=static_cast<std::int64_t>(std::mktime(&day))*1000;
+        const int state=player_->GetState();sample.playing=state==AIMP_PLAYER_STATE_PLAYING;sample.stopped=state==AIMP_PLAYER_STATE_STOPPED;
+        auto current=current_track();std::string key=current?track_key(current.get()):"";
+        double position=0,duration=0;float volume=0;
+        if(!sample.stopped && (FAILED(player_->GetPosition(&position)) || !std::isfinite(position) || position<0 || position>1e9)){statistics_.pause(!statistics_.collecting);return;}
+        sample.position=static_cast<std::int64_t>(position*1000);
+        if(SUCCEEDED(player_->GetDuration(&duration)) && std::isfinite(duration) && duration>0 && duration<1e9)sample.duration=static_cast<std::int64_t>(duration*1000);
+        if(SUCCEEDED(player_->GetVolume(&volume)) && std::isfinite(volume) && volume>=0 && volume<=1){sample.volume=static_cast<int>(volume*1000);sample.volume_max=1000;}
+        float speed=1,tempo=1;if(messages_){messages_->Send(AIMP_MSG_PROPERTY_SPEED,AIMP_MSG_PROPVALUE_GET,&speed);messages_->Send(AIMP_MSG_PROPERTY_TEMPO,AIMP_MSG_PROPVALUE_GET,&tempo);}
+        sample.speed=static_cast<double>(speed)*tempo;
+        Ref<IAIMPFileInfo> info;if(SUCCEEDED(player_->GetInfo(info.put())) && info){sample.title=utf8(wide(string_property(info.get(),AIMP_FILEINFO_PROPID_TITLE).get()));sample.artist=utf8(wide(string_property(info.get(),AIMP_FILEINFO_PROPID_ARTIST).get()));}
+        if(sample.title.empty())sample.title=std::filesystem::u8path(key).stem().u8string();
+        sample.restarted=restarted;sample.replay=selected_replay_;sample.automatic=selected_automatic_;statistics_.observe(sample,key);
+    }
+    StatisticsWindowData statistics_data() {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);statistics_.poll();StatisticsWindowData data;
+        data.records=statistics_.records();data.options=statistics_.options;data.collecting=statistics_.collecting;data.status=statistics_.status;data.logs=log_.tail();data.finite=finite_;
+        auto playlist=playlist_for(current_track().get());
+        if(playlist)for(int i=0;i<playlist->GetItemCount();++i){Ref<IAIMPPlaylistItem> item;if(SUCCEEDED(playlist->GetItem(i,IID_IAIMPPlaylistItem,item.out())) && item){const auto key=track_key(item.get());data.library.insert(statistics_.identity(key));if(selection_weight(effective_weight(key).weight)>0 && (!active_pass_ || !active_pass_->played.count(key)))++data.pass_remaining;}}
+        if(active_pass_)data.pass_heard=active_pass_->played.size();return data;
+    }
+    void show_statistics(int page=0) {
+        statistics_window_.on_log_folder=[this]{if(!log_file_.empty() && reinterpret_cast<INT_PTR>(ShellExecuteW(statistics_window_.handle(),L"open",log_file_.parent_path().c_str(),nullptr,nullptr,SW_SHOWNORMAL))<=32)throw std::runtime_error("Could not open log folder");};
+        statistics_window_.on_data=[this]{return statistics_data();};
+        statistics_window_.on_settings=[this](const ignorant::LearningOptions& options,bool collecting){std::lock_guard<std::recursive_mutex> lock(mutex_);statistics_.options=options;statistics_.options_changed();statistics_.pause(!collecting);save_preferences();changed();refresh_cooldown_preview();update_monitor();};
+        statistics_window_.on_clear=[this]{std::lock_guard<std::recursive_mutex> lock(mutex_);statistics_.clear();changed();};
+        statistics_window_.on_sync=[this]{std::lock_guard<std::recursive_mutex> lock(mutex_);statistics_.poll(true);};
+        statistics_window_.on_export=[this](bool csv){
+            wchar_t filename[MAX_PATH]=L"IgnorantShuffle-statistics";OPENFILENAMEW save{sizeof(save)};save.hwndOwner=statistics_window_.handle();save.lpstrFile=filename;save.nMaxFile=MAX_PATH;save.lpstrFilter=csv?L"CSV files (*.csv)\0*.csv\0\0":L"JSON files (*.json)\0*.json\0\0";save.lpstrDefExt=csv?L"csv":L"json";save.Flags=OFN_OVERWRITEPROMPT|OFN_PATHMUSTEXIST;
+            if(!GetSaveFileNameW(&save))return;const auto records=statistics_data().records;std::ofstream output(std::filesystem::path(filename),std::ios::binary);output<<(csv?ignorant::statistics_csv(records):ignorant::statistics_json(records));output.close();if(!output)throw std::runtime_error("Could not export statistics");
+        };
+        statistics_window_.show(module,monitor_.handle(),page);
+    }
     void open_monitor(bool activate = false) {
         if (shutting_down_) return;
         if (!monitor_.handle()) {
-            monitor_.on_tick = [this] { flush_queue_refresh(); update_tick(); update_monitor(); };
+            monitor_.on_tick = [this] { std::lock_guard<std::recursive_mutex> lock(mutex_);flush_queue_refresh(); statistics_tick(); update_tick(); update_monitor(); };
+            monitor_.on_statistics = [this] { show_statistics(); };
             monitor_.on_updates = [this] { show_updates(); };
             monitor_.on_enabled = [this](bool enabled) { set_enabled(enabled); };
             monitor_.on_pinned = [this](bool pinned) { pinned_ = pinned; save_preferences(); update_monitor(); };
@@ -706,11 +778,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             };
             monitor_.on_weights = [this] { Show(monitor_.handle()); };
             monitor_.on_move = [this] { save_preferences(); };
-            monitor_.on_logs = [this] {
-                if (log_file_.empty()) return;
-                const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(monitor_.handle(), L"open", log_file_.parent_path().c_str(), nullptr, nullptr, SW_SHOWNORMAL));
-                if (result <= 32) { log_.write("logs.open.error", "code=" + std::to_string(result)); throw std::runtime_error("Could not open the plugin log folder."); }
-            };
+            monitor_.on_logs = [this] {show_statistics(6);};
             monitor_.on_error = [this](const std::string& error) { log_.write("monitor.error", error); };
             monitor_.on_reroll = [this] { reroll_next(); };
             monitor_.on_weight = [this](int weight) { apply_current_weight(weight); };
@@ -919,7 +987,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             items.push_back(std::move(item));
             keys.push_back(key);
         }
-        for (const auto& key : keys) probabilities.push_back(selection_weight(effective_weight(key).weight));
+        const auto mean=statistics_.mean(keys);
+        for (const auto& key : keys) probabilities.push_back(learned_weight(key,mean));
         ignorant::CooldownPool pool;
         if (finite_) {
             ensure_pass(source, playlist);
@@ -985,7 +1054,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             next->pass_path->push_back(keys[*decision.index]);
             next->pass_position = source->pass_position + 1;
         }
-        next->incoming_decision = decision;
+        next->incoming_decision = decision;next->incoming_fallback=source->cooldown.fallback;
         next->planned = true;
         source->next = next; next->previous = source;
         std::ostringstream details;
@@ -1018,6 +1087,10 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         std::wostringstream text; text.imbue(std::locale::classic());
         text << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
         return text.str();
+    }
+    double learned_weight(const std::string& key,double mean) {
+        const auto& o=statistics_.options;
+        return ignorant::learning_weight(effective_weight(key).weight,minimum_weight_,statistics_.plays(key),mean,o.balance,o.balance_strength,o.smart,statistics_.score(key),o.limit);
     }
     double selection_weight(double weight) const { return weight >= minimum_weight_ ? weight : 0.0; }
     static double parse_minimum_weight(const std::wstring& text) {
@@ -1292,6 +1365,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 self = reinterpret_cast<Plugin*>(lparam);
                 SetWindowLongPtrW(window, DWLP_USER, lparam);
                 self->dialog_ = window;
+                self->editor_geometry_.clear();GetClientRect(window,&self->editor_client_);
+                for(auto child=GetWindow(window,GW_CHILD);child;child=GetWindow(child,GW_HWNDNEXT)){RECT rect{};GetWindowRect(child,&rect);MapWindowPoints(nullptr,window,reinterpret_cast<POINT*>(&rect),2);self->editor_geometry_.push_back({child,rect});}
                 self->editor_selection_pending_ = false;
                 self->track_table_.attach(GetDlgItem(window, IDC_TRACKS));
                 SetWindowSubclass(GetDlgItem(window, IDC_TRACKS), list_proc, 1, 0);
@@ -1299,6 +1374,18 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 self->refresh(window);
                 return TRUE;
             }
+            if(self && message==WM_SIZE && !self->editor_geometry_.empty()) {
+                RECT client{};GetClientRect(window,&client);const int dx=client.right-self->editor_client_.right,dy=client.bottom-self->editor_client_.bottom;
+                LONG list_bottom=self->editor_client_.bottom;
+                for(const auto& child:self->editor_geometry_)if(GetDlgCtrlID(child.first)==IDC_TRACKS)list_bottom=child.second.bottom;
+                for(const auto& child:self->editor_geometry_) {auto r=child.second;const int id=GetDlgCtrlID(child.first);
+                    if(id==IDC_TRACKS){r.right+=dx;r.bottom+=dy;}
+                    else if(r.top>=list_bottom){r.top+=dy;r.bottom+=dy;if(id==IDOK || id==IDC_REFRESH){r.left+=dx;r.right+=dx;}if(id==IDC_STATUS)r.right+=dx;}
+                    else if(id==IDC_SELECT_ALL){r.left+=dx;r.right+=dx;}
+                    MoveWindow(child.first,r.left,r.top,std::max(1L,r.right-r.left),std::max(1L,r.bottom-r.top),TRUE);
+                }return TRUE;
+            }
+            if(self && message==WM_GETMINMAXINFO){RECT minimum{0,0,480,288};MapDialogRect(window,&minimum);AdjustWindowRectEx(&minimum,static_cast<DWORD>(GetWindowLongPtrW(window,GWL_STYLE)),FALSE,0);reinterpret_cast<MINMAXINFO*>(lparam)->ptMinTrackSize={minimum.right-minimum.left,minimum.bottom-minimum.top};return TRUE;}
             if (self && message == WM_COMMAND) { self->command(window, LOWORD(wparam), HIWORD(wparam)); return TRUE; }
             if (self && message == WM_APP + 3) {
                 self->editor_selection_pending_ = false; self->selection(window); return TRUE;
@@ -1381,6 +1468,7 @@ public:
             load_preferences();
             try { storage_.configure(music_folders_); }
             catch (const std::exception& error) { storage_error_ = from_utf8(error.what()); log_.write("storage.error", error.what()); }
+            statistics_.configure(statistics_origin_,profile_dir_/L"statistics-cache",music_folders_);statistics_.poll(true);save_preferences();
             // Loading the plugin during playback must also cool down the track
             // already playing, even though we missed its stream-start event.
             if (auto current = current_track()) {
@@ -1413,7 +1501,7 @@ public:
         install_requested_ = false; updater_.stop();
         if (hooked_ && messages_) messages_->Unhook(static_cast<IAIMPMessageHook*>(this));
         hooked_ = false;
-        monitor_.destroy();
+        statistics_.finish();statistics_window_.destroy();monitor_.destroy();
         if (update_dialog_) EndDialog(update_dialog_, 0);
         if (dialog_) EndDialog(dialog_, 0);
         if (storage_dialog_) EndDialog(storage_dialog_, 0);
@@ -1441,7 +1529,7 @@ public:
                 message == AIMP_MSG_EVENT_LOADED || message == AIMP_MSG_EVENT_TERMINATING ||
                 (message == AIMP_MSG_EVENT_PROPERTY_VALUE && parameter == AIMP_MSG_PROPERTY_SHUFFLE))
                 log_.write("aimp.event", "message=" + std::to_string(message) + " parameter=" + std::to_string(parameter) + " playing=" + context_id(playing_));
-            if (message == AIMP_MSG_EVENT_TERMINATING) { shutting_down_ = true; monitor_.destroy(); return; }
+            if (message == AIMP_MSG_EVENT_TERMINATING) { shutting_down_ = true; statistics_.finish();statistics_window_.destroy();monitor_.destroy(); return; }
             if (message == AIMP_MSG_EVENT_LOADED) { open_monitor(); return; }
             if (message == AIMP_MSG_EVENT_STREAM_START) {
                 auto started = prepared_track_ ? prepared_track_ : current_track();
@@ -1457,9 +1545,13 @@ public:
                 audible_ = playing_ && started && same_object(playing_->item.get(), started.get()) ? playing_ : nullptr;
                 commit_finite_start(started);
                 awaiting_stream_start_ = false;
+                statistics_tick(true);
+                if(audible_ && audible_->incoming_fallback)statistics_.counter("cooldown_fallback",track_key(started.get()));
+                selected_replay_=selected_automatic_=false;
                 log_.write("playback.commit", "context=" + context_id(audible_));
                 flush_queue_refresh();
             }
+            if(message==AIMP_MSG_EVENT_PLAYER_STATE || message==AIMP_MSG_EVENT_PLAYING_FILE_INFO || (message==AIMP_MSG_EVENT_PROPERTY_VALUE && parameter==AIMP_MSG_PROPERTY_VOLUME))statistics_tick();
             if (message == AIMP_MSG_EVENT_PROPERTY_VALUE && parameter == AIMP_MSG_PROPERTY_SHUFFLE) { reset_finite_progress(); changed(); }
             if (message == AIMP_MSG_EVENT_PROPERTY_VALUE && parameter == AIMP_MSG_PROPERTY_ACTION_ON_END_OF_PLAYLIST && finite_) changed();
             if (message == AIMP_MSG_EVENT_PLAYER_STATE && finite_ && player_ && player_->GetState() == AIMP_PLAYER_STATE_STOPPED && !awaiting_stream_start_) {
@@ -1548,6 +1640,8 @@ public:
                 selected = expected;
                 log_.write("queue.select.recovered", "context=" + context_id(selected) + " reason=expected_pending_successor");
             }
+            selected_automatic_=selected && !selected->started && selected->planned && !history_navigation;
+            selected_replay_=history_navigation || (!selected_automatic_ && previous && same_object(previous->item.get(),item));
             if (selected && (!selected->started || history_navigation) && same_object(selected->item.get(), item)) playing_ = selected;
             else if (playlist) {
                 playing_ = remember(std::move(track), std::move(playlist));

@@ -3,6 +3,13 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## Unreleased changes
+
+- Add configurable listening balance and smart weights, with per-signal switches, small rewards/penalties and bounded session/track adjustments shared with Android.
+- Add a resizable Statistics / learning window with date filters, daily listening chart, track/artist rankings, history, per-track totals, coverage, shuffle summary, pause, confirmed clear and CSV/JSON exports.
+- Save statistics per device in music roots beside weights; retain a private pending cache, merge imported observations, and propagate clear markers safely.
+- Enlarge the native track-weight list, support resizing, and provide a searchable full-window recent-log viewer. Keep AIMP's native queue support.
+
 ## 0.14.0
 
 - Store song weights only in a file per music root, with separate files for multiple libraries. Remove profile and folder/playlist override layers; existing private/override files remain untouched but are no longer used.

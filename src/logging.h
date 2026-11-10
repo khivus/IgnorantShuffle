@@ -12,7 +12,7 @@ namespace ignorant {
 class PluginLog {
     mutable std::mutex mutex_;
     std::condition_variable ready_;
-    std::deque<std::string> pending_;
+    std::deque<std::string> pending_, recent_;
     std::thread worker_;
     bool stopping_ = false;
     std::filesystem::path path_;
@@ -27,5 +27,6 @@ public:
     void write(const std::string& event, const std::string& detail = {}) noexcept;
     void stop() noexcept;
     std::string error() const;
+    std::string tail() const;
 };
 }

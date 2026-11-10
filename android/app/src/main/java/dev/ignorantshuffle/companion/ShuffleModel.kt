@@ -3,9 +3,10 @@ package dev.ignorantshuffle.companion
 import java.security.MessageDigest
 import kotlin.math.pow
 
-data class Track(val queueId: Long, val mediaId: String?, val uri: String?, val title: String, val artist: String) {
+data class Track(val queueId: Long, val mediaId: String?, val uri: String?, val title: String, val artist: String,
+    val statisticsIdentity: String?=null) {
     // Conservative app-local identity. Do not persist numeric queue IDs or guess file paths.
-    val key: String = run {
+    val key: String = statisticsIdentity ?: run {
         val text = listOf(mediaId ?: uri ?: "unidentified", title, artist).joinToString("\u0000")
         "android:v1:" + MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -34,6 +35,8 @@ fun interface Planner {
 object ShuffleNative {
     init { System.loadLibrary("ignorant_shuffle") }
     external fun coreVersion(): String
+    external fun learningWeight(base: Double,minimum: Double,plays: Long,mean: Double,balance: Boolean,
+        balanceStrength: Double,smart: Boolean,score: Double,limit: Double): Double
     external fun plan(keys: Array<String>, weights: DoubleArray, recent: Array<String>, played: Array<String>,
         cooldown: Int, finite: Boolean, avoid: String, unit: Double): DoubleArray
 }
@@ -48,7 +51,7 @@ class NativePlanner : Planner {
     }
 }
 
-class ShuffleModel(private val planner: Planner) {
+class ShuffleModel(private val planner: Planner, private val nativeLearning: Boolean=false) {
     var tracks: List<Track> = emptyList(); private set
     var settings = Settings(); private set
     var weights: Map<String, Double> = emptyMap(); private set
@@ -89,6 +92,8 @@ class ShuffleModel(private val planner: Planner) {
     }
     fun learningFactor(track: Track): Double = (if(balanced) ListeningBalance.factor(track.key,playCounts,balanceMean).pow(balanceStrength) else 1.0) * smart.factor(smartScores[track.key]?:0.0)
     fun selectionWeight(track: Track): Double = when {
+        nativeLearning -> ShuffleNative.learningWeight(weight(track),settings.minimumWeight,playCounts[track.key]?:0L,balanceMean,
+            balanced,balanceStrength,smart.enabled,smartScores[track.key]?:0.0,smart.limit)
         !eligible(track) -> 0.0
         !balanced && !smart.enabled -> weight(track)
         else -> (weight(track) * learningFactor(track)).coerceAtMost(Double.MAX_VALUE / 4)

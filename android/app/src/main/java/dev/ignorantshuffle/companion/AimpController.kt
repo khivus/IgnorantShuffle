@@ -53,7 +53,7 @@ class AimpController(private val context: Context) {
     private val component = ComponentName(context, SessionAccessService::class.java)
     private val store = SettingsStore(context)
     private val preferenceStore = PreferenceStore(context)
-    private val model = ShuffleModel(NativePlanner())
+    private val model = ShuffleModel(NativePlanner(),nativeLearning=true)
     val folder = FolderWeightsController(context, ::log, ::folderChanged)
     private val journal = DiagnosticJournal(context.filesDir)
     private val notifications = RollNotifications(context) { log(it) }
@@ -108,14 +108,17 @@ class AimpController(private val context: Context) {
     var events by mutableStateOf(emptyList<String>()); private set
     var appQueue by mutableStateOf(emptyList<QueueEntry>()); private set
     private var statisticsCounts: Map<String, Long> = emptyMap()
+    private var statisticsConfiguration: Pair<FolderConfig,List<LibraryFile>>?=null
+    private fun learningCounts()=tracks.associate {it.key to (statisticsCounts[folder.statisticsKey(it)]?:statisticsCounts[it.key]?:0L)}
+    private fun learningScores()=tracks.associate {it.key to (statistics.smartScores[folder.statisticsKey(it)]?:statistics.smartScores[it.key]?:0.0)}
     private var passCompleted = false
     private var passStarted = false
     val statistics = StatisticsRepository(context, onSmartScores = { scores ->
-        model.smartWeights(preferences.smartWeights,scores)
+        model.smartWeights(preferences.smartWeights,tracks.associate {it.key to (scores[folder.statisticsKey(it)]?:scores[it.key]?:0.0)})
         if(connected && !pending) { updatePreview("Smart listening feedback");scheduleTimer() }
     }) { counts ->
         statisticsCounts = counts
-        model.balance(preferences.balanceListening, counts, preferences.balanceStrength)
+        model.balance(preferences.balanceListening, learningCounts(), preferences.balanceStrength)
         if (connected && !pending) { updatePreview("Listening totals changed"); scheduleTimer() }
     }
     private val queueStore = context.getSharedPreferences("app-queue", Context.MODE_PRIVATE)
@@ -146,8 +149,8 @@ class AimpController(private val context: Context) {
             .onFailure { log("Preference read failed; using defaults: $it") }
         runCatching { QueueEntry.decode(queueStore.getString("entries", "[]") ?: "[]") }
             .onSuccess { appQueue = it; model.setQueue(it) }.onFailure { log("App queue could not be read: $it") }
-        model.balance(preferences.balanceListening, statisticsCounts, preferences.balanceStrength)
-        model.smartWeights(preferences.smartWeights,statistics.smartScores)
+        model.balance(preferences.balanceListening, learningCounts(), preferences.balanceStrength)
+        model.smartWeights(preferences.smartWeights,learningScores())
         statistics.configureSmartWeights(preferences.smartWeights)
         automatic = preferences.automatic
         automaticStatus = if (automatic) "Waiting for a connected AIMP session" else "Timed automatic mode is off"
@@ -178,8 +181,8 @@ class AimpController(private val context: Context) {
         preferenceStore.save(value)
         if (!value.logging) log("Automatic logging disabled by user")
         preferences = value
-        model.balance(value.balanceListening, statisticsCounts,value.balanceStrength)
-        model.smartWeights(value.smartWeights,statistics.smartScores)
+        model.balance(value.balanceListening, learningCounts(),value.balanceStrength)
+        model.smartWeights(value.smartWeights,learningScores())
         if(value.smartWeights!=preferencesBeforeLearning) statistics.configureSmartWeights(value.smartWeights)
         if (connected && !pending) { updatePreview("Preferences changed"); scheduleTimer() }
         if (debugChanged) {
@@ -227,7 +230,7 @@ class AimpController(private val context: Context) {
             val route=if(Build.VERSION.SDK_INT>=30) it.volumeControlId.orEmpty() else ""
             ListeningVolume(it.playbackType,it.volumeControl,it.maxVolume,it.currentVolume,"${it.audioAttributes}/$route")
         }
-        statistics.engine.observeVolume(playback,value,now)
+        statistics.engine.observeVolume(playback.copy(track=track?.copy(statisticsIdentity=folder.statisticsKey(track))),value,now)
     }
 
     private fun granted(): Boolean = if (Build.VERSION.SDK_INT >= 27)
@@ -290,6 +293,7 @@ class AimpController(private val context: Context) {
     }
 
     private fun detach(reason: String) {
+        statistics.flushShared()
         handler.removeCallbacks(statisticsPoll); statistics.engine.disconnect(); passCompleted = false; passStarted = false
         audit.cancel(); handler.removeCallbacks(auditPoll)
         debugStatus = if (preferences.debugPlayback) "Waiting for a connected AIMP session" else "Playback debug mode is off"
@@ -333,7 +337,10 @@ class AimpController(private val context: Context) {
         }.orEmpty() else tracks
         if (queue != tracks) {
             log("CATALOG changed: ${tracks.size} -> ${queue.size} entries; targets=${queue.take(20)}")
-            tracks = queue; model.catalog(queue); applyWeights(preservePreview = true)
+            tracks = queue; model.catalog(queue)
+            model.balance(preferences.balanceListening,learningCounts(),preferences.balanceStrength)
+            model.smartWeights(preferences.smartWeights,learningScores())
+            applyWeights(preservePreview = true)
         }
         val mediaId = metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
         val mediaUri = uri(metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_URI))
@@ -414,7 +421,7 @@ class AimpController(private val context: Context) {
         }
         val observed = current ?: title.takeIf { it.isNotBlank() }?.let { Track(-1, mediaId, mediaUri, it, next.artist) }
         if (operation?.correctivePause != true && (operation?.target == null || operation?.target == observed?.key))
-            statistics.engine.observe(next.copy(track = observed), SystemClock.elapsedRealtime(), System.currentTimeMillis(), restartedObservation,
+            statistics.engine.observe(next.copy(track = observed?.copy(statisticsIdentity=folder.statisticsKey(observed))), SystemClock.elapsedRealtime(), System.currentTimeMillis(), restartedObservation,
                 userReplay = operation?.userReplay==true, automaticTransition = operation?.automaticSelection==true)
         else statistics.engine.reject()
         observeVolume(c.playbackInfo)
@@ -451,6 +458,7 @@ class AimpController(private val context: Context) {
 
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
     fun selectionWeight(track: Track) = model.selectionWeight(track)
+    fun statisticsKey(track: Track) = folder.statisticsKey(track)
 
     private fun applyWeights(preservePreview: Boolean = false) {
         val effective = folder.effective(tracks)
@@ -465,6 +473,13 @@ class AimpController(private val context: Context) {
             if (folder.error != null) disableAutomatic("Music-root weights unavailable; restore access and reload")
             refreshNotifications(); return
         }
+        val configuration=folder.config to folder.files
+        if(statisticsConfiguration!=configuration) {
+            statisticsConfiguration=configuration
+            val (roots,resolve)=folder.statisticsRoots();statistics.configureRoots(roots,resolve)
+        }
+        model.balance(preferences.balanceListening,learningCounts(),preferences.balanceStrength)
+        model.smartWeights(preferences.smartWeights,learningScores())
         applyWeights(); updatePreview("Music-folder weights updated"); scheduleTimer()
         val matched = tracks.count { folder.match(it).path != null }
         log("FOLDER root=${folder.config.root}; shared=${folder.active}; matched=$matched/${tracks.size}; overrides=${folder.values.size}")

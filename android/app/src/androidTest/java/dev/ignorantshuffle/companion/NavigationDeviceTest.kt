@@ -91,7 +91,7 @@ class NavigationDeviceTest : InstrumentationTestCase() {
                 when(page) {
                     "Playlist" -> waitFor("Search 0 tracks by title or artist")
                     "Queue" -> waitFor("App queue")
-                    "Statistics" -> { waitFor("On-device listening");click("Data");click("Clear statistics");waitFor("Clear all statistics?");click("Cancel") }
+                    "Statistics" -> { waitFor("Library listening");click("Data");click("Clear statistics");waitFor("Clear all statistics?");click("Cancel") }
                     "Shuffle rules" -> {
                         waitFor("Balance listening frequency")
                         val controller=(instrumentation.targetContext.applicationContext as ShuffleApplication).controller

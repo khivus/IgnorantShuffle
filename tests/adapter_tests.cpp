@@ -210,6 +210,7 @@ class Player final : public FakeUnknown<IAIMPServicePlayer> {
 public:
     IAIMPPlaylistItem* current = nullptr;
     int state = AIMP_PLAYER_STATE_PLAYING;
+    bool observable=false;double position=0,duration=100;float volume=.5f;
     Player() : FakeUnknown(IID_IAIMPServicePlayer) {}
     STUB(Play, (IAIMPPlaybackQueueItem*))
     STUB(Play2, (IAIMPPlaylistItem*))
@@ -217,12 +218,12 @@ public:
     STUB(Play4, (IAIMPString*, LongWord))
     STUB(GoToNext, ())
     STUB(GoToPrev, ())
-    STUB(GetDuration, (double*))
-    STUB(GetPosition, (double*))
+    HRESULT WINAPI GetDuration(double* output) override {*output=duration;return observable?S_OK:E_NOTIMPL;}
+    HRESULT WINAPI GetPosition(double* output) override {*output=position;return observable?S_OK:E_NOTIMPL;}
     STUB(SetPosition, (const double))
     STUB(GetMute, (BOOL*))
     STUB(SetMute, (const BOOL))
-    STUB(GetVolume, (float*))
+    HRESULT WINAPI GetVolume(float* output) override {*output=volume;return observable?S_OK:E_NOTIMPL;}
     STUB(SetVolume, (const float))
     STUB(GetInfo, (IAIMPFileInfo**))
     HRESULT WINAPI GetPlaylistItem(IAIMPPlaylistItem** item) override {
@@ -1716,6 +1717,44 @@ struct PluginChecks {
         check(!settings.finite_ && IsWindowEnabled(GetDlgItem(panel, IDC_COOLDOWN)), "Turning finite mode off restores cooldown controls.");
         settings.Finalize(); std::filesystem::remove(settings.preferences_file_);
     }
+    static void statistics_checks(Manager& manager,Messages& messages) {
+        const auto directory=std::filesystem::current_path()/L"statistics-adapter-fixture";std::filesystem::remove_all(directory);std::filesystem::create_directories(directory/L"music");
+        const auto root=directory/L"music";Track first((root/L"first.flac").wstring()),second((root/L"second.flac").wstring());
+        EmptyPlaylist playlist;playlist.items={&first,&second};first.owner=second.owner=&playlist;first.index=0;second.index=1;manager.active=&playlist;
+        Player player;player.current=&first;player.observable=true;PlaybackQueue queue;Plugin plugin;
+        plugin.profile_dir_=directory;plugin.preferences_file_=directory/L"preferences.ini";plugin.load_preferences();
+        plugin.playlists_=query<IAIMPServicePlaylistManager>(&manager,IID_IAIMPServicePlaylistManager);plugin.messages_=query<IAIMPServiceMessageDispatcher>(&messages,IID_IAIMPServiceMessageDispatcher);plugin.player_=query<IAIMPServicePlayer>(&player,IID_IAIMPServicePlayer);plugin.queue_=query<IAIMPServicePlaybackQueue2>(&queue,IID_IAIMPServicePlaybackQueue2);
+        plugin.set_storage({root});plugin.statistics_.options.smart=true;plugin.statistics_.options.balance=true;plugin.statistics_.options.balance_strength=.5;plugin.statistics_.options_changed();plugin.save_preferences();
+        plugin.statistics_tick();plugin.statistics_tick();check(plugin.statistics_.records().empty(),"Duplicate playback callbacks cannot invent time");
+        QueueOutput output;plugin.GetNext(&first,AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM,&output);check(plugin.statistics_.records().empty(),"Queue previews cannot count listening");
+        const auto committed=plugin.playing_?plugin.playing_->next.lock():nullptr;
+        ignorant::ListeningSample sample;sample.day=ignorant::statistics_day();sample.key="first.flac";sample.title="First";sample.playing=true;sample.duration=10000;
+        for(int i=0;i<=10;++i){sample.elapsed=1000+i*1000;sample.wall=100000+i*1000;sample.position=i*1000;plugin.statistics_.observe(sample,track_key(&first));}
+        plugin.statistics_.counter("reroll",track_key(&first));plugin.statistics_.finish();
+        check(ignorant::summarize(plugin.statistics_.records()).plays==1,"Windows observed half-duration qualification");
+        const std::vector<std::string> keys{track_key(&first),track_key(&second)};const auto mean=plugin.statistics_.mean(keys);
+        check(plugin.learned_weight(keys[0],mean)<plugin.learned_weight(keys[1],mean),"Synced play totals favor less-played tracks");
+        plugin.weights_.set(keys[0],0);check(plugin.learned_weight(keys[0],mean)==0,"Learning preserves minimum exclusions");plugin.weights_.set(keys[0],5);
+        module=GetModuleHandleW(nullptr);plugin.open_monitor();SendMessageW(plugin.monitor_.handle(),WM_COMMAND,MAKEWPARAM(IDC_STATISTICS,BN_CLICKED),0);
+        const auto window=plugin.statistics_window_.handle();check(IsWindow(window)!=FALSE,"Native Statistics opens from monitor");
+        TabCtrl_SetCurSel(GetDlgItem(window,2103),1);NMHDR tab{GetDlgItem(window,2103),2103,TCN_SELCHANGE};SendMessageW(window,WM_NOTIFY,2103,reinterpret_cast<LPARAM>(&tab));
+        check(ListView_GetItemCount(GetDlgItem(window,2104))==1,"Windows rankings use portable totals");
+        capture_preview(window,L"statistics-tracks.bmp");
+        RECT client{},list{};GetClientRect(window,&client);GetWindowRect(GetDlgItem(window,2104),&list);check(list.bottom-list.top>client.bottom*.55,"Statistics rankings use most of the window");
+        SetWindowPos(window,nullptr,0,0,1100,900,SWP_NOMOVE|SWP_NOZORDER);RECT expanded{};GetWindowRect(GetDlgItem(window,2104),&expanded);check(expanded.bottom-expanded.top>list.bottom-list.top,"Statistics list grows with window");
+        plugin.statistics_window_.on_settings(plugin.statistics_.options,false);check(!plugin.statistics_.collecting,"Collection can be paused from native settings");
+        Plugin restored;restored.preferences_file_=plugin.preferences_file_;restored.load_preferences();check(!restored.statistics_.collecting && restored.statistics_.options.smart && restored.statistics_.options.balance && restored.statistics_.options.balance_strength==.5,"Windows learning and pause preferences survive restart");
+        ignorant::LibraryStatistics remote;remote.configure("other-device",directory/L"remote-cache",{root});remote.finish();check(ignorant::summarize(remote.records()).plays==1,"Another device imports Windows statistics sidecar");
+        // Same-track stop/start and an observed wrap remain separate sessions even if a host stream message is absent.
+        plugin.statistics_.pause(false);auto replay_sample=sample;replay_sample.stopped=true;replay_sample.playing=false;replay_sample.elapsed+=1000;replay_sample.wall+=1000;plugin.statistics_.observe(replay_sample,track_key(&first));
+        replay_sample.stopped=false;replay_sample.playing=true;
+        for(int pass=0;pass<2;++pass)for(int i=0;i<=10;++i){replay_sample.elapsed+=1000;replay_sample.wall+=1000;replay_sample.position=i*1000;plugin.statistics_.observe(replay_sample,track_key(&first));}
+        check(ignorant::summarize(plugin.statistics_.records()).plays==3,"Stopped/repeated same-track sessions do not overwrite earlier totals");
+        plugin.statistics_.finish();remote.finish();remote.clear();remote.finish();plugin.statistics_.finish();check(plugin.statistics_.records().empty(),"Remote clear markers suppress local cached observations");
+        plugin.statistics_.pause(false);plugin.statistics_.counter("reroll",track_key(&first));plugin.statistics_.finish();
+        check(ignorant::summarize(plugin.statistics_.records()).counters.at("reroll")==1,"New same-day counters survive clear without restoring old ones");
+        plugin.Finalize();restored.Finalize();std::filesystem::remove_all(directory);
+    }
     static void run() {
         Manager manager;
         Messages messages;
@@ -1727,6 +1766,7 @@ struct PluginChecks {
         check(plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Shuffle off must return boolean false, not E_NOTIMPL.");
         check(plugin.GetPrev(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Previous with shuffle off.");
         messages.shuffle = TRUE;
+        statistics_checks(manager,messages);
         minimum_weight_checks(manager, messages);
         default_weight_checks(manager, messages);
         mouse_input_checks();

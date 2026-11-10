@@ -123,3 +123,34 @@ Automated checks cover release parsing, version ordering, placeholder behavior, 
 - Change weights while AIMP has prefetched a track and verify queue invalidation; remove a prefetched item and switch playlists during playback.
 - Check manual selections and explicit AIMP user-queue entries. Zero weights apply to weighted selection, not explicit playback requests.
 - Check the floating window's appearance, placement, and startup behavior during a real AIMP session, including multiple monitors and display scaling.
+
+## Shared statistics and learning verification (2026-11-10)
+
+The local change set was verified without publishing a release:
+
+- Windows x64 and Win32: `build.ps1 -Architecture Both`, seven CTest suites each,
+  including DLL load/export checks and native adapter/UI tests.
+- Android: offline `:app:testDebugUnitTest :app:assembleDebug :app:lintDebug`
+  and `:app:connectedDebugAndroidTest`; 201 JVM tests and ten emulator tests.
+  Lint has zero errors (30 warnings and two hints). The universal debug
+  APK contains arm64-v8a, armeabi-v7a and x86_64 native libraries.
+- Shared golden TSV fixture decoded on C++ and Kotlin. Tests cover revision
+  merging, repeat-sync deduplication, malformed paths/dates, two-device sidecars,
+  failed writes/retry, clear propagation and unseen offline records.
+- Accounting covers observed qualification, duplicate callbacks, rejected seeks,
+  pauses, restarts, local-midnight splitting, playback rates and bounded learning.
+  Device tests compare Android's reference model with the native C++ calculation
+  across base weights, strengths and caps.
+- Android SQLite v1/v2 migration preserves existing history, feedback and pause
+  settings. File-backed device tests migrate linked private records, import a
+  Windows-format shard, reopen without duplicates and preserve weights while
+  clearing. Both adapters test new same-day counters after local/remote clear.
+- Native tests open real Statistics controls, check ranking totals, resize the
+  list, persist learning/pause preferences and import/clear a second device's
+  shards. Fixture-only window captures were inspected; the rankings list uses
+  most of the window. The Android navigation test runs at 320 dp width and 1.3
+  font scale on a disposable API 36.1 emulator.
+
+Live Windows/Android AIMP playback, physical phone volume routes and external
+sync-tool conflict handling remain unverified. Follow the
+[statistics runtime checks](statistics-files.md#runtime-checks-still-needed).

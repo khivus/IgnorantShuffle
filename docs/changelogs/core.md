@@ -3,6 +3,12 @@
 Version history for the portable C++ selection rules. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## Unreleased changes
+
+- Add shared learning-weight calculation, portable statistics ledger/merge/clear rules, CSV/JSON encoding, and a playback-observation reducer.
+- Preserve base-weight exclusions while combining listening balance with bounded smart feedback; credit only observed playback, including rate-aware wall time and local-midnight splits.
+- Read per-device statistics shards alongside music-root weights without double-counting repeated copies or reviving known cleared records.
+
 ## Unreleased — 0.1.0
 
 - Assign the extracted portable selection rules their first independent version; no algorithm changes in this versioning update.

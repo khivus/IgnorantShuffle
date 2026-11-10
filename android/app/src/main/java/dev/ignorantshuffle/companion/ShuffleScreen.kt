@@ -233,7 +233,7 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
                         TextButton(onClick = { m.enqueue(track) }, enabled = track.selectable && !m.pending) { Text("Add to queue") }
                         if (expanded == track.key) {
                         if(m.preferences.smartWeights.enabled) {
-                            val score=m.statistics.smartScores[track.key]?:0.0
+                            val score=m.statistics.smartScores[m.statisticsKey(track)]?:m.statistics.smartScores[track.key]?:0.0
                             Text("Smart adjustment: ${String.format(Locale.ROOT,"%+.2f%%",(m.preferences.smartWeights.factor(score)-1.0)*100)}",style=MaterialTheme.typography.bodySmall)
                         }
                         if(m.preferences.balanceListening || m.preferences.smartWeights.enabled)

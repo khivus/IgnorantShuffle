@@ -43,7 +43,7 @@ void PluginLog::start(const std::filesystem::path& path, std::size_t maximum_byt
         path_ = path;
         maximum_ = std::max<std::size_t>(maximum_bytes, 256);
         stopping_ = false;
-        pending_.clear();
+        pending_.clear();recent_.clear();
         dropped_ = 0;
         sequence_ = 0;
         error_.clear();
@@ -60,13 +60,17 @@ void PluginLog::write(const std::string& event, const std::string& detail) noexc
         if (pending_.size() >= 1024) { ++dropped_; return; }
         std::ostringstream line;
         line << timestamp() << " #" << ++sequence_ << ' ' << clean(event, 100) << ' ' << clean(detail, 4000) << '\n';
-        pending_.push_back(line.str());
+        pending_.push_back(line.str());recent_.push_back(line.str());
+        if(recent_.size()>1000)recent_.pop_front();
         ready_.notify_one();
     } catch (...) { /* Logging must never interrupt playback. */ }
 }
 std::string PluginLog::error() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return error_;
+}
+std::string PluginLog::tail() const {
+    std::lock_guard<std::mutex> lock(mutex_);std::string result;for(const auto& line:recent_)result+=line;return result;
 }
 void PluginLog::stop() noexcept {
     try {
@@ -123,10 +127,10 @@ void PluginLog::run() noexcept {
         }
     } catch (const std::exception& error) {
         std::lock_guard<std::mutex> lock(mutex_);
-        error_ = error.what(); pending_.clear();
+        error_ = error.what(); pending_.clear();recent_.clear();
     } catch (...) {
         std::lock_guard<std::mutex> lock(mutex_);
-        error_ = "Unexpected plugin logging failure."; pending_.clear();
+        error_ = "Unexpected plugin logging failure."; pending_.clear();recent_.clear();
     }
 }
 }

@@ -1,4 +1,4 @@
-# Android listening statistics
+# Listening statistics on Android and Windows
 
 Open **Statistics** from the left drawer. Overview shows listening time, qualified
 plays, unique tracks/artists, early exits and coverage of the tracks exposed by
@@ -43,16 +43,22 @@ Unknown artists do not increase the unique-artist count. Rankings show up to
 
 ## Privacy and controls
 
-The database is private and separate from weights, folder files and diagnostic
-logs. It lives under Android's `noBackupFilesDir`; cloud backup and device transfer
-are also explicitly excluded by the application manifest/extraction rules. There
-is no statistics server, upload, analytics endpoint or automatic sync. Existing
-application update checks remain independent of statistics.
+Statistics are separate from weights and diagnostic logs, and are saved alongside
+weights as per-device `IgnorantShuffle.statistics.<device-id>.tsv` files in each
+music root. Copy/sync all these files together with the weights to share history
+and learning with Windows. There is no statistics server or app-managed cloud
+backup. Android's pending SQLite database/cache stays in `noBackupFilesDir`,
+excluded from Android backup/transfer. Existing history migrates when linked to
+music files. Unlinked history stays pending locally. Read the
+[folder synchronization instructions](shared-music-folder.md#statistics-alongside-weights)
+and [portable schema / Windows controls](statistics-files.md). Application update
+checks remain independent of statistics.
 
 The collection switch pauses listening and shuffle-counter collection without
 deleting totals. Its choice persists across restarts. Resuming never fills the
-paused gap. **Data > Clear statistics** requires confirmation and deletes all
-listening/history/shuffle totals, preserving the collection switch, saved weights,
+paused gap. **Data > Clear statistics** requires confirmation and suppresses known
+listening/history/shuffle records with shared deletion markers. Previously unseen
+offline records can arrive later. It preserves the collection switch, saved weights,
 app queue, preferences and diagnostic logs. It also clears learned balance counts
 and smart-weight adjustments.
 
@@ -83,8 +89,9 @@ minimum-weight cutoff stay authoritative. The mode is off by default and is save
 behavior). The selected fraction is applied as an exponent to the bounded multiplier;
 lower settings soften boosts and penalties toward 1×.
 
-Learning uses all-time qualified local plays, independent of the screen filter.
-Pausing statistics freezes learning. Clearing statistics resets learning. Updated
+Learning uses all-time qualified plays across the synced roots, independent of the screen filter.
+Pausing freezes new local learning; imported records may still change it. Clearing
+known statistics resets their learning and shares clear markers. Updated
 counts apply to future rolls and preserve the already displayed next choice.
 Explicit app-queue choices take priority and bypass weighted eligibility.
 
@@ -108,9 +115,10 @@ future feedback by 0.5× / 1× / 2×. Gains across all positive signals are capp
 feedback can reduce a saturated boost immediately. Changing the cap applies to
 selection immediately; changing learning strength affects future feedback.
 
-Pausing Statistics freezes learning. Clearing statistics also clears smart learning.
+Pausing Statistics freezes new local learning. Imported feedback can still change
+totals. Clearing statistics also clears known smart feedback via shared markers.
 Disabling the mode preserves learned adjustments for later, while removing their
-effect. The SQLite version-1 to version-2 migration retains prior listening history,
+effect. SQLite version-1/version-2 to version-3 migrations retain prior listening history,
 totals and the collection switch. Learning never rewrites the shared weights file.
 An excluded base weight stays excluded. Playlist's expanded details show the
 selection weight for future rolls alongside the saved weight. Already displayed

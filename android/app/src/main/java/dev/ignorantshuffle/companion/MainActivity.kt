@@ -149,7 +149,7 @@ class MainActivity : ComponentActivity() {
         monitor.log("Activity resumed; batteryExempt=$batteryExempt")
         monitor.refresh(); monitor.refreshNotifications(); monitor.reloadSharedWeights(); updates.onForeground()
     }
-    override fun onStop() { monitor.log("Activity backgrounded"); super.onStop() }
+    override fun onStop() { monitor.log("Activity backgrounded");monitor.statistics.flushShared(); super.onStop() }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("exportKind", exportKind)
         outState.putBoolean("installAfterPermission", installAfterPermission)

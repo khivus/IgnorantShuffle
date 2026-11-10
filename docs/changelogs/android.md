@@ -4,6 +4,12 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## Unreleased changes
+
+- Save per-device statistics sidecars alongside each music root's weights so folder synchronization shares listening history and feedback with Windows.
+- Migrate existing SQLite v1/v2 history, learning and collection preferences; retain unlinked observations privately until file links resolve them.
+- Use shared C++ learning weights through JNI and portable root-relative media identities, with record deduplication and synchronized clear markers.
+
 ## 0.9.0 (versionCode 11)
 
 - Add optional experimental combined switching: keep timed switches before normal endings and correct early AIMP/headset skips to the saved weighted choice.

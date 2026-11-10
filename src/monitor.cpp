@@ -235,6 +235,7 @@ void MonitorWindow::layout() {
         const auto notice_height = text_height(IDC_PANEL_NOTICE, width, y_units(window_, 9));
         place(IDC_PANEL_NOTICE, margin, y, width, notice_height);
         y += notice_height + y_units(window_, 3);
+        place(IDC_STATISTICS,margin,y,width,y_units(window_,15));y+=y_units(window_,19);
         const auto updates_width = x_units(window_, 59);
         const auto update_height = text_height(IDC_UPDATE_SUMMARY, width - updates_width - gap, y_units(window_, 14));
         place(IDC_UPDATES, margin, y, updates_width, y_units(window_, 15));
@@ -486,6 +487,7 @@ INT_PTR CALLBACK MonitorWindow::procedure(HWND window, UINT message, WPARAM wpar
             else if (id == IDC_REROLL_NEXT && self->on_reroll) self->on_reroll();
             else if (id >= IDC_QUICK_WEIGHT_0 && id <= IDC_QUICK_WEIGHT_10 && self->on_weight) self->on_weight(id - IDC_QUICK_WEIGHT_0);
             else if (id == IDC_OPEN_LOGS && self->on_logs) self->on_logs();
+            else if (id == IDC_STATISTICS && self->on_statistics) self->on_statistics();
             else if (id == IDC_UPDATES && self->on_updates) self->on_updates();
 
             else if (id == IDC_APPLY_COOLDOWN && self->on_cooldown) {

@@ -52,7 +52,7 @@ class ListeningStatistics(private val feedback: (SmartFeedback) -> Unit = {},
         val active=session ?: return
         if(active.qualified && pendingVolume && !rewardedVolume) {
             rewardedVolume=true;pendingVolume=false
-            feedback(SmartFeedback(active.id,active.key,SmartSignal.VOLUME_UP))
+            feedback(SmartFeedback(active.id,active.key,SmartSignal.VOLUME_UP,active.updated,day(active.updated)))
         }
     }
 
@@ -74,7 +74,7 @@ class ListeningStatistics(private val feedback: (SmartFeedback) -> Unit = {},
             val completedPrevious=completed
             if(previous!=null && previous.key!=track.key && !previous.qualified && previous.listeningMs>=2000 &&
                 lastCreditAt>=0 && elapsed-lastCreditAt in 0..2000 && (duration<=0 || lastCreditPosition<duration-1500)) {
-                feedback(SmartFeedback(previous.id,previous.key,SmartSignal.EARLY_SKIP))
+                feedback(SmartFeedback(previous.id,previous.key,SmartSignal.EARLY_SKIP,wall,day(wall)))
             }
             close(wall, early = !naturalRepeat)
             resetSignals()
@@ -117,11 +117,11 @@ class ListeningStatistics(private val feedback: (SmartFeedback) -> Unit = {},
         if (todayMs < credit) emit(ListeningDelta(updated, end.toLocalDate().minusDays(1).toString(), credit - todayMs))
         emit(ListeningDelta(updated, end.toLocalDate().toString(), todayMs, if (qualifies) 1 else 0))
         if(updated.qualified && pendingReplay) {
-            pendingReplay=false;feedback(SmartFeedback(updated.id,updated.key,SmartSignal.REPLAYED))
+            pendingReplay=false;feedback(SmartFeedback(updated.id,updated.key,SmartSignal.REPLAYED,wall,day(wall)))
         }
         rewardVolume()
         if(!completed && completionPossible && duration>0 && observedMedia>=duration*0.9 && sample.position>=duration-1500) {
-            completed=true;feedback(SmartFeedback(updated.id,updated.key,SmartSignal.COMPLETED))
+            completed=true;feedback(SmartFeedback(updated.id,updated.key,SmartSignal.COMPLETED,wall,day(wall)))
         }
     }
 

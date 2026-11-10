@@ -24,7 +24,7 @@ data class SmartWeightOptions(val enabled: Boolean = false, val strength: Double
     fun factor(score: Double) = if(enabled) 1.0+score.coerceIn(-limit,limit) else 1.0
 }
 enum class SmartSignal { EARLY_SKIP, COMPLETED, REPLAYED, VOLUME_UP }
-data class SmartFeedback(val session: String, val key: String, val kind: SmartSignal)
+data class SmartFeedback(val session: String, val key: String, val kind: SmartSignal,val wall: Long=0,val day: String="")
 data class ListeningVolume(val type: Int, val control: Int, val max: Int, val value: Int, val route: String="")
 
 /** Volume is a weak signal: one rise per session, after a stable baseline; routes reset it. */

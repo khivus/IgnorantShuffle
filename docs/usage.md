@@ -116,3 +116,25 @@ Window size, floating position, pin, attachment, and plugin on/off settings are 
 ## Updates and diagnostics
 
 **Updates...** opens [update settings](updates.md). **Open logs** opens the plugin's diagnostic folder; see [Troubleshooting and logs](troubleshooting.md).
+
+## Statistics and learning
+
+Open **Statistics / learning...** in the Windows panel. Choose a time range and
+browse Overview, Tracks, Artists, History or Shuffle; search and double-click a
+row for its full details. Resize the window to give rankings/history/logs more
+room. **Collect statistics** pauses this device, **Clear statistics...** confirms
+shared deletion markers, and CSV/JSON exports save all retained active data.
+**Logs** displays the latest 1,000 diagnostic events in a full list; **Open log
+folder** also provides access to persisted current/rotated logs.
+
+The **Learning** tab provides independent listening-balance and smart-weight modes,
+strengths, maximum adjustment and per-signal switches. Click **Apply learning
+settings** to save. Saved weights and minimum exclusions remain authoritative;
+learning changes future rolls. See [statistics and learning](statistics-files.md)
+for accounting, rates, privacy and exports. AIMP's native user queue remains
+available and takes precedence as usual; Android uses its app queue fallback.
+
+Configure music roots to save per-device statistics beside each root's weights.
+Copy/sync all `IgnorantShuffle.statistics.*.tsv` files along with weights. No
+server/cloud upload is provided by the applications. Follow the
+[shared-root setup](shared-music-folder.md#statistics-alongside-weights).

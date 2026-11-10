@@ -93,21 +93,22 @@ class MusicFolderStore(private val context: Context) {
         progress(files.size)
         return files.sortedBy { it.path }
     }
-    fun documents(tree: Uri): WeightDocuments = object : WeightDocuments {
+    fun documents(tree: Uri, maximumBytes: Int = 8_000_000): WeightDocuments = object : WeightDocuments {
+        override fun names(): List<String> = children(tree,root(tree)).filter {it.mime!=Document.MIME_TYPE_DIR}.map {it.name}
         override fun find(name: String): String? {
             val found = children(tree, root(tree)).filter { it.name == name }
             check(found.size <= 1 && found.none { it.mime == Document.MIME_TYPE_DIR }) { "Ambiguous shared file: $name" }
             return found.singleOrNull()?.uri?.toString()
         }
         override fun read(id: String): String = requireNotNull(resolver.openInputStream(Uri.parse(id))).use {
-            val bytes = it.readNBytesCompat(8_000_000)
+            val bytes = it.readNBytesCompat(maximumBytes)
             Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString()
         }
         override fun create(name: String): String = requireNotNull(DocumentsContract.createDocument(resolver, root(tree), "text/tab-separated-values", name)) {
             "Cannot create shared weights; choose a writable on-device folder"
         }.toString()
         override fun write(id: String, text: String) {
-            require(text.toByteArray(Charsets.UTF_8).size <= 8_000_000) { "Shared weights exceed 8 MB" }
+            require(text.toByteArray(Charsets.UTF_8).size <= maximumBytes) { "Shared file is too large" }
             requireNotNull(resolver.openOutputStream(Uri.parse(id), "wt")).use { it.write(text.toByteArray(Charsets.UTF_8)) }
         }
         override fun rename(id: String, name: String): String = requireNotNull(DocumentsContract.renameDocument(resolver, Uri.parse(id), name)) {

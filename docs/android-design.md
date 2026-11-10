@@ -109,18 +109,22 @@ Database reads, writes and exports run off the playback/UI thread. See the
 privacy, export fields and device checks.
 
 Listening balance applies a bounded 0.25–4× multiplier derived from qualified
-all-time local play counts before passing weights to the shared native planner.
+all-time synced play counts using the shared C++ learning calculation before
+passing weights to the native planner.
 Eligibility still uses saved base weights. The catalog mean is calculated once,
 not for every candidate. Newly learned counts affect future rolls and do not
-replace the currently published choice. Android-only learning never rewrites the
-portable weights files or changes the Windows core's selection contract.
+replace the currently published choice. Windows uses the same learning formula;
+portable weights are unchanged and statistics sidecars share counts and feedback.
 
-Smart weights use additive bounded preference scores in the same private,
-backup-excluded statistics database. Database version 2 migrates version 1 by
-adding learned scores and per-session signal deduplication, preserving listening
-data and collection settings. A serialized transaction applies each signal and
-enforces the shared +1.5% positive session budget. Collection pause freezes both
-learning modes, and statistics clear/export includes smart scores.
+Smart weights use additive bounded preference scores. SQLite version 3 migrates
+version 1/2 history, feedback and collection settings. The private no-backup database
+retains pending observations; per-device portable sidecars in each music root
+share cumulative records and stable IDs with Windows. Worker-side file reads,
+merging and atomic replacement preserve weights and other devices' shards.
+A serialized transaction deduplicates each local signal, and shared-ledger folding
+enforces the +1.5% positive session budget. Pause stops new local learning; imports
+can still change totals. Clear writes synchronized tombstones and clears known
+feedback. See [portable schema](statistics-files.md).
 
 The listening reducer only rewards qualified replays and qualified volume rises.
 Completion requires observed media progress, a near-end position and no seek/long

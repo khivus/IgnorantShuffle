@@ -1,4 +1,4 @@
-# Share music-folder weights between Windows and Android
+# Share weights and statistics between Windows and Android
 
 [Back to README](../README.md)
 
@@ -35,3 +35,42 @@ For provider/file errors, restore access or fix the file and reload. If only a
 is retained when a save fails; removing a root from settings does not delete its
 weights file. Old private/override files are not used; see
 [existing-installation guidance](weight-storage.md#existing-installations).
+
+## Statistics alongside weights
+
+Both versions also save **`IgnorantShuffle.statistics.<device-id>.tsv`** files in
+each configured music root. Include **all** of these files in the same local
+folder-copy/sync job as `IgnorantShuffle.weights.tsv`. Statistics stay separate
+from weights and logs; weight-only Import/Export still transfers only weights.
+The applications do not upload files or provide a server/cloud backup service.
+A sync tool you configure controls where its own copies go.
+
+Each device writes only its own file. Both applications read all device files
+and merge stable record IDs and revisions, so copying files repeatedly does not
+double-count plays. Do not rename shards to another device's name or combine them
+by concatenation. Root-relative track paths match across Windows and Android;
+use the same root boundaries and relative music layout on both devices.
+
+Statistics refresh from root files while active (roughly every 10 seconds on
+Windows and 15 seconds on Android); opening Statistics refreshes totals. Windows
+also has **Reload / sync**. Pending observations survive unavailable roots in a
+private local cache. Android migrates its existing private history when tracks
+can be linked to files; unlinked history stays pending until linked. Removing a
+root never deletes its files. Renaming/moving music changes its track identity.
+
+**Pause collection** pauses this device only. Other devices' imported totals can
+still change. Learning settings and pause choices are device preferences; shared
+play counts and feedback drive future choices on both platforms. Live finite-pass
+progress, queued items, diagnostic logs and the already published next roll remain
+local. This is file synchronization, not remote playback control.
+
+**Clear statistics** requires confirmation and writes deletion markers for all
+known records, including imported ones. Sync those markers to the other devices;
+old copies and later revisions of those known records cannot restore them.
+Previously unseen records from a disconnected device may appear on its next sync.
+Clear again after all devices synchronize to remove those too. Keep deletion
+markers in the shards. Clearing does not erase weights, logs or exported copies.
+Malformed/conflicting files and surviving `.bak` files are preserved and reported;
+restore the backup or resolve the file problem before retrying.
+
+The shared schema is documented in [Statistics files](statistics-files.md).

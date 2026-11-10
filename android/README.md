@@ -68,18 +68,20 @@ Scroll/search positions survive switching drawer pages.
 Statistics has local overview cards, daily listening, track/artist rankings,
 searchable per-track totals, recent history and shuffle counters, with Today,
 7 days, 30 days and All time filters. Collection can be paused; Data offers
-CSV/JSON exports and confirmed deletion. See [accounting and privacy](../docs/android-statistics.md).
+CSV/JSON exports and confirmed deletion. Per-device statistics files are saved
+alongside music-root weights and can be copied/synced with Windows; existing private
+history migrates when linked. See [shared folder setup](../docs/shared-music-folder.md#statistics-alongside-weights) and [accounting and privacy](../docs/android-statistics.md).
 **Shuffle rules > Balance listening frequency** adjusts future rolls using all-time
 qualified plays. It preserves saved weights, minimum-weight exclusions and the
-currently published roll. Pause collection to freeze learning; clear statistics to
-start learning again from zero.
+currently published roll. Pause collection to stop new local learning; clear statistics to
+start new local learning from zero. Imported records can still change totals.
 
 Drawer section headings are uppercase, shaded and separated from indented page
 rows. The top-right dot and **Connected / Disconnected** label indicate the AIMP
 session connection.
 
 **Shuffle rules > Listening balance** includes Gentle / Medium / Full strength.
-The separate **Smart weights > Learn from listening** option learns small local
+The separate **Smart weights > Learn from listening** option learns small
 preferences from early skips, full listens, qualified replays and reported volume
 increases. Each signal can be disabled. At normal strength the changes are −2%,
 +0.5%, +1% and +0.25% respectively, bounded by a default ±15% overall cap and a

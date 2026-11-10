@@ -37,7 +37,7 @@ class MonitorWindow {
     static INT_PTR CALLBACK procedure(HWND, UINT, WPARAM, LPARAM);
 public:
     ~MonitorWindow() { destroy(); }
-    std::function<void()> on_tick, on_weights, on_reroll, on_move, on_logs, on_updates;
+    std::function<void()> on_tick, on_weights, on_reroll, on_move, on_logs, on_updates, on_statistics;
     std::function<void(int)> on_weight;
     std::function<void(int)> on_cooldown;
     std::function<void(const std::string&)> on_error;

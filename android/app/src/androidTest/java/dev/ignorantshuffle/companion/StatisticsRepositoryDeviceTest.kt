@@ -142,6 +142,77 @@ class StatisticsRepositoryDeviceTest : InstrumentationTestCase() {
         await {repository!!.snapshot.plays==2L && (repository!!.smartScores[track.key]?:0.0)>=0.0199}
         main {assertEquals(0.02,repository!!.smartScores[track.key]!!,0.000001)}
     }
+    fun testVersionTwoMigrationKeepsLearningAndExportsBesideWeights() {
+        val track=Track(1,"v2-smart",null,"Legacy","Artist")
+        main {
+            repository!!.configureSmartWeights(SmartWeightOptions(enabled=true))
+            for(i in 0..10)repository!!.engine.observe(Playback(3,track.title,track.artist,i*1000L,10000,1f,1000+i*1000L,track),1000+i*1000L,1_000_000+i*1000L)
+        }
+        await {repository!!.smartScores[track.key]==.005}
+        main {repository!!.close()}
+        android.database.sqlite.SQLiteDatabase.openDatabase(File(directory,"listening-statistics.db").absolutePath,null,0).use {db ->
+            db.execSQL("ALTER TABLE smart_feedback RENAME TO feedback_v3")
+            db.execSQL("CREATE TABLE smart_feedback(session TEXT,kind TEXT,delta REAL NOT NULL,PRIMARY KEY(session,kind))")
+            db.execSQL("INSERT INTO smart_feedback SELECT session,kind,delta FROM feedback_v3")
+            db.execSQL("DROP TABLE feedback_v3");db.version=2
+        }
+        open()
+        val root=File(directory,"music").apply {mkdirs()}
+        val documents=object : WeightDocuments {
+            override fun names()=root.list()?.toList()?:emptyList()
+            override fun find(name: String)=name.takeIf {File(root,it).isFile}
+            override fun read(id: String)=File(root,id).readText()
+            override fun create(name: String): String {check(File(root,name).createNewFile());return name}
+            override fun write(id: String,text: String)=File(root,id).writeText(text)
+            override fun rename(id: String,name: String): String {check(File(root,id).renameTo(File(root,name)));return name}
+            override fun delete(id: String) {check(File(root,id).delete())}
+        }
+        val foreign=PortableStatistics().apply {put(PortableStat("windows/l/1970-01-01",kind="L",key="Artist/Legacy.flac",title="Legacy",artist="Artist",session="windows",day="1970-01-01",started=2000000,updated=2030000,ms=30000,plays=1))}
+        File(root,PortableStatistics.filename("windows")).writeText(foreign.text())
+        File(root,PortableWeights.FILENAME).writeText("weight sentinel")
+        main {repository!!.configureRoots(listOf(StatisticsRoot("music",documents))) {_,_,_->FileMatch("Artist/Legacy.flac","Migrated","music")};repository!!.refresh("")}
+        await {repository!!.snapshot.plays==2L}
+        val identity=PortableStatistics.identity("music","Artist/Legacy.flac")
+        var learned=0.0;var total=0L
+        main {learned=repository!!.smartScores[identity]?:0.0;total=repository!!.snapshot.listeningMs}
+        assertEquals(.005,learned,.000001);assertEquals(40000L,total)
+        assertEquals("weight sentinel",File(root,PortableWeights.FILENAME).readText())
+        assertEquals(2,root.listFiles()!!.count {PortableStatistics.shard(it.name)})
+        main {repository!!.close()};open()
+        main {repository!!.configureRoots(listOf(StatisticsRoot("music",documents))) {_,_,_->FileMatch("Artist/Legacy.flac","Migrated","music")};repository!!.refresh("")}
+        await {repository!!.snapshot.plays==2L}
+        main {repository!!.clear()}
+        await {repository!!.snapshot.tracks.isEmpty()}
+        val ledgers=PortableStatistics();root.listFiles()!!.filter {PortableStatistics.shard(it.name)}.forEach {ledgers.merge(PortableStatistics.parse(it.readText()))}
+        assertTrue(ledgers.active().isEmpty())
+        main {repository!!.shuffle("reroll");repository!!.refresh("")}
+        await {repository!!.snapshot.shuffle["reroll"]==1L}
+        main {repository!!.flushShared()}
+        // Another device clears the known counter; the next local reroll starts fresh.
+        await {root.listFiles()!!.filter {PortableStatistics.shard(it.name)}.any {file ->PortableStatistics.parse(file.readText()).active().any {it.kind=="C"}}}
+        val remote=PortableStatistics();root.listFiles()!!.filter {PortableStatistics.shard(it.name)}.forEach {remote.merge(PortableStatistics.parse(it.readText()))}
+        remote.clear("windows",System.currentTimeMillis())
+        File(root,PortableStatistics.filename("windows")).writeText(remote.text())
+        main {repository!!.shuffle("reroll");repository!!.refresh("")}
+        await {repository!!.snapshot.shuffle["reroll"]==1L}
+        main {repository!!.flushShared()}
+        await {root.listFiles()!!.filter {PortableStatistics.shard(it.name)}.map {PortableStatistics.parse(it.readText())}.let {all ->PortableStatistics().apply {all.forEach(::merge)}.active().sumOf {if(it.kind=="C")it.value.toLong() else 0L}==1L}}
+        assertEquals("weight sentinel",File(root,PortableWeights.FILENAME).readText())
+    }
+    fun testNativeLearningUsesSameRulesAsAndroidReference() {
+        val a=Track(1,"a",null,"A","Artist");val b=Track(2,"b",null,"B","Artist")
+        val planner=Planner {_,_,_,_,_,_->Choice(null)}
+        val reference=ShuffleModel(planner);val native=ShuffleModel(planner,nativeLearning=true)
+        for(strength in listOf(.25,.5,1.0))for(cap in listOf(.05,.15,.25))for(base in listOf(0.0,.5,1.0,5.0,25.0)) {
+            for(model in listOf(reference,native)) {
+                model.catalog(listOf(a,b));model.configure(Settings(),mapOf(a.key to base))
+                model.balance(true,mapOf(a.key to 10L,b.key to 0L),strength)
+                model.smartWeights(SmartWeightOptions(enabled=true,limit=cap),mapOf(a.key to .1,b.key to -.1))
+            }
+            assertEquals(reference.selectionWeight(a),native.selectionWeight(a),.0000001)
+            assertEquals(reference.selectionWeight(b),native.selectionWeight(b),.0000001)
+        }
+    }
     override fun tearDown() {
         main {repository?.close()}
         super.tearDown()

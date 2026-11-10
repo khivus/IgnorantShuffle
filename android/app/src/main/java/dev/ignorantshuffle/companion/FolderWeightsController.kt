@@ -42,6 +42,12 @@ class FolderWeightsController(context: Context, private val event: (String) -> U
         root.uri to SharedWeightFile.read(store.documents(Uri.parse(root.uri)))
     }
     fun match(track: Track) = matcher.match(track, config.links)
+    fun statisticsKey(track: Track): String = match(track).let {m ->m.path?.let {PortableStatistics.identity(m.root,it)}?:track.key}
+    fun statisticsRoots(): Pair<List<StatisticsRoot>,(String,String,String)->FileMatch> {
+        val snapshot=LibraryMatcher(files);val links=config.links.toMap()
+        return config.roots.map {StatisticsRoot(it.uri,store.documents(Uri.parse(it.uri),32*1024*1024))} to
+            {key: String,title: String,artist: String ->snapshot.match(key,null,title,artist,links)}
+    }
     fun pickerFailed(exception: Throwable) { status = "Music-folder selection failed: ${exception.message}"; event(status); changed() }
     fun effective(tracks: List<Track>): Map<String, Double> = buildMap {
         tracks.forEach { track -> val match = match(track)

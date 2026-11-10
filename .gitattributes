@@ -1,0 +1,2 @@
+# The final TSV column is an optional empty label, so its delimiter is significant.
+tests/fixtures/portable-statistics.tsv whitespace=-blank-at-eol

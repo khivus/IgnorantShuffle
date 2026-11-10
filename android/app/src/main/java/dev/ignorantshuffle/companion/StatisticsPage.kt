@@ -43,8 +43,9 @@ internal fun StatisticsPage(m: AimpController, export: (String) -> Unit) {
     }.sortedWith(compareByDescending<TrackStatistics> { it.plays }.thenByDescending { it.ms }) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding=PaddingValues(16.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
         item {
-            Text("On-device listening",style=MaterialTheme.typography.titleLarge)
-            Text("Only observed AIMP playback. Statistics stay in private storage, excluded from backup. Exports contain all retained data and are saved only where you choose.",style=MaterialTheme.typography.bodySmall)
+            Text("Library listening",style=MaterialTheme.typography.titleLarge)
+            Text("Only observed playback. Statistics files are saved beside each music root's weights so your folder sync can share them with Windows. No upload service is used.",style=MaterialTheme.typography.bodySmall)
+            Text(repository.sharedStatus,style=MaterialTheme.typography.bodySmall)
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                 Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
                     Switch(repository.collecting,{repository.pause(!it)},enabled=repository.ready && repository.error==null)
@@ -80,7 +81,7 @@ internal fun StatisticsPage(m: AimpController, export: (String) -> Unit) {
             } }
             item {
                 val heard=s.tracks.filter { it.ms>0 }.map { it.key }.toSet()
-                val catalog=m.tracks.map { it.key }.toSet()
+                val catalog=m.tracks.map { m.statisticsKey(it) }.toSet()
                 Metric("Library coverage",if(catalog.isEmpty()) "Connect AIMP to compare its library" else
                     "${heard.intersect(catalog).size} / ${catalog.size} exposed tracks (${heard.intersect(catalog).size*100/catalog.size}%)")
             }
@@ -135,7 +136,7 @@ internal fun StatisticsPage(m: AimpController, export: (String) -> Unit) {
         if(s.tracks.isEmpty()) item { Text("No observed listening in this range. Start AIMP playback; previews and paused time do not count.") }
     }
     if(confirmClear) AlertDialog(onDismissRequest={confirmClear=false},title={Text("Clear all statistics?")},
-        text={Text("Permanently delete listening history, totals and shuffle counters on this device. Saved weights and diagnostic logs are kept. Listening balance and learned smart adjustments start fresh.")},
+        text={Text("Clear all known listening records and learning in the selected libraries and on this device? Clear markers sync with the statistics files; previously unseen records from offline devices can arrive later. Saved weights and diagnostic logs are kept.")},
         confirmButton={TextButton(onClick={repository.clear();confirmClear=false}) {Text("Clear statistics")}},
         dismissButton={TextButton(onClick={confirmClear=false}) {Text("Cancel")}})
 }

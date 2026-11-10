@@ -1,6 +1,7 @@
 #include <jni.h>
 #include "weights.h"
 #include "core_version.h"
+#include "statistics.h"
 #include <stdexcept>
 
 namespace {
@@ -22,6 +23,13 @@ std::vector<std::string> strings(JNIEnv* env, jobjectArray array) {
     }
     return result;
 }
+}
+extern "C" JNIEXPORT jdouble JNICALL
+Java_dev_ignorantshuffle_companion_ShuffleNative_learningWeight(JNIEnv* env,jobject,
+    jdouble base,jdouble minimum,jlong plays,jdouble mean,jboolean balance,jdouble strength,
+    jboolean smart,jdouble score,jdouble limit) {
+    try {return ignorant::learning_weight(base,minimum,plays,mean,balance,strength,smart,score,limit);}
+    catch(const std::exception& e) {env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),e.what());return 0;}
 }
 extern "C" JNIEXPORT jstring JNICALL
 Java_dev_ignorantshuffle_companion_ShuffleNative_coreVersion(JNIEnv* env, jobject) {
