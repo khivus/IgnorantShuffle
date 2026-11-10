@@ -53,7 +53,8 @@ The collection switch pauses listening and shuffle-counter collection without
 deleting totals. Its choice persists across restarts. Resuming never fills the
 paused gap. **Data > Clear statistics** requires confirmation and deletes all
 listening/history/shuffle totals, preserving the collection switch, saved weights,
-app queue, preferences and diagnostic logs. It also clears learned balance counts.
+app queue, preferences and diagnostic logs. It also clears learned balance counts
+and smart-weight adjustments.
 
 **Data > Export all CSV / Export all JSON** exports all retained data, regardless
 of the selected filter. Android's picker is requested to show local destinations
@@ -61,12 +62,14 @@ only; exports are explicit copies outside app-private storage. Canceling the
 picker does nothing. An export destination failure leaves collection running.
 Deleting in-app statistics does not delete copies you previously exported.
 
-JSON schema 1 contains `sessions_by_day` and `shuffle`. Each listening row contains
+JSON schema 1 contains `sessions_by_day`, `shuffle` and `smart_weights`. Each listening row contains
 session/track identity, title, artist, Unix-millisecond start/update timestamps,
 local day, listening milliseconds, qualified plays and early exits. Shuffle rows
 contain local day, counter kind and count. CSV uses the same information in one
-table with a `type` column (`listening` or `shuffle`), quoted fields and escaped
-quotes. This preserves Unicode, commas and newlines in track metadata.
+table with a `type` column (`listening`, `shuffle` or `smart_weight`), quoted fields
+and escaped quotes. Smart rows identify the track and its learned fractional
+adjustment in the `score` column. This preserves Unicode, commas and newlines in
+track metadata. Older schema-1 exports without smart-weight fields remain readable.
 
 ## Listening balance
 
@@ -76,11 +79,80 @@ bounded to **0.25–4×**. Less-played tracks gain relative chance and often-pla
 tracks lose it. The mean uses unique identities in the current AIMP catalog.
 With no history the multiplier is 1. Saved weights, zero exclusions and the
 minimum-weight cutoff stay authoritative. The mode is off by default and is saved.
+**Balance strength** offers Gentle (25%), Medium (50%) and Full (100%, the previous
+behavior). The selected fraction is applied as an exponent to the bounded multiplier;
+lower settings soften boosts and penalties toward 1×.
 
 Learning uses all-time qualified local plays, independent of the screen filter.
 Pausing statistics freezes learning. Clearing statistics resets learning. Updated
 counts apply to future rolls and preserve the already displayed next choice.
 Explicit app-queue choices take priority and bypass weighted eligibility.
+
+## Smart weights
+
+Enable **Shuffle rules > Smart weights > Learn from listening** to learn a small
+preference adjustment for each track. It is off by default and can work alongside
+listening balance. Each signal has its own switch. At Normal strength:
+
+| Observed behavior | Adjustment |
+| --- | --- |
+| Leave after at least 2 seconds, before qualifying, while playback evidence is fresh | −2% |
+| Reach the ending after observing at least 90% of the duration, without a seek or long observation gap | +0.5% |
+| Qualify a repeated track or an app Previous/replay request after its playback is observed | +1% |
+| Raise the reported session volume after a stable baseline and qualify that listening session | +0.25% |
+
+The default total adjustment is capped at **±15%** of the base selection weight.
+Choose ±5%, ±15% or ±25%. **Gentle / Normal / Stronger** learning strength scales
+future feedback by 0.5× / 1× / 2×. Gains across all positive signals are capped at
+**+1.5% per listening session**, and each signal counts once per session. Negative
+feedback can reduce a saturated boost immediately. Changing the cap applies to
+selection immediately; changing learning strength affects future feedback.
+
+Pausing Statistics freezes learning. Clearing statistics also clears smart learning.
+Disabling the mode preserves learned adjustments for later, while removing their
+effect. The SQLite version-1 to version-2 migration retains prior listening history,
+totals and the collection switch. Learning never rewrites the shared weights file.
+An excluded base weight stays excluded. Playlist's expanded details show the
+selection weight for future rolls alongside the saved weight. Already displayed
+rolls retain their original choice when new feedback arrives.
+
+Stops, disconnects, short metadata fragments and unobserved gaps do not penalize
+tracks. Rejected correction fragments are not learning sessions. Explicit app
+Previous/replay requests gain weight only after the new session qualifies; rapid
+button taps cannot earn repeated rewards. Known automatic same-track handoffs do
+not receive a replay reward. Native AIMP same-track repeats are inferred from an
+observed end followed by the beginning; the integration cannot prove why AIMP
+repeated that track.
+
+Volume is deliberately weak evidence, not proof of preference. The controller
+reads [Android's reported session volume](https://developer.android.com/reference/android/media/session/MediaController.PlaybackInfo)
+and listens for [playback-info changes](https://developer.android.com/reference/android/media/session/MediaController.Callback#onAudioInfoChanged(android.media.session.MediaController.PlaybackInfo)).
+First readings, duplicates, decreases, fixed volume, mismatched tracks and
+pending commands cannot earn a reward. Device connect/disconnect, reported route,
+maximum-volume or control changes reset the baseline. A new baseline must be
+stable for five seconds, and a rise before qualification is discarded if playback
+or collection is paused, correction settling starts, or a device change is detected.
+Some OEM/player route changes may be indistinguishable from a volume adjustment;
+turn this signal off if AIMP's reported volume is unreliable on your phone.
+
+Follow-up device checks:
+
+1. Open the drawer: uppercase shaded group headings with dividers should differ
+   from indented, tappable page rows. Verify the top-right dot has Connected or
+   Disconnected text as AIMP connects/disconnects, including with enlarged text.
+2. In Shuffle rules, configure each learning mode independently, restart and check
+   the choices. Confirm Gentle balance softens both boosts and penalties. With
+   Smart weights enabled, test its three strengths, adjustment caps and each signal
+   switch. Saved weights, exclusions, cooldown, finite passes and queue priority
+   should remain authoritative.
+3. Compare expanded Playlist selection weights before/after an early skip, full
+   listen, qualified replay and volume increase. Expect small changes within the
+   configured cap, once per event/session. Seek near the ending, repeat callbacks,
+   stop/disconnect, and trigger a rejected correction: these must not invent rewards.
+4. Test volume with AIMP in foreground/background, physical buttons, Bluetooth and
+   headphones. A device change or initial volume reading must not boost a track.
+   Pause collection, export CSV/JSON, restart and clear statistics after canceling
+   once. Learning should freeze/persist/reset as described, with weights untouched.
 
 ## Verification and remaining phone checks
 

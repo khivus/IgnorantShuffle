@@ -17,20 +17,29 @@ class NavigationDeviceTest : InstrumentationTestCase() {
         return listOf(root)+(0 until root.childCount).flatMap { nodes(root.getChild(it)) }
     }
     private fun find(label: String) = nodes(root()).firstOrNull {
-        it.isVisibleToUser && (it.text?.toString()==label || it.contentDescription?.toString()==label)
+        it.isVisibleToUser && (it.text?.toString()==label || it.contentDescription?.toString()==label ||
+            (it.isCheckable && it.text?.toString()?.startsWith(label)==true))
     }
     private fun waitFor(label: String) {
         val until=System.currentTimeMillis()+8000
         while(System.currentTimeMillis()<until) { if(find(label)!=null)return;Thread.sleep(50) }
         fail("Missing accessible UI: $label")
     }
-    private fun click(label: String, scroll: Boolean=false) {
+    private fun click(label: String, scroll: Boolean=false, toggle: Boolean=false) {
         var direction=AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
         var previousLabels: String?=null
         for(attempt in 0..60) {
             var node=find(label)
             if(node!=null) {
-                while(node!=null && !node.isClickable) node=node.parent
+                if(toggle && !node.isCheckable) {
+                    var parent=node.parent
+                    node=null
+                    while(parent!=null) {
+                        val control=nodes(parent).firstOrNull {it.isCheckable && it.isClickable}
+                        if(control!=null) { node=control.takeIf {it.isVisibleToUser};break }
+                        parent=parent.parent
+                    }
+                } else while(node!=null && !node.isClickable) node=node.parent
                 if(node!=null && node.refresh() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                     instrumentation.waitForIdleSync();Thread.sleep(250);return
                 }
@@ -66,13 +75,42 @@ class NavigationDeviceTest : InstrumentationTestCase() {
         try {
             Thread.sleep(1500)
             if(find("Not now")!=null)click("Not now")
+            waitFor("Disconnected")
             for((index,page) in listOf("Playlist","Queue","Statistics","Shuffle rules","Music folders","Playback","Notifications","Appearance","Diagnostics","Logs").withIndex()) {
-                click("Open navigation drawer");if(index==0)waitFor("IgnorantShuffle");click(page,scroll=true);waitFor(page)
+                click("Open navigation drawer")
+                if(index==0) {
+                    waitFor("IgnorantShuffle");waitFor("LISTEN & EXPLORE")
+                    if(android.os.Build.VERSION.SDK_INT>=28) {
+                        var header=find("LISTEN & EXPLORE")
+                        while(header!=null && !header.isHeading)header=header.parent
+                        assertNotNull("Drawer group must be an accessibility heading",header)
+                        assertFalse("Drawer group must not behave like a page",header!!.isClickable)
+                    }
+                }
+                click(page,scroll=true);waitFor(page)
                 when(page) {
                     "Playlist" -> waitFor("Search 0 tracks by title or artist")
                     "Queue" -> waitFor("App queue")
                     "Statistics" -> { waitFor("On-device listening");click("Data");click("Clear statistics");waitFor("Clear all statistics?");click("Cancel") }
-                    "Shuffle rules" -> waitFor("Balance listening frequency")
+                    "Shuffle rules" -> {
+                        waitFor("Balance listening frequency")
+                        val controller=(instrumentation.targetContext.applicationContext as ShuffleApplication).controller
+                        val original=controller.preferences
+                        var observed=original
+                        try {
+                            instrumentation.runOnMainSync {controller.changePreferences(original.copy(smartWeights=SmartWeightOptions()))}
+                            click("Learn from listening",scroll=true,toggle=true)
+                            instrumentation.runOnMainSync {observed=controller.preferences}
+                            assertTrue("Smart switch must enable learning",observed.smartWeights.enabled)
+                            click("Gentle",scroll=true);click("±5%",scroll=true)
+                            click("Early skips",scroll=true,toggle=true)
+                            instrumentation.runOnMainSync {observed=controller.preferences}
+                            assertTrue(observed.smartWeights.enabled)
+                            assertEquals(0.5,observed.smartWeights.strength,0.0)
+                            assertEquals(0.05,observed.smartWeights.limit,0.0)
+                            assertFalse(observed.smartWeights.skips)
+                        } finally { instrumentation.runOnMainSync {controller.changePreferences(original)} }
+                    }
                     "Playback" -> waitFor("Background playback")
                     "Diagnostics" -> waitFor("Playback debug mode")
                     "Logs" -> {waitFor("Search log");click("Tools");waitFor("Load saved history");click("Load saved history")}

@@ -1,6 +1,7 @@
 package dev.ignorantshuffle.companion
 
 import java.security.MessageDigest
+import kotlin.math.pow
 
 data class Track(val queueId: Long, val mediaId: String?, val uri: String?, val title: String, val artist: String) {
     // Conservative app-local identity. Do not persist numeric queue IDs or guess file paths.
@@ -62,23 +63,35 @@ class ShuffleModel(private val planner: Planner) {
     private var balanced = false
     private var playCounts: Map<String, Long> = emptyMap()
     private var balanceMean = 0.0
+    private var balanceStrength=1.0
+    private var smart=SmartWeightOptions()
+    private var smartScores: Map<String,Double> = emptyMap()
     private var preview: Choice? = null
     var choiceSequence: Long = 0; private set
 
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
     fun eligible(track: Track) = weight(track) >= settings.minimumWeight
 
-    fun balance(enabled: Boolean, counts: Map<String, Long>) {
-        if (balanced == enabled && playCounts == counts) return
-        val changedMode = balanced != enabled
+    fun balance(enabled: Boolean, counts: Map<String, Long>, strength: Double = 1.0) {
+        require(strength.isFinite() && strength in 0.25..1.0)
+        if (balanced == enabled && playCounts == counts && balanceStrength==strength) return
+        val changedMode = balanced != enabled || balanceStrength!=strength
+        balanceStrength=strength
         balanced = enabled; playCounts = counts.toMap(); balanceMean = ListeningBalance.mean(playCounts, tracks)
         // Newly learned totals affect the next roll; keep the currently published commitment.
         if (changedMode) preview = null
     }
+    fun smartWeights(options: SmartWeightOptions, scores: Map<String,Double>) {
+        options.validate()
+        require(scores.values.all { it.isFinite() })
+        if(smart!=options) preview=null
+        smart=options;smartScores=scores.toMap()
+    }
+    fun learningFactor(track: Track): Double = (if(balanced) ListeningBalance.factor(track.key,playCounts,balanceMean).pow(balanceStrength) else 1.0) * smart.factor(smartScores[track.key]?:0.0)
     fun selectionWeight(track: Track): Double = when {
         !eligible(track) -> 0.0
-        !balanced -> weight(track)
-        else -> (weight(track) * ListeningBalance.factor(track.key, playCounts, balanceMean)).coerceAtMost(Double.MAX_VALUE / 4)
+        !balanced && !smart.enabled -> weight(track)
+        else -> (weight(track) * learningFactor(track)).coerceAtMost(Double.MAX_VALUE / 4)
     }
 
     fun setQueue(entries: List<QueueEntry>) {

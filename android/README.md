@@ -74,6 +74,19 @@ qualified plays. It preserves saved weights, minimum-weight exclusions and the
 currently published roll. Pause collection to freeze learning; clear statistics to
 start learning again from zero.
 
+Drawer section headings are uppercase, shaded and separated from indented page
+rows. The top-right dot and **Connected / Disconnected** label indicate the AIMP
+session connection.
+
+**Shuffle rules > Listening balance** includes Gentle / Medium / Full strength.
+The separate **Smart weights > Learn from listening** option learns small local
+preferences from early skips, full listens, qualified replays and reported volume
+increases. Each signal can be disabled. At normal strength the changes are −2%,
++0.5%, +1% and +0.25% respectively, bounded by a default ±15% overall cap and a
++1.5% positive gain per session. Strength and maximum adjustment are configurable.
+The two modes can work together, and saved weights remain unchanged. See the
+[smart-weight rules and phone checks](../docs/android-statistics.md#smart-weights).
+
 The launcher, Android settings and external metadata use **Ignorant Shuffle**.
 The repository identity and the application's own interface remain **IgnorantShuffle**.
 

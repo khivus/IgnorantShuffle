@@ -13,7 +13,8 @@ data class AppPreferences(val logging: Boolean = true, val theme: ThemeMode = Th
     val automatic: Boolean = true, val debugPlayback: Boolean = false,
     val reactivePlayback: Boolean = false, val correctionDelayMs: Long = ReactivePlayback.SETTLE_MS,
     val notificationNext: Boolean = true, val notificationPrevious: Boolean = true,
-    val balanceListening: Boolean = false)
+    val balanceListening: Boolean = false, val balanceStrength: Double = 1.0,
+    val smartWeights: SmartWeightOptions = SmartWeightOptions())
 
 data class NotificationButtons(val next: Boolean, val previous: Boolean) {
     companion object {

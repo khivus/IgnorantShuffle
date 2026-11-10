@@ -114,3 +114,19 @@ Eligibility still uses saved base weights. The catalog mean is calculated once,
 not for every candidate. Newly learned counts affect future rolls and do not
 replace the currently published choice. Android-only learning never rewrites the
 portable weights files or changes the Windows core's selection contract.
+
+Smart weights use additive bounded preference scores in the same private,
+backup-excluded statistics database. Database version 2 migrates version 1 by
+adding learned scores and per-session signal deduplication, preserving listening
+data and collection settings. A serialized transaction applies each signal and
+enforces the shared +1.5% positive session budget. Collection pause freezes both
+learning modes, and statistics clear/export includes smart scores.
+
+The listening reducer only rewards qualified replays and qualified volume rises.
+Completion requires observed media progress, a near-end position and no seek/long
+gap ambiguity. Volume sampling uses MediaController playback info and its callback;
+audio-device changes reset its stable baseline. Command/track mismatches and
+reactive fragments are excluded. Native same-track wraps are weak replay evidence;
+known automatic companion same-track selections are excluded. Smart settings have
+independent signal toggles, learning strength and an overall ±5/15/25% limit.
+Listening-balance strength softens its multiplier toward one using an exponent.

@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -54,10 +56,16 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
             Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
                 Text("IgnorantShuffle", Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
                 destinations.forEachIndexed { index, title ->
-                    if (index == 0 || index == 4 || index == 9) Text(
-                        when (index) { 0 -> "Listen & explore"; 4 -> "Settings"; else -> "Support" },
-                        Modifier.padding(16.dp), style = MaterialTheme.typography.labelLarge)
-                    NavigationDrawerItem(label = { Text(title) }, selected = page == title,
+                    if (index == 0 || index == 4 || index == 9) {
+                        if(index>0) HorizontalDivider(Modifier.padding(vertical=12.dp))
+                        Surface(Modifier.fillMaxWidth().padding(bottom=6.dp).semantics { heading() },
+                            color=MaterialTheme.colorScheme.surfaceContainerHigh, shape=RoundedCornerShape(8.dp)) {
+                            Text(when(index) { 0 -> "LISTEN & EXPLORE"; 4 -> "SETTINGS"; else -> "SUPPORT" },
+                                Modifier.padding(horizontal=12.dp,vertical=8.dp),style=MaterialTheme.typography.labelSmall,
+                                fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    NavigationDrawerItem(modifier=Modifier.padding(start=12.dp),label = { Text(title) }, selected = page == title,
                         onClick = { page = title; scope.launch { drawer.close() } })
                 }
                 TextButton(onClick = { scope.launch { drawer.close() }; if (updates.release != null || updates.busy) updates.open() else updates.check(true) }) {
@@ -70,9 +78,12 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
             TopAppBar(title = { Text(page, maxLines = 1, overflow = TextOverflow.Ellipsis) }, navigationIcon = {
                 IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(painterResource(R.drawable.ic_menu), "Open navigation drawer") }
             }, actions = {
-                Box(Modifier.padding(horizontal = 16.dp).size(8.dp).background(
-                    if (m.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape)
-                    .semantics { contentDescription = if (m.connected) "AIMP connected" else "AIMP disconnected" })
+                Row(Modifier.padding(end=12.dp).semantics(mergeDescendants=true) {
+                    contentDescription = if (m.connected) "AIMP connected" else "AIMP disconnected"
+                },verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.size(8.dp).background(if(m.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,CircleShape))
+                    Text(if(m.connected) "Connected" else "Disconnected",style=MaterialTheme.typography.labelSmall,maxLines=1)
+                }
             })
         }) { insets ->
             Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
@@ -133,7 +144,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
         if (!m.connected || !m.permission) item {
             Section("Connect to AIMP") {
                 Text(m.status)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!m.permission) ActionButton(onClick = access) { Text("Notification access") }
                     ActionButton(onClick = openAimp) { Text("Open AIMP") }
                 }
@@ -221,6 +232,12 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
                         }
                         TextButton(onClick = { m.enqueue(track) }, enabled = track.selectable && !m.pending) { Text("Add to queue") }
                         if (expanded == track.key) {
+                        if(m.preferences.smartWeights.enabled) {
+                            val score=m.statistics.smartScores[track.key]?:0.0
+                            Text("Smart adjustment: ${String.format(Locale.ROOT,"%+.2f%%",(m.preferences.smartWeights.factor(score)-1.0)*100)}",style=MaterialTheme.typography.bodySmall)
+                        }
+                        if(m.preferences.balanceListening || m.preferences.smartWeights.enabled)
+                            Text("Selection weight for future rolls: ${String.format(Locale.ROOT,"%.2f",m.selectionWeight(track))} (saved weight ${m.weight(track)})",style=MaterialTheme.typography.bodySmall)
                         Text(m.weightSource(track), style = MaterialTheme.typography.labelSmall)
                         if (m.weight(track) < m.settings.minimumWeight)
                             Text("Excluded from shuffle (weight < ${m.settings.minimumWeight})", style = MaterialTheme.typography.bodySmall)
@@ -359,10 +376,47 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
             }
         }
         if (group == "Shuffle rules") item {
-            Section("Weights & cooldown") {
+            Section("Listening balance") {
                 Toggle("Balance listening frequency", "Less-played tracks gain selection weight; often-played tracks lose it. Uses all-time qualified local plays, with a 0.25–4× multiplier. Saved weights and eligibility are unchanged.", m.preferences.balanceListening,
                     enabled = !m.pending, onChange = { m.changePreferences(m.preferences.copy(balanceListening = it)) })
-                if (m.preferences.balanceListening) Text("Pause statistics to freeze learning; clear statistics to reset it. Collecting resumes only when enabled on Statistics.", style = MaterialTheme.typography.bodySmall)
+                if(m.preferences.balanceListening) {
+                    Text("Balance strength",style=MaterialTheme.typography.titleSmall)
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        listOf(0.25 to "Gentle · 25%",0.5 to "Medium · 50%",1.0 to "Full · 100%").forEach { (strength,label) ->
+                            StateChip(m.preferences.balanceStrength==strength, { if(!m.pending)m.changePreferences(m.preferences.copy(balanceStrength=strength)) },label={Text(label)})
+                        }
+                    }
+                    Text("Lower strengths soften the adjustment. Pause Statistics to freeze learning; clear statistics to reset it.",style=MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        if(group=="Shuffle rules") item {
+            val smart=m.preferences.smartWeights
+            val update: (SmartWeightOptions) -> Unit = { if(!m.pending)m.changePreferences(m.preferences.copy(smartWeights=it)) }
+            Section("Smart weights") {
+                Toggle("Learn from listening", "Gently lower tracks skipped early and favor full listens, replays and volume increases. Saved weights stay unchanged.",smart.enabled,enabled=!m.pending) { update(smart.copy(enabled=it)) }
+                if(smart.enabled) {
+                    Text("Learning strength",style=MaterialTheme.typography.titleSmall)
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        listOf(0.5 to "Gentle",1.0 to "Normal",2.0 to "Stronger").forEach { (strength,label) ->
+                            StateChip(smart.strength==strength,{update(smart.copy(strength=strength))},label={Text(label)})
+                        }
+                    }
+                    Text("Maximum smart adjustment",style=MaterialTheme.typography.titleSmall)
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        listOf(0.05,0.15,0.25).forEach { limit -> StateChip(smart.limit==limit,{update(smart.copy(limit=limit))},label={Text("±${(limit*100).toInt()}%")}) }
+                    }
+                    Text("At normal strength: early skip −2%, full listen +0.5%, replay +1%, volume up +0.25%. Total gains are capped at +1.5% per listening session.",style=MaterialTheme.typography.bodySmall)
+                    Toggle("Early skips", "Leave after at least 2 seconds, before 30 seconds or half the track",smart.skips,enabled=!m.pending) { update(smart.copy(skips=it)) }
+                    Toggle("Full listens", "Reach the ending after hearing at least 90% of the track",smart.completions,enabled=!m.pending) { update(smart.copy(completions=it)) }
+                    Toggle("Replays", "An observed repeat or app Previous/replay must qualify before gaining weight",smart.replays,enabled=!m.pending) { update(smart.copy(replays=it)) }
+                    Toggle("Volume increases", "One small gain per qualified session; initial readings and detected device changes are ignored",smart.volume,enabled=!m.pending) { update(smart.copy(volume=it)) }
+                    Text("Can work with listening balance. Zero and below-minimum saved weights stay excluded. Pause Statistics to freeze learning; clear statistics to reset learned adjustments. New feedback affects future rolls.",style=MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        if (group == "Shuffle rules") item {
+            Section("Weights & cooldown") {
                 OutlinedTextField(default, { default = it }, label = { Text("Default weight") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Text("Used for tracks without a saved weight. Fractions and values above 10 are supported.", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(minimum, { minimum = it }, label = { Text("Minimum eligible weight") },
@@ -556,12 +610,13 @@ private fun LogsPage(m: AimpController, copy: () -> Unit, export: () -> Unit) {
 
 @Composable
 private fun Toggle(title: String, detail: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(Modifier.fillMaxWidth().toggleable(checked,enabled=enabled,role=Role.Switch,onValueChange=onChange)
+        .semantics(mergeDescendants=true) {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked, onChange, enabled = enabled)
+        Switch(checked, onCheckedChange = null, enabled = enabled)
     }
 }
 

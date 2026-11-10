@@ -135,7 +135,7 @@ internal fun StatisticsPage(m: AimpController, export: (String) -> Unit) {
         if(s.tracks.isEmpty()) item { Text("No observed listening in this range. Start AIMP playback; previews and paused time do not count.") }
     }
     if(confirmClear) AlertDialog(onDismissRequest={confirmClear=false},title={Text("Clear all statistics?")},
-        text={Text("Permanently delete listening history, totals and shuffle counters on this device. Saved weights and diagnostic logs are kept. Listening-balance adjustments start fresh.")},
+        text={Text("Permanently delete listening history, totals and shuffle counters on this device. Saved weights and diagnostic logs are kept. Listening balance and learned smart adjustments start fresh.")},
         confirmButton={TextButton(onClick={repository.clear();confirmClear=false}) {Text("Clear statistics")}},
         dismissButton={TextButton(onClick={confirmClear=false}) {Text("Cancel")}})
 }

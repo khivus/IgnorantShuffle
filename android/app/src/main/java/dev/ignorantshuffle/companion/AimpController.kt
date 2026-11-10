@@ -8,6 +8,9 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.MediaMetadata
+import android.media.AudioManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
@@ -40,11 +43,13 @@ class SessionAccessService : NotificationListenerService() {
 }
 
 private data class Pending(val label: String, val target: String?, val before: Playback,
-    val correctivePause: Boolean = false, val reactiveCorrection: Boolean = false, val fallback: Boolean = false)
+    val correctivePause: Boolean = false, val reactiveCorrection: Boolean = false, val fallback: Boolean = false,
+    val userReplay: Boolean = false, val automaticSelection: Boolean = false)
 
 class AimpController(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val manager = context.getSystemService(MediaSessionManager::class.java)
+    private val audio = context.getSystemService(AudioManager::class.java)
     private val component = ComponentName(context, SessionAccessService::class.java)
     private val store = SettingsStore(context)
     private val preferenceStore = PreferenceStore(context)
@@ -105,9 +110,12 @@ class AimpController(private val context: Context) {
     private var statisticsCounts: Map<String, Long> = emptyMap()
     private var passCompleted = false
     private var passStarted = false
-    val statistics = StatisticsRepository(context) { counts ->
+    val statistics = StatisticsRepository(context, onSmartScores = { scores ->
+        model.smartWeights(preferences.smartWeights,scores)
+        if(connected && !pending) { updatePreview("Smart listening feedback");scheduleTimer() }
+    }) { counts ->
         statisticsCounts = counts
-        model.balance(preferences.balanceListening, counts)
+        model.balance(preferences.balanceListening, counts, preferences.balanceStrength)
         if (connected && !pending) { updatePreview("Listening totals changed"); scheduleTimer() }
     }
     private val queueStore = context.getSharedPreferences("app-queue", Context.MODE_PRIVATE)
@@ -138,7 +146,9 @@ class AimpController(private val context: Context) {
             .onFailure { log("Preference read failed; using defaults: $it") }
         runCatching { QueueEntry.decode(queueStore.getString("entries", "[]") ?: "[]") }
             .onSuccess { appQueue = it; model.setQueue(it) }.onFailure { log("App queue could not be read: $it") }
-        model.balance(preferences.balanceListening, statisticsCounts)
+        model.balance(preferences.balanceListening, statisticsCounts, preferences.balanceStrength)
+        model.smartWeights(preferences.smartWeights,statistics.smartScores)
+        statistics.configureSmartWeights(preferences.smartWeights)
         automatic = preferences.automatic
         automaticStatus = if (automatic) "Waiting for a connected AIMP session" else "Timed automatic mode is off"
         log("Restored automatic preference: ${preferences.automatic}")
@@ -160,6 +170,7 @@ class AimpController(private val context: Context) {
     }
 
     fun changePreferences(value: AppPreferences) = guarded {
+        val preferencesBeforeLearning=preferences.smartWeights
         val timingChanged = value.leadMs != preferences.leadMs || value.reactivePlayback != preferences.reactivePlayback ||
             value.correctionDelayMs != preferences.correctionDelayMs
         if (timingChanged) check(!pending) { "Wait for the pending playback command" }
@@ -167,7 +178,9 @@ class AimpController(private val context: Context) {
         preferenceStore.save(value)
         if (!value.logging) log("Automatic logging disabled by user")
         preferences = value
-        model.balance(value.balanceListening, statisticsCounts)
+        model.balance(value.balanceListening, statisticsCounts,value.balanceStrength)
+        model.smartWeights(value.smartWeights,statistics.smartScores)
+        if(value.smartWeights!=preferencesBeforeLearning) statistics.configureSmartWeights(value.smartWeights)
         if (connected && !pending) { updatePreview("Preferences changed"); scheduleTimer() }
         if (debugChanged) {
             audit.cancel(); handler.removeCallbacks(auditPoll)
@@ -198,6 +211,24 @@ class AimpController(private val context: Context) {
     private val environment = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { log("SYSTEM ${intent?.action}; scheduled=$scheduled") }
     }
+    private val audioDevices = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) { statistics.engine.volumeRouteChanged(SystemClock.elapsedRealtime()) }
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) { statistics.engine.volumeRouteChanged(SystemClock.elapsedRealtime()) }
+    }
+    private fun observeVolume(info: MediaController.PlaybackInfo?) {
+        val c=native ?: return
+        val now=SystemClock.elapsedRealtime()
+        val track=playback.track
+        val metadata=c.metadata
+        val matches=track!=null && (track.mediaId?.let { it==metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID) }
+            ?: (track.title==metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) && track.artist==metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty()))
+        if(pending || reactive.waiting || !matches || c.playbackState?.state!=3) { statistics.engine.volumeRouteChanged(now);return }
+        val value=info?.let {
+            val route=if(Build.VERSION.SDK_INT>=30) it.volumeControlId.orEmpty() else ""
+            ListeningVolume(it.playbackType,it.volumeControl,it.maxVolume,it.currentVolume,"${it.audioAttributes}/$route")
+        }
+        statistics.engine.observeVolume(playback,value,now)
+    }
 
     private fun granted(): Boolean = if (Build.VERSION.SDK_INT >= 27)
         context.getSystemService(NotificationManager::class.java).isNotificationListenerAccessGranted(component)
@@ -218,6 +249,7 @@ class AimpController(private val context: Context) {
             if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(environment, filter, Context.RECEIVER_NOT_EXPORTED)
             else context.registerReceiver(environment, filter)
             environmentRegistered = true
+            audio.registerAudioDeviceCallback(audioDevices,handler)
         }
         attach(manager.getActiveSessions(component))
     }
@@ -234,6 +266,7 @@ class AimpController(private val context: Context) {
             override fun onPlaybackStateChanged(state: PlaybackState?) {
                 if (active()) guarded { log("Playback callback state=${state?.state}, position=${state?.position}"); read() }
             }
+            override fun onAudioInfoChanged(info: MediaController.PlaybackInfo) { if(active())guarded { observeVolume(info) } }
             override fun onQueueChanged(queue: MutableList<MediaSession.QueueItem>?) { if (active()) guarded { read(refreshQueue = true) } }
             override fun onSessionDestroyed() { if (active()) { detach("AIMP session destroyed"); refresh() } }
         }
@@ -276,6 +309,7 @@ class AimpController(private val context: Context) {
     }
 
     fun stop(reason: String) {
+        if(environmentRegistered) audio.unregisterAudioDeviceCallback(audioDevices)
         if (environmentRegistered) runCatching { context.unregisterReceiver(environment) }
         environmentRegistered = false
         if (listening) runCatching { manager.removeOnActiveSessionsChangedListener(sessions) }
@@ -380,8 +414,10 @@ class AimpController(private val context: Context) {
         }
         val observed = current ?: title.takeIf { it.isNotBlank() }?.let { Track(-1, mediaId, mediaUri, it, next.artist) }
         if (operation?.correctivePause != true && (operation?.target == null || operation?.target == observed?.key))
-            statistics.engine.observe(next.copy(track = observed), SystemClock.elapsedRealtime(), System.currentTimeMillis(), restartedObservation)
+            statistics.engine.observe(next.copy(track = observed), SystemClock.elapsedRealtime(), System.currentTimeMillis(), restartedObservation,
+                userReplay = operation?.userReplay==true, automaticTransition = operation?.automaticSelection==true)
         else statistics.engine.reject()
+        observeVolume(c.playbackInfo)
         handler.removeCallbacks(statisticsPoll)
         if (next.state == PlaybackState.STATE_PLAYING) handler.postDelayed(statisticsPoll, 1000)
         var commandConfirmed = false
@@ -414,6 +450,7 @@ class AimpController(private val context: Context) {
     }
 
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
+    fun selectionWeight(track: Track) = model.selectionWeight(track)
 
     private fun applyWeights(preservePreview: Boolean = false) {
         val effective = folder.effective(tracks)
@@ -476,8 +513,8 @@ class AimpController(private val context: Context) {
     fun newPass() = guarded { model.newPass(); passCompleted = false; passStarted = settings.finite; if (settings.finite) statistics.shuffle("pass_started"); updatePreview(); scheduleTimer(); log("Started a new finite pass; current track counted") }
     fun reroll() = guarded { if (!pending && preview.queueEntryId == null) { statistics.shuffle("reroll"); model.next(true); updatePreview("User reroll"); scheduleTimer() } }
     fun smartNext() = guarded { if (!pending) playChoice(model.next()) }
-    fun smartPrevious() = guarded { if (!pending) model.previous()?.let(::playChoice) }
-    fun play(track: Track) = guarded { if (!pending) playChoice(Choice(track)) }
+    fun smartPrevious() = guarded { if (!pending) model.previous()?.let { playChoice(it,userReplay=true) } }
+    fun play(track: Track) = guarded { if (!pending) playChoice(Choice(track),userReplay=track.key==playback.track?.key) }
 
     fun playNotificationRoll(action: RollAction) = guarded {
         if (!notificationActionsAvailable() || !preferences.notificationNext ||
@@ -497,11 +534,11 @@ class AimpController(private val context: Context) {
             log("Ignored unavailable or outdated notification Previous for roll #${action.sequence}")
             return@guarded
         }
-        playChoice(requireNotNull(previous), previousAction = action)
+        playChoice(requireNotNull(previous), previousAction = action, userReplay = true)
     }
 
     private fun playChoice(choice: Choice, planned: ScheduledRoll? = null, notificationAction: RollAction? = null,
-        previousAction: PreviousRollAction? = null, correction: ReactiveDecision.Correct? = null) {
+        previousAction: PreviousRollAction? = null, correction: ReactiveDecision.Correct? = null, userReplay: Boolean = false) {
         check(storageError == null && !folder.blocked) { "Storage is loading/unavailable; playback selection disabled" }
         val target = choice.track ?: run { result = "No eligible tracks / finite pass complete"; return }
         // Manual requests refresh the queue. Timed requests already performed a
@@ -536,7 +573,8 @@ class AimpController(private val context: Context) {
         log("DISPATCH roll=$sequence; source=${playback.track}; target=$fresh; choice=$choice")
         model.requested(choice)
         if (preferences.debugPlayback) armAudit(playback, fresh, sequence)
-        begin("Play ${fresh.title}", fresh.key, reactiveCorrection = correction != null, fallback = choice.cooldownFallback)
+        begin("Play ${fresh.title}", fresh.key, reactiveCorrection = correction != null, fallback = choice.cooldownFallback,
+            userReplay=userReplay,automaticSelection=planned!=null || correction!=null)
         when {
             fresh.mediaId != null && actions and PlaybackState.ACTION_PLAY_FROM_MEDIA_ID != 0L -> transport.playFromMediaId(fresh.mediaId, null)
             fresh.queueId >= 0 && actions and PlaybackState.ACTION_SKIP_TO_QUEUE_ITEM != 0L -> transport.skipToQueueItem(fresh.queueId)
@@ -565,9 +603,10 @@ class AimpController(private val context: Context) {
         guarded { read() }
         if (pending) finish("INCONCLUSIVE after 8 seconds; no confirming playback. No retry sent.")
     }
-    private fun begin(label: String, key: String?, correctivePause: Boolean = false, reactiveCorrection: Boolean = false, fallback: Boolean = false) {
+    private fun begin(label: String, key: String?, correctivePause: Boolean = false, reactiveCorrection: Boolean = false, fallback: Boolean = false,
+        userReplay: Boolean = false, automaticSelection: Boolean = false) {
         handler.removeCallbacks(endTimer); scheduled = null
-        operation = Pending(label, key, playback, correctivePause, reactiveCorrection, fallback); pending = true
+        operation = Pending(label, key, playback, correctivePause, reactiveCorrection, fallback,userReplay,automaticSelection); pending = true
         result = "Waiting for AIMP: $label"
         log("COMMAND $label; target=$key")
         handler.postDelayed(timeout, 8000)

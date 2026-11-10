@@ -82,6 +82,66 @@ class StatisticsRepositoryDeviceTest : InstrumentationTestCase() {
         await {repository!!.exportStatus?.startsWith("Export failed")==true}
         main {assertTrue(repository!!.collecting);assertNull(repository!!.error)}
     }
+    fun testLearnedSmartWeightsPersistExportAndClearIndependentlyOfSavedWeights() {
+        val track=Track(1,"smart",null,"Smart track","Artist")
+        main {
+            repository!!.configureSmartWeights(SmartWeightOptions(enabled=true))
+            for(i in 0..10) repository!!.engine.observe(Playback(3,track.title,track.artist,i*1000L,10_000,1f,1000+i*1000L,track),1000+i*1000L,1_000_000+i*1000L)
+        }
+        await { repository!!.smartScores[track.key]==0.005 }
+        main {repository!!.close()};open()
+        main {assertEquals(0.005,repository!!.smartScores[track.key]!!,0.000001)}
+        var result: String?=null
+        main {repository!!.export("json") { result=it }}
+        await {repository!!.exportStatus!=null}
+        assertEquals(0.005,JSONObject(result!!).getJSONArray("smart_weights").getJSONObject(0).getDouble("score"),0.000001)
+        main {repository!!.clear()}
+        await {repository!!.smartScores.isEmpty()}
+        main {repository!!.close()};open()
+        main {assertTrue(repository!!.smartScores.isEmpty())}
+    }
+    fun testSmartLearningIsOptInAndPauseDoesNotBackfill() {
+        val track=Track(1,"smart-off",null,"Track","Artist")
+        fun complete(start: Long) { main {
+            repository!!.engine.disconnect()
+            for(i in 0..10) repository!!.engine.observe(Playback(3,track.title,track.artist,i*1000L,10_000,1f,start+i*1000L,track),start+i*1000L,1_000_000+i*1000L)
+            repository!!.refresh("")
+        } }
+        complete(1000);await {repository!!.snapshot.plays==1L}
+        main {assertTrue(repository!!.smartScores.isEmpty());repository!!.configureSmartWeights(SmartWeightOptions(true));repository!!.pause(true)}
+        complete(20_000)
+        main {repository!!.pause(false)}
+        complete(40_000);await {repository!!.smartScores[track.key]==0.005}
+        main {assertEquals(0.005,repository!!.smartScores[track.key]!!,0.000001)}
+    }
+    fun testVersionOneDatabaseMigrationPreservesListeningAndOptions() {
+        play("2026-11-10")
+        main {repository!!.pause(true);repository!!.refresh("")}
+        await {repository!!.snapshot.plays==1L}
+        main {repository!!.close()}
+        // Recreate the exact pre-learning schema while preserving its listening/options rows.
+        android.database.sqlite.SQLiteDatabase.openDatabase(File(directory,"listening-statistics.db").absolutePath,null,0).use { db ->
+            db.execSQL("DROP TABLE smart_weights");db.execSQL("DROP TABLE smart_feedback");db.version=1
+        }
+        open();main {repository!!.refresh("")}
+        await {repository!!.snapshot.plays==1L}
+        main {assertFalse(repository!!.collecting);assertTrue(repository!!.smartScores.isEmpty())}
+    }
+    fun testPositiveLearningBudgetIsEnforcedAcrossDifferentSignals() {
+        val track=Track(1,"budget",null,"Budget track","Artist")
+        main {
+            repository!!.configureSmartWeights(SmartWeightOptions(enabled=true))
+            for(i in 0..10) repository!!.engine.observe(Playback(3,track.title,track.artist,i*1000L,10_000,1f,1000+i*1000L,track),1000+i*1000L,1_000_000+i*1000L)
+            for(i in 0..10) {
+                val p=Playback(3,track.title,track.artist,i*1000L,10_000,1f,12_000+i*1000L,track)
+                repository!!.engine.observe(p,12_000+i*1000L,2_000_000+i*1000L,restarted=i==0,userReplay=i==0)
+                repository!!.engine.observeVolume(p,ListeningVolume(1,2,15,if(i<6)5 else 6),12_000+i*1000L)
+            }
+            repository!!.refresh("")
+        }
+        await {repository!!.snapshot.plays==2L && (repository!!.smartScores[track.key]?:0.0)>=0.0199}
+        main {assertEquals(0.02,repository!!.smartScores[track.key]!!,0.000001)}
+    }
     override fun tearDown() {
         main {repository?.close()}
         super.tearDown()

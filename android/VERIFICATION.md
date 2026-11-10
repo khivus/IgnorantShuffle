@@ -1,3 +1,32 @@
+# Drawer clarity and configurable smart weights — 2026-11-10
+
+- Drawer groups now use shaded uppercase accessibility headings and dividers;
+  page rows are indented and retain normal selectable navigation styling. The
+  top-right AIMP dot now includes Connected / Disconnected text. Labelled switch
+  rows toggle as a single accessible control rather than separate text and switch
+  targets.
+- Added opt-in Smart weights with separate early-skip, full-listen, qualified
+  replay and volume-rise switches. Normal feedback is −2%, +0.5%, +1% and +0.25%,
+  with a default ±15% overall limit and +1.5% positive session budget. Learning
+  strength and ±5/15/25% limits are configurable. Listening balance now also has
+  Gentle / Medium / Full strength. Both preserve base weights, exclusions, queue
+  priority and the currently published roll.
+- Smart scores and session deduplication migrate into the private statistics
+  database without replacing version-1 history or options. Scores persist,
+  freeze while statistics are paused, and participate in clear/export. Seeking,
+  duplicate observations, automatic companion repeats, invalid volume baselines
+  and detected device changes are guarded against inappropriate learning.
+- Android build, all **196 Kotlin/JVM tests**, all **eight emulator tests**, lint
+  (zero errors) and APK signature verification passed. Emulator tests at
+  **320 dp / 1.3 font scaling** exercise drawer-heading semantics, the connection
+  label, actual smart-strength/cap/signal controls, real SQLite migration,
+  persistence, export, clear and the combined positive session budget.
+- Physical AIMP/OEM playback and volume reporting still need the
+  [smart-weight phone checks](../docs/android-statistics.md#smart-weights). Volume
+  rises are weak evidence; the signal can be disabled independently. Native AIMP
+  same-track repeats can be observed but their cause cannot be established.
+- Local follow-up only: no version bump, push, tag or release.
+
 # Android navigation, queue and local statistics — 2026-11-10
 
 - Implemented a Material navigation drawer with separate listening, settings and
