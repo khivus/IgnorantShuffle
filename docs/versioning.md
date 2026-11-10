@@ -5,10 +5,10 @@ belongs to its component; it does not need to match either of the others.
 
 | Component | Single version source | Current development version | Release tag |
 | --- | --- | --- | --- |
-| Combined release | [release.properties](../versions/release.properties) | 0.17.0 | `v0.17.0` |
-| Windows AIMP plugin | [windows.properties](../versions/windows.properties) | 0.14.0 | Included in the same stable bundle |
-| Android companion | [android.properties](../versions/android.properties) | 0.9.0, code 11 | Included in the same stable bundle |
-| Shared C++ selection core | [core.properties](../versions/core.properties) | 0.1.0 | Included in the same stable bundle |
+| Combined release | [release.properties](../versions/release.properties) | 0.18.0 | `v0.18.0` |
+| Windows AIMP plugin | [windows.properties](../versions/windows.properties) | 0.15.0 | Included in the same stable bundle |
+| Android companion | [android.properties](../versions/android.properties) | 0.10.0, code 12 | Included in the same stable bundle |
+| Shared C++ selection core | [core.properties](../versions/core.properties) | 0.2.0 | Included in the same stable bundle |
 
 These are source/build versions, not a statement that a release has been published.
 The core's first explicit version is 0.1.0. Earlier Windows `vX.Y.Z` releases keep
@@ -64,7 +64,8 @@ the stable bundle; each tag captures the entire repository, including
 the bundled core source/version. Record the core version in app release notes.
 
 Every release includes the Android APK, Windows installer and both Windows DLLs,
-checksums, and a table of all three component versions. Publish one stable tag
+a compatibility installer alias, and a header listing all three component versions.
+Checksums are verified internally; GitHub asset digests support in-app updates. Publish one stable tag
 for the complete bundle. Android reads its version from the APK filename rather
 than the bundle tag. Legacy component tags remain historical; do not create more.
 The core ships inside each app and in the source snapshot.

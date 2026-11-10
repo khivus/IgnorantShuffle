@@ -10,7 +10,7 @@ Set-Location -LiteralPath $repoRoot
 $bundle = Get-ReleaseBundle $Component
 $repository = 'khivus/IgnorantShuffle'
 $tag = $bundle.Tag
-$assetNames = $bundle.Names
+$assetNames = $bundle.PublicNames
 $notes = $bundle.Notes
 $dist = Join-Path $repoRoot 'dist'
 Test-ReleaseArtifacts $bundle
@@ -104,7 +104,7 @@ try {
         $release = Invoke-GitHub "/repos/$repository/releases/$($release.id)" PATCH @{ name=$bundle.Title; body=$notes; draft=$false; prerelease=$bundle.Preview; make_latest=$(if ($bundle.Latest) { 'true' } else { 'false' }) }
     }
     $published = Invoke-GitHub ("/repos/$repository/releases/tags/" + [Uri]::EscapeDataString($tag))
-    if ($published.draft -or [bool]$published.prerelease -ne $bundle.Preview -or $published.tag_name -cne $tag -or
+    if ($published.name -cne $tag -or $published.draft -or [bool]$published.prerelease -ne $bundle.Preview -or $published.tag_name -cne $tag -or
         $published.body.Replace("`r`n", "`n") -cne $notes.Replace("`r`n", "`n")) { throw 'Published release metadata mismatch.' }
     foreach ($name in $assetNames) {
         $asset = $published.assets | Where-Object { $_.name -ceq $name } | Select-Object -First 1

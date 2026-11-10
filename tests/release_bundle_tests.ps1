@@ -13,12 +13,13 @@ try {
     foreach ($component in 'windows', 'android', 'core', 'release') {
         Copy-Item -LiteralPath (Join-Path $projectRoot "versions\$component.properties") -Destination (Join-Path $fixture "versions\$component.properties")
     }
-    foreach ($path in 'RELEASE_NOTES.md', 'android\RELEASE_NOTES.md', 'docs\core-release-notes.md') {
+    foreach ($path in 'RELEASE_NOTES.md', 'android\RELEASE_NOTES.md', 'docs\core-release-notes.md', 'BUNDLE_NOTES.md') {
         Copy-Item -LiteralPath (Join-Path $projectRoot $path) -Destination (Join-Path $fixture $path)
     }
     foreach ($component in 'windows', 'android', 'core') {
         $bundle = Get-ReleaseBundle $component $fixture
-        if (-not $bundle.Title.StartsWith('Ignorant Shuffle ')) { throw 'Public release title must use the spaced app name.' }
+        if ($bundle.Title -cne $bundle.Tag) { throw 'Release title must equal the plain tag.' }
+        if ($bundle.PublicNames.Count -ne 5 -or @($bundle.PublicNames | Where-Object { $_ -like 'SHA256SUMS*' }).Count) { throw 'Publish complete packages without checksum assets.' }
         if ($bundle.Names.Count -ne 7 -or -not $bundle.Latest -or $bundle.Preview -or $bundle.Tag -cne "v$($bundle.Release.Version)") { throw 'Release channel, stable tag or asset set mismatch.' }
         # Old Windows versions accept only the bare alias or a package matching
         # the release tag. Keep exactly one match even if bundle == app version.
@@ -27,12 +28,13 @@ try {
             if ($oldMatches.Count -ne 1) { throw 'Older Windows updaters would see ambiguous installers.' }
         }
         foreach ($version in $bundle.Windows.Version, $bundle.Android.Version, $bundle.Core.Version) {
-            if (-not $bundle.Title.Contains("v$version") -or -not $bundle.Notes.Contains("v$version")) { throw 'A component version is missing from the title/notes.' }
+            if (-not $bundle.Notes.Contains("v$version")) { throw 'A component version is missing from the title/notes.' }
         }
-        if (-not $bundle.Notes.Contains('/blob/' + [Uri]::EscapeDataString($bundle.Tag) + '/docs/changelogs/core.md')) { throw 'Source links must point at the release snapshot.' }
+        if (-not $bundle.Notes.StartsWith("**Ignorant Shuffle $($bundle.Tag)**")) { throw 'Missing compact release header.' }
+        if (-not $bundle.Notes.Contains('| System | Packages |') -or $bundle.Notes.Contains('SHA256SUMS')) { throw 'Downloads table format mismatch.' }
         foreach ($name in $bundle.Names) {
             $expected = '/releases/download/' + [Uri]::EscapeDataString($bundle.Tag) + '/' + $name
-            if (-not $bundle.Notes.Contains($expected)) { throw "Download table omits $name for $component" }
+            if ($name -notlike 'SHA256SUMS*' -and $name -ne 'IgnorantShuffle.aimppack' -and -not $bundle.Notes.Contains($expected)) { throw "Download table omits $name for $component" }
             [IO.File]::WriteAllText((Join-Path $fixture "dist\$name"), "fixture $name")
         }
         Copy-Item -LiteralPath (Join-Path $fixture "dist\$($bundle.Names[0])") -Destination (Join-Path $fixture "dist\$($bundle.Names[6])") -Force

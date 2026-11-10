@@ -1,9 +1,9 @@
 # Packaging and publishing releases
 
-[Back to README](../README.md) · [Building](building.md) · [Testing](testing.md)
+[Back to README](../README.md) Â· [Building](building.md) Â· [Testing](testing.md)
 
-Every new release includes **both Windows and Android**. Release titles and notes
-list Windows, Android and core versions independently. An unchanged component
+Every new release includes **both Windows and Android**. Release titles equal the plain tag. The compact notes header
+lists Windows, Android and core versions independently. An unchanged component
 keeps its version; it is still included in the download set.
 
 | Included file | Purpose |
@@ -12,9 +12,7 @@ keeps its version; it is still included in the download set.
 | `IgnorantShuffle.aimppack` | Identical alias recognized by older Windows updaters. |
 | `aimp_ignorant_shuffle-x64.dll` | Manual install for 64-bit AIMP. |
 | `aimp_ignorant_shuffle-x86.dll` | Manual install for 32-bit AIMP. |
-| `SHA256SUMS.txt` | Windows package and DLL checksums. |
 | `IgnorantShuffle-Android-vANDROID-debug.apk` | Same-key Android preview for installation and in-app updates. |
-| `SHA256SUMS-Android.txt` | APK checksum. |
 | GitHub source archives | Complete source snapshot, including the shared core. |
 
 ## Versions and tags
@@ -31,9 +29,11 @@ changelog and component release notes; their first heading must match metadata:
 | Android | [android/RELEASE_NOTES.md](../android/RELEASE_NOTES.md), `# IgnorantShuffle Android vX.Y.Z` | Same bundle tag |
 | Core | [core-release-notes.md](core-release-notes.md), `# IgnorantShuffle Core vX.Y.Z` | Same bundle tag |
 
-Component notes contain changes and testing details. The publisher combines them
-with a version table and direct download links to **all** assets in that release.
-No manual download-table edits are needed.
+Component notes describe each component. `BUNDLE_NOTES.md` contains the concise,
+user-facing release changes. The publisher adds the version header and a two-column
+System / Packages download table. Checksum manifests are verified locally and are
+not uploaded or linked in release notes. Five installable/compatibility assets are
+published; the legacy installer alias is retained for old updaters.
 
 Only publish stable `vMAJOR.MINOR.PATCH` tags. All entry points publish the same
 bundle using the combined release version, with GitHub prerelease off and Latest on.
@@ -93,7 +93,7 @@ The shared publisher requires a clean `main` checkout and the matching
 account, keeps credentials in memory, refuses a diverged remote or conflicting
 tag, and pushes main and the stable bundle tag. It never stages or commits files.
 
-All seven assets upload to a draft and must match GitHub's sizes and SHA256 digests
+All five package assets upload to a draft and must match GitHub's sizes and SHA256 digests
 before publication. Public downloads are then fetched and hashed again. Existing
 published assets are never overwritten; matching draft uploads can be resumed.
 

@@ -1,19 +1,17 @@
-# IgnorantShuffle Windows v0.14.0
+# IgnorantShuffle Windows v0.15.0
 
-## Music-root weights
+## Statistics and learning
 
-- Manage several music libraries, each with its own IgnorantShuffle.weights.tsv file.
-- Save song weights only in their music root. Remove private profile weights and folder/playlist override layers from the active storage model.
-- Apply bulk edits across libraries, saving each root separately. Use default removes the saved entry for a song.
-- Import replaces the selected root's whole weights file. Export copies that file unchanged, preserving comments and formatting.
-- Simplify Weight storage to a list of music roots and an explicit import/export destination.
+- Browse listening totals, daily listening, track/artist rankings, history, early exits, library coverage and shuffle summaries in a resizable Statistics window.
+- Filter Today, 7 days, 30 days or All time; pause collection, confirm clearing and export CSV/JSON.
+- Enable listening balance to favor less-played tracks, or smart weights to learn gently from early skips, full listens, qualified replays and volume increases. Configure strengths, caps and individual signals.
+- Save per-device statistics alongside music-root weights and share them with Android through your folder sync. Existing weights remain unchanged.
 
-## Existing installations
+## Easier browsing
 
-Existing music-root files stay compatible. Old private profile and folder/playlist
-weights files remain untouched but are no longer used. Move values you need into
-the music-root files before updating; see the [migration guide](docs/weight-storage.md#existing-installations).
+- Give the track-weight list more space and allow resizing.
+- Inspect recent diagnostic events in a searchable Logs view with full-text details and access to saved log files.
 
-Windows app version: **0.14.0**. Bundled shuffle core: **0.1.0** (unchanged).
-The AIMP installer includes both x64 and x86 builds; separate DLLs are available
-for manual installation.
+Windows version: **0.15.0**. Bundled core: **0.2.0**. Includes both x64 and x86.
+AIMP's native queue remains available. Statistics synchronization requires copying
+all `IgnorantShuffle.statistics.*.tsv` files with the matching music roots.

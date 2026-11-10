@@ -1,24 +1,19 @@
-# IgnorantShuffle Android v0.9.0
+# IgnorantShuffle Android v0.10.0
 
-## Combined switching
+## Navigation and browsing
 
-- Add experimental Combined switching under Shuffle: switch before normal track endings and correct early AIMP/headset skips to the saved weighted choice.
-- Tune the separate correction delay from 0–2000 ms. Zero requests the target immediately after detecting a different playing track; AIMP response time still adds delay.
-- To keep a specific rejected track, select it again within five seconds after the correcting weighted track starts.
+- Use the standard left drawer with distinct section headings, grouped settings and a Connected / Disconnected AIMP indicator.
+- Browse roomier Playlist and Logs screens with retained scroll/search positions and quick weights from 0 to 10.
+- Add tracks from the searchable Playlist to the app queue, then reorder or remove them on Queue.
 
-## Notification buttons
+## Statistics and learning
 
-- Choose Show Next button and Show Previous button independently under Alerts. Both default on; hide both to keep only the next-roll preview.
-- Remove the Lock-screen controls setting. Android controls notification display while locked.
+- Browse overview cards, daily listening, track/artist rankings, history, per-track totals, early exits, library coverage and shuffle summaries.
+- Filter Today, 7 days, 30 days or All time; pause collection, confirm clearing and export CSV/JSON.
+- Enable configurable listening balance and smart weights, with gentle feedback from early skips, full listens, qualified replays and volume increases.
+- Save per-device statistics alongside weights and share history/learning with Windows through your folder sync. Existing private history migrates when linked to music files.
 
-## Fixes
-
-- Keep corrections working across repeated skips when AIMP briefly reports a paused state between tracks.
-- Keep rejected fragments out of listening history, cooldown and finite-pass progress. Stop after an unconfirmed command instead of retrying.
-
-Android app version: **0.9.0** (versionCode **11**). Bundled core: **0.1.0**.
-Requires Android 8.0 / API 26+. The application ID and pinned update signing key
-stay the same. Combined switching is optional and off by default; existing users
-who enabled the experimental mode keep it enabled. Normal track-end lead and
-correction delay are saved separately. AIMP's separate manual queue is not exposed;
-disable weighted shuffle while listening to queued requests.
+Android version: **0.10.0**, versionCode **12**. Bundled core: **0.2.0**.
+Requires Android 8.0+; retains the application ID and pinned update signing key.
+The app provides no statistics server or cloud backup. Include all
+`IgnorantShuffle.statistics.*.tsv` files when syncing weights and music roots.

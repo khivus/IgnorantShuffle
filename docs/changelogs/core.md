@@ -3,7 +3,7 @@
 Version history for the portable C++ selection rules. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
-## Unreleased changes
+## 0.2.0
 
 - Add shared learning-weight calculation, portable statistics ledger/merge/clear rules, CSV/JSON encoding, and a playback-observation reducer.
 - Preserve base-weight exclusions while combining listening balance with bounded smart feedback; credit only observed playback, including rate-aware wall time and local-midnight splits.

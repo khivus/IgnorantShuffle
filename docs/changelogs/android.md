@@ -4,7 +4,7 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
-## Unreleased changes
+## 0.10.0 (versionCode 12)
 
 - Save per-device statistics sidecars alongside each music root's weights so folder synchronization shares listening history and feedback with Windows.
 - Migrate existing SQLite v1/v2 history, learning and collection preferences; retain unlinked observations privately until file links resolve them.

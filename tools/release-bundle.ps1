@@ -18,61 +18,32 @@ function Get-ReleaseBundle {
     $apkName = "IgnorantShuffle-Android-v$($android.Version)-debug.apk"
     $names = @($packageName, 'aimp_ignorant_shuffle-x64.dll', 'aimp_ignorant_shuffle-x86.dll',
         'SHA256SUMS.txt', $apkName, 'SHA256SUMS-Android.txt', 'IgnorantShuffle.aimppack')
-    $bodies = @{}
     foreach ($entry in @(
-        @{ Key='windows'; Path='RELEASE_NOTES.md'; Heading="# IgnorantShuffle Windows v$($windows.Version)" },
-        @{ Key='android'; Path='android\RELEASE_NOTES.md'; Heading="# IgnorantShuffle Android v$($android.Version)" },
-        @{ Key='core'; Path='docs\core-release-notes.md'; Heading="# IgnorantShuffle Core v$($core.Version)" }
+        @{ Path='RELEASE_NOTES.md'; Heading="# IgnorantShuffle Windows v$($windows.Version)" },
+        @{ Path='android\RELEASE_NOTES.md'; Heading="# IgnorantShuffle Android v$($android.Version)" },
+        @{ Path='docs\core-release-notes.md'; Heading="# IgnorantShuffle Core v$($core.Version)" }
     )) {
         $text = [IO.File]::ReadAllText((Join-Path $RepositoryRoot $entry.Path)).Replace("`r`n", "`n")
         if ($text.Split("`n")[0] -cne $entry.Heading) { throw "Release notes/version mismatch: $($entry.Path)" }
-        $body = $text.Substring($text.IndexOf("`n") + 1).Trim()
-        $directory = (Split-Path -Parent $entry.Path).Replace('\', '/')
-        $source = "https://github.com/khivus/IgnorantShuffle/blob/$encodedTag/" + $(if ($directory) { "$directory/" } else { '' })
-        $body = [regex]::Replace($body, '\]\((?!https?://|#)([^)\s]+)\)', [Text.RegularExpressions.MatchEvaluator]{
-            param($match) "]($source$($match.Groups[1].Value))"
-        })
-        $bodies[$entry.Key] = [regex]::Replace($body, '(?m)^## ', '### ')
     }
-    $title = "Ignorant Shuffle $tag - Windows v$($windows.Version) / Android v$($android.Version) / Core v$($core.Version)"
+    $body = [IO.File]::ReadAllText((Join-Path $RepositoryRoot 'BUNDLE_NOTES.md')).Trim()
+    $title = $tag
+    $publicNames = @($names | Where-Object { $_ -notlike 'SHA256SUMS*' })
     $notes = @"
-# $title
+**Ignorant Shuffle $tag**
+Windows v$($windows.Version) | Android v$($android.Version) | Core v$($core.Version)
 
-Every release includes both applications. Component versions advance independently.
-
-| Component | Included version |
-| --- | --- |
-| Windows AIMP plugin | v$($windows.Version) |
-| Android companion | v$($android.Version) (versionCode $($android.VersionCode), preview) |
-| Shared shuffle core | v$($core.Version), bundled in both applications |
+$body
 
 ## Downloads
 
-| Download | Use |
+| System | Packages |
 | --- | --- |
-| [Android APK]($url/$apkName) | Android 8.0+; arm64-v8a, armeabi-v7a and x86_64. Preview, signed with the existing update key. |
-| [Windows AIMP installer]($url/$packageName) | Recommended for AIMP 5.40 on Windows. Includes x64 and x86. |
-| [Windows DLL x64]($url/aimp_ignorant_shuffle-x64.dll) | Manual installation for 64-bit AIMP. |
-| [Windows DLL x86]($url/aimp_ignorant_shuffle-x86.dll) | Manual installation for 32-bit AIMP. |
-| [Android SHA256]($url/SHA256SUMS-Android.txt) | Verify the APK. |
-| [Windows SHA256]($url/SHA256SUMS.txt) | Verify the installer or DLLs. |
-| [Legacy Windows installer]($url/IgnorantShuffle.aimppack) | Compatibility alias for older Windows updaters; identical to the versioned installer. |
-| [Source including core](https://github.com/khivus/IgnorantShuffle/archive/refs/tags/$encodedTag.zip) | Entire repository at this release. |
-
-## Android v$($android.Version)
-
-$($bodies.android)
-
-## Windows v$($windows.Version)
-
-$($bodies.windows)
-
-## Core v$($core.Version)
-
-$($bodies.core)
+| Windows | [AIMP installer (x64 + x86)]($url/$packageName) / [DLL x64]($url/aimp_ignorant_shuffle-x64.dll) / [DLL x86 (32-bit)]($url/aimp_ignorant_shuffle-x86.dll) |
+| Android | [APK Universal]($url/$apkName) |
 "@
     [pscustomobject]@{ Windows=$windows; Android=$android; Core=$core; Release=$release; Tag=$tag; Title=$title;
-        Names=$names; Notes=$notes.TrimEnd() + "`n"; Preview=$false; Latest=$true }
+        Names=$names; PublicNames=$publicNames; Notes=$notes.TrimEnd() + "`n"; Preview=$false; Latest=$true }
 }
 
 function Test-ReleaseChecksums {

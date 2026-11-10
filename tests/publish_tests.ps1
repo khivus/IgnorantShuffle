@@ -13,7 +13,7 @@ $repoRoot = $projectRoot
 . (Join-Path $projectRoot 'tools\release-bundle.ps1')
 foreach ($component in 'windows', 'android', 'core') {
     $bundle = Get-ReleaseBundle $component
-    if ($bundle.Names.Count -ne 7 -or @($bundle.Names | Where-Object { $_ -match '[/\\]' }).Count) {
+    if ($bundle.PublicNames.Count -ne 5 -or $bundle.Title -cne $bundle.Tag -or $bundle.Names.Count -ne 7 -or @($bundle.Names | Where-Object { $_ -match '[/\\]' }).Count) {
         throw 'Every component release must include both platforms with flat asset names.'
     }
     if ($bundle.Tag -cne (Get-ComponentVersion release).Tag -or $bundle.Preview -or -not $bundle.Latest) { throw 'Every entry point must publish the same stable bundle tag.' }

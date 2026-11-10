@@ -3,7 +3,7 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
-## Unreleased changes
+## 0.15.0
 
 - Add configurable listening balance and smart weights, with per-signal switches, small rewards/penalties and bounded session/track adjustments shared with Android.
 - Add a resizable Statistics / learning window with date filters, daily listening chart, track/artist rankings, history, per-track totals, coverage, shuffle summary, pause, confirmed clear and CSV/JSON exports.
