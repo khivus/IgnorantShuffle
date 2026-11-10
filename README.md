@@ -18,13 +18,14 @@ Every new release includes both Windows and Android downloads and lists their in
 - A compact, resizable panel with scrolling, always-on-top mode, and optional attachment beside AIMP.
 - Bulk weight editing and exact weights-file import/export.
 - One weights file per music root, with relative paths compatible with the Android companion. [Set up both devices](docs/shared-music-folder.md).
+- Android navigation drawer, app queue, listening-balance mode and private [listening statistics](docs/android-statistics.md).
 - Automatic update checks, with downloads and installation started only when you choose.
 
 ## Windows quick start
 
 1. Download the **AIMP installer package (.aimppack)** from a **Windows** entry in [Releases](https://github.com/khivus/IgnorantShuffle/releases). It contains both x64 and x86 builds. Historical `v...` releases are also Windows releases.
 2. Open it with AIMP or drop it onto AIMP's main window. Complete installation and restart if asked.
-3. Enable IgnorantShuffle in **Preferences → Plugins** if needed.
+3. Enable Ignorant Shuffle in **Preferences → Plugins** if needed.
 4. Add your music roots under **Track weights... > Weight storage...**, one folder per line. Each root stores its own weights file. Assign weights under **Track weights...**; unconfigured tracks default to **5**.
 5. Turn on **AIMP Shuffle** and leave **Weighted shuffle enabled** checked in the plugin panel.
 

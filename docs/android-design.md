@@ -14,8 +14,8 @@ Phone tests showed immediate media-ID/queue selection working. Queue insertion
 and append did not establish scheduling support. Consequently the first app
 provides explicit Smart Next/Previous and an optional automatic weighted shuffle.
 The timer switches near the estimated end, may clip endings, can be delayed by
-Android, and does not replace headset/lock-screen Next. It is off at startup and
-after connection loss. It must not fight manual track selections or retry failed
+Android, and does not replace headset/lock-screen Next. The saved automatic preference is restored at startup and after connection loss;
+commands wait for a connected session with usable timing and AIMP Shuffle on. It must not fight manual track selections or retry failed
 commands in a loop. This is not equivalent to Windows's pre-playback GetNext hook.
 
 v0.2 holds renewable bounded CPU leases only during valid timed playback/pending
@@ -83,3 +83,34 @@ manual queue, then enable it again after the queue finishes.
 References: [Android compatibility controller](https://developer.android.com/reference/android/support/v4/media/session/MediaControllerCompat),
 [AIMP's explanation of its manual queue](https://aimp.ru/blogs/?p=1589),
 [official APK download](https://aimp.ru/?do=download&os=android).
+
+## Drawer, app queue and local statistics
+
+Only the selected drawer page is composed. Each page retains saveable scroll and
+search state. Playlist rows expose file details on demand; Logs moves diagnostic
+settings to Diagnostics and loads/filters saved events off the UI thread.
+
+The app queue stores stable identities and individual entry IDs in a separate
+private preference file. It resolves targets against the current AIMP catalog,
+keeps unavailable entries for later, and prioritizes available entries over weighted
+rolls. A request token is removed only on accepted playback of its target; failures,
+previews and duplicate callbacks cannot drain the queue. Duplicate track requests
+are separate entries, and a same-track repeat needs observed restart evidence.
+AIMP's private queue is still independent, so its limitation above still applies.
+
+Listening accounting has its own reducer and serialized SQLite worker in
+`noBackupFilesDir`. Only accepted playback observations reach it; reactive settling
+and rejected fragments break the baseline. The one-second observer uses monotonic
+intervals and validates position advancement. It neither fetches the full playlist
+each second nor requests additional CPU leases. Missing observations may therefore
+undercount screen-off listening; they never fill a gap after sleep or disconnect.
+Database reads, writes and exports run off the playback/UI thread. See the
+[statistics contract](android-statistics.md) for thresholds, date attribution,
+privacy, export fields and device checks.
+
+Listening balance applies a bounded 0.25–4× multiplier derived from qualified
+all-time local play counts before passing weights to the shared native planner.
+Eligibility still uses saved base weights. The catalog mean is calculated once,
+not for every candidate. Newly learned counts affect future rolls and do not
+replace the currently published choice. Android-only learning never rewrites the
+portable weights files or changes the Windows core's selection contract.

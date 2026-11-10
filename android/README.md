@@ -31,14 +31,14 @@ Android builds/tests/lint. CI's debug APK is signed with the runner's temporary
 debug key; it is not a stable release/update-signing setup. Do not assume it can
 update an APK built locally with another debug key.
 
-Grant **IgnorantShuffle — AIMP control** notification access from the app's button,
+Grant **Ignorant Shuffle — AIMP control** notification access from the app's button,
 then open AIMP and start music. On Android 13+ a sideloaded app may require allowing
 restricted settings in its Android app-info menu before notification access.
 
 On first launch, **Disable optimization** opens Android's request to let
 IgnorantShuffle run without battery optimization. Allow it to avoid delayed or
 missed weighted switches while the app is in the background or the screen is off.
-**Not now** dismisses this one-time prompt; **Player > Background playback** always
+**Not now** dismisses this one-time prompt; **Playback > Background playback** always
 shows the current exemption status and lets you open the setting again. Returning
 from settings checks the actual status, including denial or cancellation. If the
 direct request is unavailable, choose IgnorantShuffle in Android's battery list
@@ -47,16 +47,39 @@ or auto-start permission. Unrestricted timed playback can use more battery.
 
 Use Play in the next-roll card or **Next track** in IgnorantShuffle's notification
 for weighted selection. **Previous track** returns through confirmed listening
-history. Use **Alerts > Show Next button / Show Previous button** to enable each
+history. Use **Notifications > Show Next button / Show Previous button** to enable each
 notification button independently; expand the notification if needed.
 AIMP's separate media card, its own Next button, and headset controls
 remain under AIMP's own control unless combined switching below is enabled.
-Queue editing is not used.
+The app has its own persistent queue: search Playlist and tap **Add to queue**, then inspect/reorder/remove entries under **Queue**. Available app-queue entries take priority over weighted rolls and are consumed only after a requested start is observed. AIMP's private queue is unchanged.
 The first version cannot provide Windows's native pre-playback queue hook.
+
+## Navigation, statistics and listening balance
+
+Open the standard drawer from the top-left menu or swipe from the left edge.
+Listen & explore contains Player, Playlist, Queue and Statistics. Settings contains
+Shuffle rules, Music folders, Playback, Notifications and Appearance. Support
+contains Diagnostics, Logs and Updates. Settings formerly under Shuffle are split
+among the first three settings groups. Playlist retains its search, quick weights
+**0–10**, Play now, Add to queue, and expandable file/link details. Logs dedicates
+the screen to search and events; filtering, saved history and exports are in Tools.
+Scroll/search positions survive switching drawer pages.
+
+Statistics has local overview cards, daily listening, track/artist rankings,
+searchable per-track totals, recent history and shuffle counters, with Today,
+7 days, 30 days and All time filters. Collection can be paused; Data offers
+CSV/JSON exports and confirmed deletion. See [accounting and privacy](../docs/android-statistics.md).
+**Shuffle rules > Balance listening frequency** adjusts future rolls using all-time
+qualified plays. It preserves saved weights, minimum-weight exclusions and the
+currently published roll. Pause collection to freeze learning; clear statistics to
+start learning again from zero.
+
+The launcher, Android settings and external metadata use **Ignorant Shuffle**.
+The repository identity and the application's own interface remain **IgnorantShuffle**.
 
 ## Experimental combined switching
 
-Enable **Shuffle > Automatic switching > Combined switching (experimental)**,
+Enable **Playback > Automatic switching > Combined switching (experimental)**,
 with **Player > Enable weighted shuffle** and AIMP Shuffle on. This saved, opt-in
 mode combines the existing end timer with correction after early AIMP/headset
 skips. Normal endings switch to the weighted choice using **Switch before track
@@ -118,7 +141,7 @@ Phone checks for this mode:
 
 ## App updates
 
-Enable **Logs > Playback debug mode** to check each companion selection and
+Enable **Diagnostics > Playback debug mode** to check each companion selection and
 captured timed handoff against AIMP's observed PLAYING track. A stable mismatch
 or missing confirmation after eight seconds produces a persistent in-app banner
 and a separate debug notification (allow notifications when asked). This also
@@ -130,7 +153,7 @@ External manual track changes during a timed handoff can also produce a warning.
 Debug details and expected/observed identities appear in diagnostic exports.
 If Android blocks the debug notification channel, the in-app message still shows.
 
-Tap **Updates** beside the title; the current app version appears underneath.
+Open the left navigation drawer and tap **Updates**; its label includes the current app version.
 This starts a manual check; an existing update or download opens
 without restarting. The update screen offers release notes, Download,
 Install, progress/cancel/retry, Not now and Skip this version. Checks run daily
@@ -149,14 +172,14 @@ See [update behavior, release requirements and phone checks](../docs/android-upd
 ## Music-root weights files
 
 Weights are saved only in `IgnorantShuffle.weights.tsv` in each selected music
-root. Add one or several roots in **Shuffle > Music-folder weights**. For
+root. Add one or several roots in **Music folders > Music-folder weights**. For
 `Music/Artist/Song.flac`, choose `Music`. Each root keeps a separate file.
 Android matches real files by URI or unique title/artist; ambiguous entries need
-**Playlist > Link music file** before saving individual weights. Unmatched songs
+**Playlist > tap a track > Link music file** before saving individual weights. Unmatched songs
 use the default. No new private weights are saved; old private files are retained
 but ignored. **Use default weight** removes an explicit song entry.
 
-Use **Shuffle > Music-folder weights > Import weights / Export weights**. With
+Use **Music folders > Music-folder weights > Import weights / Export weights**. With
 several roots, select the source/destination using the radio choices above these
 buttons. With one root, its name is displayed directly. Import replaces that
 root's complete weights file; Export copies it unchanged. Reload after copying/syncing from your
@@ -165,15 +188,10 @@ confirmation; Cancel retains its assignment and index. Confirming removal keeps
 the music and weights files, but adding that root again requires indexing. See the
 [shared-folder guide](../docs/shared-music-folder.md) for setup and recovery.
 
-## Swipeable categories and appearance
+## Appearance
 
-Swipe left/right or tap the tabs: **Player**, **Shuffle**, **Playlist**, **Alerts**,
-**Theme**, **Logs**. Each category scrolls independently. Player contains the
-current song, committed next roll and playback controls; Playlist contains search
-and weight editing; Shuffle contains default weight, minimum weight, cooldown and finite-pass rules.
-
-Theme offers System, Light and Dark, plus AIMP orange (default), Blue, Teal,
-Purple, Rose and Green. Choices apply and save immediately, without rerolling.
+**Appearance** offers System, Light and Dark, plus AIMP orange (default), Blue,
+Teal, Purple, Rose and Green. Choices apply and save immediately, without rerolling.
 
 ## Timed playback and screen-off protection
 
@@ -183,7 +201,7 @@ saved choice adopt the enabled default. It resumes when notification access and
 an AIMP session with Shuffle on and valid track timing are available; it does not start AIMP or
 unpause music. Errors still stop the current timed run and appear in diagnostics.
 When enabled it switches before the estimated track end using the lead
-configured in **Shuffle > Switch before track end**. The default is **300ms**;
+configured in **Playback > Switch before track end**. The default is **300ms**;
 choose **0–5000ms**, with 0/50/100/300 presets. Smaller values preserve more of
 the ending but give AIMP more opportunity to advance first. Zero means the
 estimated end, not a guarantee of a seamless transition. The timer and handoff
@@ -206,7 +224,7 @@ estimated end and disables itself. AIMP may already have transitioned if the
 handler is late. Headset and lock-screen Next still follow AIMP's own order.
 
 Weights accept finite nonnegative numbers, including fractions and values above
-10. **Shuffle > Weights & cooldown > Minimum weight** defaults to **1**: weights
+10. **Shuffle rules > Weights & cooldown > Minimum weight** defaults to **1**: weights
 below the minimum stay out of weighted choices; weights at or above it are eligible,
 including timed playback,
 rerolls and listening-history navigation. The minimum must be finite and **greater
@@ -233,7 +251,7 @@ Logging can be disabled; saved logs remain available for viewing/export. Exports
 use `IgnorantShuffle-yyyy-MM-dd_HH-mm-ss.log` with an export date/time header;
 event lines include date, time and timezone.
 
-Alerts can enable a quiet next-roll notification. **Next track** plays the
+Notifications can enable a quiet next-roll notification. **Next track** plays the
 displayed weighted choice and **Previous track** goes back through confirmed
 listening history without opening the app. Previous appears only when an eligible
 history entry exists, including after a finite pass ends with no next choice.
@@ -251,7 +269,7 @@ privacy while locked. Some phones may require unlocking before an action.
 This is a separate notification, not a replacement for AIMP's media card. On Android
 13+ POST_NOTIFICATIONS is requested only when the user enables this option.
 Denial or a disabled channel does not block shuffle. Android settings can override
-notification visibility and appearance. Alerts offers **Always while connected**,
+notification visibility and appearance. Notifications offers **Always while connected**,
 **Playing or paused**, and **Playing only** visibility; callbacks hide/repost it
 without polling or changing the next roll.
 
@@ -296,10 +314,10 @@ new APK has been tested on a phone.
    seeking. Note clipped endings/gaps. Test pause/resume, seeking backward, manual
    AIMP selection near the end, screen off, AIMP exit/restart, and permission loss.
    Verify it respects manual changes and does not loop or restart unexpectedly.
-7. In Alerts, test notification denial/grant and the individual statistic toggles.
+7. In Notifications, test notification denial/grant and the individual statistic toggles.
    Tap **Next track** while playing and paused; AIMP must play the displayed roll.
    Check repeated taps while waiting for confirmation, rerolls and reconnection.
-   Change themes and accents in Theme, rotate the phone, swipe all categories and
+   Change themes and accents in Appearance, rotate the phone, visit all drawer categories and
    check that saved weights and roll identity do not change just from navigation.
 8. Enable timed mode, record the next roll number/title, turn the screen off for
    several transitions, then compare observed tracks. Check that pausing/disabling
@@ -315,7 +333,7 @@ new APK has been tested on a phone.
     same-key Android release, test download cancellation/retry, rotation, cache
     restoration, install-permission denial/grant and canceled/completed installation.
 13. On first launch, try **Not now**, relaunch and confirm it does not nag again.
-    Reopen **Player > Background playback**, allow battery exemption, and verify
+    Reopen **Playback > Background playback**, allow battery exemption, and verify
     the status after returning. Test denial/cancellation, an already exempt app,
     rotation during the prompt and several background/screen-off transitions.
 14. Enable roll notifications; test **Show Next button / Show Previous button**

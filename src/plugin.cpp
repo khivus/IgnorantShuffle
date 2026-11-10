@@ -1352,7 +1352,7 @@ public:
     }
     TChar* WINAPI InfoGet(int index) override {
         switch (index) {
-        case AIMP_PLUGIN_INFO_NAME: return const_cast<TChar*>(L"IgnorantShuffle " IGNORANT_SHUFFLE_WINDOWS_VERSION_W);
+        case AIMP_PLUGIN_INFO_NAME: return const_cast<TChar*>(L"Ignorant Shuffle " IGNORANT_SHUFFLE_WINDOWS_VERSION_W);
         case AIMP_PLUGIN_INFO_AUTHOR: return const_cast<TChar*>(L"IgnorantShuffle contributors");
         case AIMP_PLUGIN_INFO_SHORT_DESCRIPTION: return const_cast<TChar*>(L"Weighted shuffle: 0 excludes a track; larger weights play more often.");
         case AIMP_PLUGIN_INFO_FULL_DESCRIPTION: return const_cast<TChar*>(L"Uses AIMP's Shuffle switch. Configure track weights, optional track cooldown, or finite weighted playlists that follow AIMP's end-of-playlist action. Custom weights may exceed 10. Weight storage configures the default weight (initially 5) and minimum eligible weight (initially 1, must be greater than 0).");

@@ -1,3 +1,41 @@
+# Android navigation, queue and local statistics — 2026-11-10
+
+- Implemented a Material navigation drawer with separate listening, settings and
+  support groups. Only the selected page is composed; saveable page state retains
+  list positions and searches. Playlist uses expandable details, and Logs reserves
+  its body for events with filtering/export/history tools in a menu. Saved log
+  loading and filtering run off the UI thread. The weight editor retains all 0–10
+  presets and scrolls at compact sizes; timing presets wrap with enlarged text.
+- Added a persistent app queue with confirmed consumption, fresh AIMP target
+  resolution, retained unavailable entries and independent duplicate requests.
+  Added opt-in listening balance using qualified all-time local plays while keeping
+  saved weights, eligibility and published choices stable.
+- Added separate private SQLite listening statistics, local calendar filters,
+  overview/chart/rankings/history/track totals/shuffle views, pause, confirmed clear
+  and explicit CSV/JSON export. Statistics are excluded from backup and transfer;
+  no statistics network or synchronization path was added.
+- Android universal APK build, all **181 Kotlin/JVM tests**, and lint passed
+  (zero lint errors; SDK, existing API/style and KTX suggestions remain). Native
+  builds cover arm64-v8a, armeabi-v7a and x86_64.
+- All **four instrumentation tests** passed on the disposable Android 16 / API 36
+  emulator, including at **320 dp / 1.3 font scaling**. Tests cover the real drawer,
+  public versus internal app naming, clear cancellation, SQLite filtering and
+  reopening, persisted pause, export data/failure isolation and clearing without
+  touching unrelated data. The navigation harness explicitly refreshes Android's
+  accessibility cache after scrolling.
+- Windows x64 and Win32 plugin builds and all **six CTest suites per architecture**
+  passed. External plugin/file metadata uses **Ignorant Shuffle**; its own windows
+  retain **IgnorantShuffle**. Offline release-bundle, version and publisher checks
+  passed; the generated public release title uses the spaced name.
+- No versions, remote branches, tags or releases were changed. Work was committed
+  locally in verified phases only.
+- Physical-phone AIMP playback, audible transitions, large real-library scroll
+  performance, OEM background survival and live Windows AIMP behavior remain
+  unverified. Follow the complete [phone checklist](../docs/android-statistics.md#verification-and-remaining-phone-checks)
+  for queue/notifications, playback accounting, settings/storage, filters, data
+  controls, balance and regression checks. Statistics deliberately discard long
+  observation gaps and can undercount deep-sleep playback.
+
 # Release v0.16.0 verification — 2026-11-07
 
 - Included Windows 0.14.0, Android 0.8.0 (versionCode 10), unchanged core 0.1.0.

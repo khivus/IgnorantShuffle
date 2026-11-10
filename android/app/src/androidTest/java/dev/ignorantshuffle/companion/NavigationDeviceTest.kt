@@ -4,14 +4,19 @@ package dev.ignorantshuffle.companion
 import android.content.Intent
 import android.test.InstrumentationTestCase
 import android.view.accessibility.AccessibilityNodeInfo
+import android.graphics.Rect
 
 /** Walk the actual drawer and collection/clear UI through Android accessibility. */
 class NavigationDeviceTest : InstrumentationTestCase() {
+    private fun root(): AccessibilityNodeInfo? {
+        if(android.os.Build.VERSION.SDK_INT>=33) instrumentation.uiAutomation.clearCache()
+        return instrumentation.uiAutomation.rootInActiveWindow
+    }
     private fun nodes(root: AccessibilityNodeInfo?): List<AccessibilityNodeInfo> {
         if(root==null)return emptyList()
         return listOf(root)+(0 until root.childCount).flatMap { nodes(root.getChild(it)) }
     }
-    private fun find(label: String) = nodes(instrumentation.uiAutomation.rootInActiveWindow).firstOrNull {
+    private fun find(label: String) = nodes(root()).firstOrNull {
         it.isVisibleToUser && (it.text?.toString()==label || it.contentDescription?.toString()==label)
     }
     private fun waitFor(label: String) {
@@ -20,20 +25,40 @@ class NavigationDeviceTest : InstrumentationTestCase() {
         fail("Missing accessible UI: $label")
     }
     private fun click(label: String, scroll: Boolean=false) {
-        for(attempt in 0..12) {
+        var direction=AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+        var previousLabels: String?=null
+        for(attempt in 0..60) {
             var node=find(label)
             if(node!=null) {
                 while(node!=null && !node.isClickable) node=node.parent
-                assertNotNull("No click action: $label",node)
-                assertTrue(node!!.performAction(AccessibilityNodeInfo.ACTION_CLICK))
-                instrumentation.waitForIdleSync();Thread.sleep(250);return
+                if(node!=null && node.refresh() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    instrumentation.waitForIdleSync();Thread.sleep(250);return
+                }
             }
-            if(scroll) nodes(instrumentation.uiAutomation.rootInActiveWindow).firstOrNull { it.isScrollable }?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            if(scroll) {
+                val visible=nodes(root()).filter { it.isVisibleToUser }
+                val labels=visible.mapNotNull { it.text?.toString() }.joinToString()
+                if(previousLabels==labels) direction=if(direction==AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+                    AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                previousLabels=labels
+                val container=visible.lastOrNull { it.isScrollable }
+                if(container!=null) {
+                    val bounds=Rect();container.getBoundsInScreen(bounds)
+                    val top=bounds.top+bounds.height()/5;val bottom=bounds.bottom-bounds.height()/5
+                    val from=if(direction==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)bottom else top
+                    val to=if(direction==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)top else bottom
+                    instrumentation.uiAutomation.executeShellCommand("input swipe ${bounds.centerX()} $from ${bounds.centerX()} $to 300").use { fd ->
+                        java.io.FileInputStream(fd.fileDescriptor).use { it.readBytes() }
+                    }
+                }
+                Thread.sleep(200)
+            }
             Thread.sleep(100)
         }
-        fail("Cannot click: $label")
+        fail("Cannot click: $label. Visible UI: " + nodes(root()).filter { it.isVisibleToUser }.joinToString { "${it.text}/${it.contentDescription}" })
     }
     fun testDrawerDestinationsAndStatisticsClearConfirmation() {
+        assertEquals("Ignorant Shuffle", instrumentation.targetContext.applicationInfo.loadLabel(instrumentation.targetContext.packageManager).toString())
         for(command in listOf("input keyevent KEYCODE_WAKEUP", "wm dismiss-keyguard")) {
             instrumentation.uiAutomation.executeShellCommand(command).use { fd -> java.io.FileInputStream(fd.fileDescriptor).use { it.readBytes() } }
         }
@@ -41,8 +66,8 @@ class NavigationDeviceTest : InstrumentationTestCase() {
         try {
             Thread.sleep(1500)
             if(find("Not now")!=null)click("Not now")
-            for(page in listOf("Playlist","Queue","Statistics","Shuffle rules","Music folders","Playback","Notifications","Appearance","Diagnostics","Logs")) {
-                click("Open navigation drawer");click(page,scroll=true);waitFor(page)
+            for((index,page) in listOf("Playlist","Queue","Statistics","Shuffle rules","Music folders","Playback","Notifications","Appearance","Diagnostics","Logs").withIndex()) {
+                click("Open navigation drawer");if(index==0)waitFor("IgnorantShuffle");click(page,scroll=true);waitFor(page)
                 when(page) {
                     "Playlist" -> waitFor("Search 0 tracks by title or artist")
                     "Queue" -> waitFor("App queue")

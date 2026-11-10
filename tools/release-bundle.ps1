@@ -34,7 +34,7 @@ function Get-ReleaseBundle {
         })
         $bodies[$entry.Key] = [regex]::Replace($body, '(?m)^## ', '### ')
     }
-    $title = "IgnorantShuffle $tag - Windows v$($windows.Version) / Android v$($android.Version) / Core v$($core.Version)"
+    $title = "Ignorant Shuffle $tag - Windows v$($windows.Version) / Android v$($android.Version) / Core v$($core.Version)"
     $notes = @"
 # $title
 

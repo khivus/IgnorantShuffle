@@ -20,6 +20,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -65,10 +67,12 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
         }
     }) {
         Scaffold(modifier = Modifier.fillMaxSize(), topBar = {
-            TopAppBar(title = { Text(page) }, navigationIcon = {
+            TopAppBar(title = { Text(page, maxLines = 1, overflow = TextOverflow.Ellipsis) }, navigationIcon = {
                 IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(painterResource(R.drawable.ic_menu), "Open navigation drawer") }
             }, actions = {
-                Text(if (m.connected) "AIMP connected" else "Disconnected", Modifier.padding(end = 16.dp), style = MaterialTheme.typography.labelSmall)
+                Box(Modifier.padding(horizontal = 16.dp).size(8.dp).background(
+                    if (m.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape)
+                    .semantics { contentDescription = if (m.connected) "AIMP connected" else "AIMP disconnected" })
             })
         }) { insets ->
             Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
@@ -212,8 +216,8 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
                         Text(track.title.ifBlank { "Untitled track" }, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(onClick = { edit(track) }, enabled = !m.pending && m.storageError == null && !m.folder.blocked) { Text("Weight ${m.weight(track)}") }
-                            ActionButton(onClick = { m.play(track) }, enabled = m.ready() && track.selectable) { Text("Play now") }
+                            FilledTonalButton(onClick = { edit(track) }, modifier = Modifier.weight(1f), enabled = !m.pending && m.storageError == null && !m.folder.blocked) { Text("Weight ${m.weight(track)}") }
+                            ActionButton(onClick = { m.play(track) }, modifier = Modifier.weight(1f), enabled = m.ready() && track.selectable) { Text("Play now") }
                         }
                         TextButton(onClick = { m.enqueue(track) }, enabled = track.selectable && !m.pending) { Text("Add to queue") }
                         if (expanded == track.key) {
@@ -320,7 +324,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
                 if (m.preferences.reactivePlayback) {
                     OutlinedTextField(correctionDelay, { correctionDelay = it }, label = { Text("Correction delay after track change (ms)") },
                         modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(0, 25, 50, 100, 200).forEach { ms ->
                             StateChip(selected = correctionDelay == ms.toString(), onClick = { correctionDelay = ms.toString() }, label = { Text("$ms") })
                         }
@@ -341,7 +345,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
             Section("Switch before track end") {
                 OutlinedTextField(lead, { lead = it }, label = { Text("Lead before track end (ms)") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(0, 50, 100, 300).forEach { ms ->
                         StateChip(selected = lead == ms.toString(), onClick = { lead = ms.toString() }, label = { Text("$ms") })
                     }
@@ -566,7 +570,7 @@ private fun WeightDialog(m: AimpController, track: Track, close: () -> Unit) {
     var text by remember(track.key) { mutableStateOf(m.weight(track).toString()) }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(onDismissRequest = close, title = { Text(track.title) }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Weights below ${m.settings.minimumWeight} are excluded from shuffle. Fractions and values above 10 are supported.")
             Text(m.folder.match(track).path?.let { "Saves in the music root: $it" }
                 ?: "Link this entry to a file in a music root before saving a weight.",

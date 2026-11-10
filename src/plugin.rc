@@ -124,10 +124,10 @@ BEGIN
  BEGIN
   BLOCK "040904b0"
   BEGIN
-   VALUE "FileDescription", "IgnorantShuffle weighted shuffle for AIMP"
+   VALUE "FileDescription", "Ignorant Shuffle weighted shuffle for AIMP"
    VALUE "FileVersion", IGNORANT_SHUFFLE_WINDOWS_VERSION
    VALUE "ProductVersion", IGNORANT_SHUFFLE_WINDOWS_VERSION
-   VALUE "ProductName", "IgnorantShuffle"
+   VALUE "ProductName", "Ignorant Shuffle"
   END
  END
  BLOCK "VarFileInfo"

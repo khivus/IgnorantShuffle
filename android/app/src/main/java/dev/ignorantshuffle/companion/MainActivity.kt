@@ -188,7 +188,7 @@ class MainActivity : ComponentActivity() {
         else runCatching { startActivity(intent) }.onFailure { monitor.log("AIMP launch error: $it") }
     }
     private fun copySummary() {
-        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("IgnorantShuffle", monitor.report().take(200_000)))
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Ignorant Shuffle", monitor.report().take(200_000)))
         monitor.log("Summary copied")
     }
     private fun requestNotifications() {

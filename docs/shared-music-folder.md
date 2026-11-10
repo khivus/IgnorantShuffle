@@ -12,7 +12,7 @@ Windows and `Music` on Android, rather than their `Artist` subfolder.
 
 1. Windows: open **Track weights... > Weight storage...** and add the music root.
    Use one folder per line for multiple libraries, then **Apply / reload**.
-2. Android: open **Shuffle > Music-folder weights > Add music root**. Select the
+2. Android: open **Music folders > Music-folder weights > Add music root**. Select the
    matching root with the system picker and let indexing finish. Add other roots
    separately. Separate libraries must not overlap.
 3. Set individual song weights in either app. On Android, use **Link music file**
@@ -23,7 +23,7 @@ Windows and `Music` on Android, rather than their `Artist` subfolder.
    automatically. Avoid simultaneous edits on both devices.
 
 **Import** replaces the selected root's weights file; **Export** copies it exactly.
-On Android, both buttons are in **Shuffle > Music-folder weights**, beside the
+On Android, both buttons are in **Music folders > Music-folder weights**, beside the
 root controls. With multiple roots, use the radio choices to select the desired
 root before transferring. Files from different roots remain
 separate even if their relative song paths are identical. Unmatched songs use

@@ -19,7 +19,7 @@ Each file is replaced safely; a later failure reports how many root files saved.
 
 On Windows, open **Track weights... > Weight storage...**, enter one music root
 per line (or use **Add...**), and click **Apply / reload**. On Android, open
-**Shuffle > Music-folder weights > Add music root** and grant access with the
+**Music folders > Music-folder weights > Add music root** and grant access with the
 system folder picker. Android matches actual files using their URI or unique
 title/artist tags. Resolve ambiguous entries with **Playlist > Link music file**.
 
@@ -47,7 +47,7 @@ requires indexing.
 
 On Windows, choose the **import/export music root**, then Import or Export.
 On Android, use **Import weights** and **Export weights** beside the root controls
-in **Shuffle > Music-folder weights**. Radio choices select the transfer root when
+in **Music folders > Music-folder weights**. Radio choices select the transfer root when
 several are configured; a single root is displayed as a plain folder name. Import **replaces**
 that root's complete file with the selected valid TSV. Omitted entries are removed.
 Export copies the current file exactly, including comments, numeric formatting,

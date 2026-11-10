@@ -6,7 +6,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <queries><package android:name="com.aimp.player" /></queries>
-    <application android:name=".ShuffleApplication" android:label="IgnorantShuffle"
+    <application android:name=".ShuffleApplication" android:label="Ignorant Shuffle"
         android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/no_backup" android:icon="@drawable/ic_shuffle"
         android:usesCleartextTraffic="false" android:supportsRtl="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <provider android:name=".UpdateFileProvider" android:authorities="${applicationId}.updates"
@@ -20,7 +20,7 @@
             </intent-filter>
         </activity>
         <receiver android:name=".RollActionReceiver" android:exported="false" />
-        <service android:name=".SessionAccessService" android:label="IgnorantShuffle — AIMP control"
+        <service android:name=".SessionAccessService" android:label="Ignorant Shuffle — AIMP control"
             android:exported="true" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
         </service>

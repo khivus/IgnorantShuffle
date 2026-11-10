@@ -18,6 +18,7 @@ try {
     }
     foreach ($component in 'windows', 'android', 'core') {
         $bundle = Get-ReleaseBundle $component $fixture
+        if (-not $bundle.Title.StartsWith('Ignorant Shuffle ')) { throw 'Public release title must use the spaced app name.' }
         if ($bundle.Names.Count -ne 7 -or -not $bundle.Latest -or $bundle.Preview -or $bundle.Tag -cne "v$($bundle.Release.Version)") { throw 'Release channel, stable tag or asset set mismatch.' }
         # Old Windows versions accept only the bare alias or a package matching
         # the release tag. Keep exactly one match even if bundle == app version.

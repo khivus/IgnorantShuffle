@@ -27,7 +27,7 @@ class PlaybackIssueNotifications(private val context: Context) {
             val open = PendingIntent.getActivity(context, 1, Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val public = Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_stat_shuffle)
-                .setContentTitle("IgnorantShuffle playback issue").setContentText("Open the app for details").build()
+                .setContentTitle("Ignorant Shuffle playback issue").setContentText("Open the app for details").build()
             manager.notify(ID, Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_stat_shuffle)
                 .setContentTitle("Selected track did not play next").setContentText(message)
                 .setStyle(Notification.BigTextStyle().bigText(message)).setContentIntent(open)
