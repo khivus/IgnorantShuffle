@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -25,6 +26,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -623,32 +626,76 @@ private fun Toggle(title: String, detail: String, checked: Boolean, enabled: Boo
 @Composable
 private fun WeightDialog(m: AimpController, track: Track, close: () -> Unit) {
     var text by remember(track.key) { mutableStateOf(m.weight(track).toString()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(onDismissRequest = close, title = { Text(track.title) }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Weights below ${m.settings.minimumWeight} are excluded from shuffle. Fractions and values above 10 are supported.")
-            Text(m.folder.match(track).path?.let { "Saves in the music root: $it" }
-                ?: "Link this entry to a file in a music root before saving a weight.",
-                style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(text, { text = it; error = null }, label = { Text("Weight") }, singleLine = true, isError = error != null)
-            (0..10).chunked(4).forEach { values ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    values.forEach { value ->
-                        StateChip(text.toDoubleOrNull() == value.toDouble(), { text = value.toString() }, label = { Text("$value") }, modifier = Modifier.weight(1f))
+    var error by remember(track.key) { mutableStateOf<String?>(null) }
+    val selected=text.toDoubleOrNull()
+    val colors=MaterialTheme.colorScheme
+    val path=m.folder.match(track).path
+    AlertDialog(onDismissRequest=close,
+        modifier=Modifier.padding(horizontal=12.dp).widthIn(max=480.dp).fillMaxWidth(),
+        properties=DialogProperties(usePlatformDefaultWidth=false),
+        title={
+            Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                Text("Track weight",style=MaterialTheme.typography.labelLarge,color=colors.primary)
+                Text(track.title,style=MaterialTheme.typography.headlineSmall,maxLines=2,overflow=TextOverflow.Ellipsis)
+                if(track.artist.isNotBlank()) Text(track.artist,style=MaterialTheme.typography.bodyMedium,
+                    color=colors.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+            }
+        },text={
+            Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+                Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Text("Quick select",style=MaterialTheme.typography.labelLarge,color=colors.onSurfaceVariant)
+                    (1..10).chunked(5).forEach {values ->
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                            values.forEach {value ->
+                                WeightPreset(selected==value.toDouble(),{text=value.toString();error=null},Modifier.weight(1f)) {
+                                    Text("$value",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                    WeightPreset(selected==0.0,{text="0";error=null},Modifier.fillMaxWidth()) {
+                        Row(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Text("0",style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
+                            Text("Exclude from shuffle",style=MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+                OutlinedTextField(text,{text=it;error=null},modifier=Modifier.fillMaxWidth(),
+                    label={Text("Custom weight")},singleLine=true,isError=error!=null,shape=RoundedCornerShape(14.dp),
+                    keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
+                    supportingText={Text(error?:"Higher weights play more often. Minimum for shuffle: ${m.settings.minimumWeight}. Fractions and values above 10 are supported.")})
+                TextButton(onClick={
+                    m.setWeight(track,"",inherit=true)
+                    if(m.folder.busy || !m.weights.containsKey(track.key))close() else error=m.result
+                },modifier=Modifier.fillMaxWidth()) {Text("Use default weight (${m.settings.defaultWeight})")}
+                Surface(shape=RoundedCornerShape(12.dp),color=colors.surfaceContainerLow,modifier=Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                        Text(if(path!=null) "Saves to music root" else "Music file not linked",
+                            style=MaterialTheme.typography.labelMedium,color=colors.onSurfaceVariant)
+                        SelectionContainer {Text(path?:"Link this track to a music file before saving.",
+                            style=MaterialTheme.typography.bodySmall,color=colors.onSurfaceVariant,
+                            maxLines=3,overflow=TextOverflow.Ellipsis)}
                     }
                 }
             }
-            TextButton(onClick = {
-                m.setWeight(track, "", inherit = true)
-                if (m.folder.busy || !m.weights.containsKey(track.key)) close() else error = m.result
-            }) { Text("Use default weight") }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        }
-    }, confirmButton = { TextButton(onClick = {
-        val value = text.toDoubleOrNull()
-        if (value == null || !value.isFinite() || value < 0) error = "Enter a finite nonnegative number"
-        else { m.setWeight(track, text); if (m.folder.busy || m.weights[track.key] == value) close() else error = m.result }
-    }) { Text("Save weight") } }, dismissButton = { TextButton(onClick = close) { Text("Cancel") } })
+        },confirmButton={
+            Button(onClick={
+                val value=text.toDoubleOrNull()
+                if(value==null || !value.isFinite() || value<0)error="Enter a finite nonnegative number"
+                else {m.setWeight(track,text);if(m.folder.busy || m.weights[track.key]==value)close() else error=m.result}
+            }) {Text("Save weight")}
+        },dismissButton={TextButton(onClick=close) {Text("Cancel")}})
+}
+
+@Composable
+private fun WeightPreset(selected: Boolean,onClick: () -> Unit,modifier: Modifier=Modifier,content: @Composable () -> Unit) {
+    val colors=MaterialTheme.colorScheme
+    Surface(selected=selected,onClick=onClick,modifier=modifier,shape=RoundedCornerShape(12.dp),
+        color=if(selected)colors.primary else colors.surfaceContainerHigh,
+        contentColor=if(selected)colors.onPrimary else colors.onSurfaceVariant,
+        border=if(selected)null else BorderStroke(1.dp,colors.outlineVariant)) {
+        Box(Modifier.heightIn(min=48.dp).padding(horizontal=4.dp,vertical=8.dp),contentAlignment=Alignment.Center) {content()}
+    }
 }
 
 @Composable
