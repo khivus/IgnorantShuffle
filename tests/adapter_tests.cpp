@@ -1763,6 +1763,18 @@ struct PluginChecks {
         const auto shell=plugin.settings_window_.handle();const auto editor=plugin.dialog_;
         check(IsWindow(shell) && GetParent(editor)==shell && (GetWindowLongPtrW(editor,GWL_STYLE)&WS_CHILD),"Weights are embedded in the modeless settings shell");
         check(IsWindowEnabled(plugin.monitor_.handle()) && !IsWindowVisible(GetDlgItem(editor,IDOK)),"Settings keeps player usable and removes popup close buttons");
+        const auto check_navigation_paint_bounds=[&]{
+            for(int page=0;page<7;++page){
+                const auto button=GetDlgItem(shell,3000+page);RECT bounds{};GetWindowRect(button,&bounds);
+                check(IsWindowVisible(button) && GetParent(button)==shell,"Every settings category remains visible");
+                for(auto sibling=GetWindow(shell,GW_CHILD);sibling;sibling=GetWindow(sibling,GW_HWNDNEXT)){
+                    if(sibling==button || !IsWindowVisible(sibling))continue;
+                    RECT other{},intersection{};GetWindowRect(sibling,&other);
+                    check(!IntersectRect(&intersection,&bounds,&other),"Settings buttons must not overlap a sibling background that can repaint over them");
+                }
+            }
+        };
+        check_navigation_paint_bounds();
         for(int page=1;page<7;++page)SendMessageW(shell,WM_COMMAND,MAKEWPARAM(3000+page,BN_CLICKED),0);
         check(GetParent(plugin.update_dialog_)==shell && IsWindowVisible(plugin.update_dialog_),"Updates are embedded in Settings");
         SendMessageW(shell,WM_COMMAND,MAKEWPARAM(3003,BN_CLICKED),0);
@@ -1772,9 +1784,14 @@ struct PluginChecks {
         capture_preview(shell,L"settings-learning.bmp");
         SendMessageW(shell,WM_COMMAND,MAKEWPARAM(3000,BN_CLICKED),0);
         check(plugin.dialog_==editor && IsWindowVisible(editor),"Returning to weights reuses the view");
+        for(const auto size:std::vector<SIZE>{{1180,880},{1100,810},{1120,840}}){
+            SetWindowPos(shell,nullptr,0,0,size.cx,size.cy,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+            RedrawWindow(shell,nullptr,nullptr,RDW_INVALIDATE|RDW_ERASE|RDW_ALLCHILDREN|RDW_UPDATENOW);
+            check_navigation_paint_bounds();
+        }
         capture_preview(shell,L"settings-weights.bmp");
         SendMessageW(shell,WM_CLOSE,0,0);check(IsWindow(shell) && !IsWindowVisible(shell),"Closing settings hides its reusable shell");
-        plugin.show_settings(1);check(plugin.settings_window_.handle()==shell && IsWindowVisible(plugin.rules_dialog_),"Reopening uses the same settings window");
+        plugin.show_settings(1);check(plugin.settings_window_.handle()==shell && IsWindowVisible(plugin.rules_dialog_),"Reopening uses the same settings window");check_navigation_paint_bounds();
         plugin.Finalize();check(!IsWindow(shell) && !IsWindow(editor),"Finalization destroys embedded pages");manager.active=nullptr;
     }
     static void shared_settings_checks(Manager& manager,Messages& messages) {

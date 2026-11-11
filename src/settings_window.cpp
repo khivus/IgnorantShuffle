@@ -34,20 +34,29 @@ void SettingsWindow::select(int page) {
     SetWindowTextW(title_,names[page]);
     for(int i=0;i<7;++i)SendMessageW(GetDlgItem(window_,3000+i),BM_SETCHECK,i==page?BST_CHECKED:BST_UNCHECKED,0);
     if(content_){
-        SetParent(content_,window_);
-        auto style=GetWindowLongPtrW(content_,GWL_STYLE);
-        SetWindowLongPtrW(content_,GWL_STYLE,(style & ~(WS_POPUP|WS_CAPTION|WS_THICKFRAME|WS_SYSMENU|WS_MINIMIZEBOX|WS_MAXIMIZEBOX))|WS_CHILD|WS_CLIPCHILDREN);
-        SetWindowLongPtrW(content_,GWL_EXSTYLE,GetWindowLongPtrW(content_,GWL_EXSTYLE)&~WS_EX_APPWINDOW);
+        bool frame_changed=false;
+        const auto style=static_cast<DWORD>(GetWindowLongPtrW(content_,GWL_STYLE));
+        // GetParent returns an owner for popups; those still need embedding once.
+        if(!(style & WS_CHILD) || GetParent(content_)!=window_){SetParent(content_,window_);frame_changed=true;}
+        const auto embedded=(style & ~(WS_POPUP|WS_CAPTION|WS_THICKFRAME|WS_SYSMENU|WS_MINIMIZEBOX|WS_MAXIMIZEBOX))|WS_CHILD|WS_CLIPCHILDREN|WS_CLIPSIBLINGS;
+        if(style!=embedded){SetWindowLongPtrW(content_,GWL_STYLE,embedded);frame_changed=true;}
+        const auto exstyle=GetWindowLongPtrW(content_,GWL_EXSTYLE);
+        if(exstyle & WS_EX_APPWINDOW){SetWindowLongPtrW(content_,GWL_EXSTYLE,exstyle&~WS_EX_APPWINDOW);frame_changed=true;}
         ShowWindow(GetDlgItem(content_,IDOK),SW_HIDE);ShowWindow(GetDlgItem(content_,IDCANCEL),SW_HIDE);
-        SetWindowPos(content_,nullptr,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_FRAMECHANGED);
+        if(frame_changed)SetWindowPos(content_,nullptr,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_FRAMECHANGED);
         layout();ShowWindow(content_,SW_SHOW);
+        RedrawWindow(window_,nullptr,nullptr,RDW_INVALIDATE|RDW_ERASE|RDW_ALLCHILDREN);
     }
     feedback(L"Changes apply when you use the controls on this page.");
 }
 void SettingsWindow::layout(){
     if(!window_)return;RECT r{};GetClientRect(window_,&r);
     const int dpi=GetDpiForWindow(window_);auto u=[&](int x){return MulDiv(x,dpi,96);};
-    MoveWindow(navigation_,u(12),u(12),u(192),std::max(1L,r.bottom-u(60)),TRUE);
+    int y=20;
+    for(int i=0;i<7;++i){
+        if(i==0 || i==3 || i==5){MoveWindow(GetDlgItem(window_,3100+i),u(20),u(y),u(184),u(22),TRUE);y+=30;}
+        MoveWindow(GetDlgItem(window_,3000+i),u(20),u(y),u(184),u(34),TRUE);y+=42;
+    }
     MoveWindow(title_,u(226),u(16),std::max(1L,r.right-u(250)),u(30),TRUE);
     MoveWindow(status_,u(16),r.bottom-u(34),std::max(1L,r.right-u(32)),u(24),TRUE);
     if(content_)MoveWindow(content_,u(216),u(55),std::max(1L,r.right-u(228)),std::max(1L,r.bottom-u(105)),TRUE);
@@ -61,13 +70,13 @@ LRESULT CALLBACK SettingsWindow::procedure(HWND window,UINT message,WPARAM wpara
     try {
         if(message==WM_CREATE){
             NONCLIENTMETRICSW metrics{sizeof(metrics)};SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,sizeof(metrics),&metrics,0);self->font_=CreateFontIndirectW(&metrics.lfMessageFont);
-            auto add=[&](HWND parent,const wchar_t* cls,const wchar_t* text,int id,DWORD style,int x,int y,int w,int h){auto child=CreateWindowExW(0,cls,text,WS_CHILD|WS_VISIBLE|style,x,y,w,h,parent,reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),GetModuleHandleW(nullptr),nullptr);SendMessageW(child,WM_SETFONT,reinterpret_cast<WPARAM>(self->font_),TRUE);return child;};
-            self->navigation_=add(window,L"STATIC",L"",0,WS_CLIPCHILDREN|WS_CLIPSIBLINGS,0,0,1,1);
-            const int dpi=GetDpiForWindow(window);auto u=[&](int x){return MulDiv(x,dpi,96);};int y=8;
+            auto add=[&](HWND parent,const wchar_t* cls,const wchar_t* text,int id,DWORD style,int x,int y,int w,int h){auto child=CreateWindowExW(0,cls,text,WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|style,x,y,w,h,parent,reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),GetModuleHandleW(nullptr),nullptr);SendMessageW(child,WM_SETFONT,reinterpret_cast<WPARAM>(self->font_),TRUE);return child;};
+            const int dpi=GetDpiForWindow(window);auto u=[&](int x){return MulDiv(x,dpi,96);};
+            // Keep headers and buttons as nonoverlapping siblings. A full-height
+            // STATIC behind sibling buttons can erase them during native repainting.
             for(int i=0;i<7;++i){
-                if(i==0 || i==3 || i==5){add(self->navigation_,L"STATIC",i==0?L"LIBRARY":i==3?L"LISTENING":L"APPLICATION",0,SS_LEFT,u(8),u(y),u(180),u(22));y+=30;}
-                // Buttons belong to the shell so keyboard navigation follows normal dialog order.
-                add(window,L"BUTTON",names[i],3000+i,BS_RADIOBUTTON|BS_PUSHLIKE|WS_TABSTOP,u(20),u(y+12),u(184),u(34));y+=42;
+                if(i==0 || i==3 || i==5)add(window,L"STATIC",i==0?L"LIBRARY":i==3?L"LISTENING":L"APPLICATION",3100+i,SS_LEFT,0,0,1,1);
+                add(window,L"BUTTON",names[i],3000+i,BS_RADIOBUTTON|BS_PUSHLIKE|WS_TABSTOP,0,0,1,1);
             }
             self->title_=add(window,L"STATIC",L"",0,SS_LEFT,0,0,1,1);self->status_=add(window,L"STATIC",L"",0,SS_LEFT,0,0,1,1);
             active_=self;self->keyboard_hook_=SetWindowsHookExW(WH_GETMESSAGE,keyboard,nullptr,GetCurrentThreadId());

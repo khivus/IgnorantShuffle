@@ -6,7 +6,7 @@
 
 // A modeless settings shell. Existing feature views live inside its content area.
 class SettingsWindow {
-    HWND window_=nullptr, navigation_=nullptr, title_=nullptr, status_=nullptr, content_=nullptr;
+    HWND window_=nullptr, title_=nullptr, status_=nullptr, content_=nullptr;
     HFONT font_=nullptr, title_font_=nullptr;
     HHOOK keyboard_hook_=nullptr;
     static thread_local SettingsWindow* active_;
