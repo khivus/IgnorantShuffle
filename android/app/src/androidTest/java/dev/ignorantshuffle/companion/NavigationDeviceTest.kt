@@ -76,13 +76,18 @@ class NavigationDeviceTest : InstrumentationTestCase() {
             Thread.sleep(1500)
             if(find("Not now")!=null)click("Not now")
             waitFor("Disconnected")
-            for((index,page) in listOf("Playlist","Queue","Statistics","Shuffle rules","Music folders","Playback","Notifications","Appearance","Diagnostics","Logs").withIndex()) {
+            // Standard navigation items occupy one equally divided row above the system bar.
+            val bottomPages=listOf("Player","Playlist","Queue","Statistics")
+            val bottomBounds=bottomPages.map { label ->
+                val node=nodes(root()).first { it.isVisibleToUser && it.contentDescription?.toString()==label && it.isClickable }
+                Rect().also(node::getBoundsInScreen)
+            }
+            assertTrue("Bottom navigation uses the standard tall touch targets",bottomBounds.all { it.height() >= (72*activity.resources.displayMetrics.density).toInt() })
+            assertTrue("Bottom items share a fixed row",bottomBounds.all { it.top==bottomBounds.first().top && it.bottom==bottomBounds.first().bottom })
+            assertTrue("Bottom items divide the width equally",bottomBounds.all { kotlin.math.abs(it.width()-bottomBounds.first().width())<=2 })
+            for(page in listOf("Playlist","Queue","Statistics","Shuffle rules","Music folders","Playback","Notifications","Appearance","Diagnostics","Logs","Updates")) {
                 click("Open navigation drawer")
-                val category=when(page) { "Playlist","Queue","Statistics" -> "Listen"; "Diagnostics","Logs" -> "Support"; else -> "Settings" }
-                waitFor("Listen");waitFor("Settings");waitFor("Support")
-                assertNull("Drawer contains categories only", find("Music folders"))
-                click(category)
-                click(if(page=="Statistics") "Stats" else page,scroll=true);waitFor(page)
+                click(page,scroll=true);waitFor(page)
                 when(page) {
                     "Playlist" -> waitFor("Search 0 tracks by title or artist")
                     "Queue" -> waitFor("App queue")

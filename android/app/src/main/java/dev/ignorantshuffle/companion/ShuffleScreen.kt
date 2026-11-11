@@ -46,6 +46,30 @@ private val categoryPages = linkedMapOf(
     "Support" to listOf("Diagnostics", "Logs", "Updates"))
 private fun navigationCategory(page: String) = categoryPages.entries.first { page in it.value }.key
 
+private fun navigationLabel(page: String) = when(page) {
+    "Statistics" -> "Stats"
+    "Shuffle rules" -> "Rules"
+    "Music folders" -> "Folders"
+    "Notifications" -> "Alerts"
+    "Appearance" -> "Theme"
+    "Diagnostics" -> "Debug"
+    else -> page
+}
+private fun navigationIcon(page: String) = when(page) {
+    "Player" -> R.drawable.ic_nav_player
+    "Playlist" -> R.drawable.ic_nav_playlist
+    "Queue" -> R.drawable.ic_nav_queue
+    "Statistics" -> R.drawable.ic_nav_stats
+    "Shuffle rules" -> R.drawable.ic_nav_rules
+    "Music folders" -> R.drawable.ic_nav_folder
+    "Playback" -> R.drawable.ic_nav_playback
+    "Notifications" -> R.drawable.ic_nav_notifications
+    "Appearance" -> R.drawable.ic_nav_appearance
+    "Diagnostics" -> R.drawable.ic_nav_diagnostics
+    "Logs" -> R.drawable.ic_nav_logs
+    else -> R.drawable.ic_nav_updates
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () -> Unit, copy: () -> Unit,
@@ -64,9 +88,16 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
         ModalDrawerSheet {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
                 Text("IgnorantShuffle", Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
-                listOf("Listen", "Settings", "Support").forEach { category ->
-                    NavigationDrawerItem(label = { Text(category) }, selected = navigationCategory(page) == category,
-                        onClick = { page = categoryPages.getValue(category).first(); scope.launch { drawer.close() } })
+                categoryPages.forEach { (category, pages) ->
+                    if(category != "Listen") HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                    Text(category, Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
+                        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    pages.forEach { destination ->
+                        NavigationDrawerItem(label = { Text(destination) },
+                            icon = { Icon(painterResource(navigationIcon(destination)), contentDescription = null) },
+                            selected = page == destination,
+                            onClick = { page = destination; scope.launch { drawer.close() } })
+                    }
                 }
 
             }
@@ -84,11 +115,12 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                 }
             })
         }, bottomBar = {
-            Surface(modifier = Modifier.navigationBarsPadding(), tonalElevation = 3.dp) {
-                PrimaryScrollableTabRow(selectedTabIndex = categoryPages.getValue(navigationCategory(page)).indexOf(page), edgePadding = 8.dp) {
-                    categoryPages.getValue(navigationCategory(page)).forEach { title ->
-                        Tab(selected = page == title, onClick = { page = title }, text = { Text(if (title == "Statistics") "Stats" else title) })
-                    }
+            NavigationBar(modifier = Modifier.fillMaxWidth()) {
+                categoryPages.getValue(navigationCategory(page)).forEach { destination ->
+                    NavigationBarItem(selected = page == destination, onClick = { page = destination },
+                        icon = { Icon(painterResource(navigationIcon(destination)), contentDescription = null) },
+                        label = { Text(navigationLabel(destination), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        modifier = Modifier.semantics { contentDescription = destination }, alwaysShowLabel = true)
                 }
             }
         }) { insets ->
