@@ -15,7 +15,7 @@ struct StatisticsWindowData {
 class StatisticsWindow {
     HWND window_=nullptr;
     HFONT font_=nullptr;
-    int dpi_=96;
+    int dpi_=96, page_override_=-1;
     bool updating_=false;
     StatisticsWindowData data_;
     ignorant::StatisticsSummary summary_;
@@ -32,10 +32,11 @@ class StatisticsWindow {
 public:
     std::function<StatisticsWindowData()> on_data;
     std::function<void(const ignorant::LearningOptions&,bool)> on_settings;
+    std::function<void(const std::wstring&)> on_feedback;
     std::function<void()> on_clear,on_sync,on_log_folder;
     std::function<void(bool)> on_export;
     ~StatisticsWindow(){destroy();}
     HWND handle() const {return window_;}
-    void show(HINSTANCE instance,HWND owner,int page=0);
+    void show(HINSTANCE instance,HWND owner,int page=0,bool embedded=false);
     void destroy();
 };

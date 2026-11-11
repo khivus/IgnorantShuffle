@@ -23,15 +23,16 @@ std::wstring time_text(std::int64_t milliseconds) {
 std::wstring lower(std::wstring value) {if(!value.empty())CharLowerBuffW(value.data(),static_cast<DWORD>(value.size()));return value;}
 void combo(HWND parent,int id,const std::vector<std::wstring>& values) {for(const auto& value:values)SendDlgItemMessageW(parent,id,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(value.c_str()));SendDlgItemMessageW(parent,id,CB_SETCURSEL,0,0);}
 }
-void StatisticsWindow::show(HINSTANCE instance,HWND owner,int page) {
+void StatisticsWindow::show(HINSTANCE instance,HWND owner,int page,bool embedded) {
     if(!window_) {
         INITCOMMONCONTROLSEX controls{sizeof(controls),ICC_TAB_CLASSES|ICC_LISTVIEW_CLASSES};InitCommonControlsEx(&controls);
         WNDCLASSEXW type{sizeof(type)};type.hInstance=instance;type.lpfnWndProc=procedure;type.lpszClassName=L"IgnorantShuffle.Statistics";type.hCursor=LoadCursor(nullptr,IDC_ARROW);type.hbrBackground=GetSysColorBrush(COLOR_BTNFACE);
         RegisterClassExW(&type);
-        window_=CreateWindowExW(WS_EX_APPWINDOW,type.lpszClassName,L"IgnorantShuffle - Statistics and learning",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,1000,760,owner,nullptr,instance,this);
+        window_=CreateWindowExW(embedded?WS_EX_CONTROLPARENT:WS_EX_APPWINDOW,type.lpszClassName,L"IgnorantShuffle - Statistics and learning",(embedded?WS_CHILD:WS_OVERLAPPEDWINDOW)|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,1000,760,owner,nullptr,instance,this);
         if(!window_)throw std::runtime_error("Could not open Statistics");
     }
-    TabCtrl_SetCurSel(GetDlgItem(window_,TABS),page);learning_controls();layout();refresh();ShowWindow(window_,SW_SHOWNORMAL);SetForegroundWindow(window_);
+    page_override_=page>=5?page:-1;
+    if(page<5)TabCtrl_SetCurSel(GetDlgItem(window_,TABS),page);learning_controls();layout();refresh();ShowWindow(window_,SW_SHOWNORMAL);if(!embedded)SetForegroundWindow(window_);
 }
 void StatisticsWindow::destroy(){if(window_)DestroyWindow(window_);}
 void StatisticsWindow::create_controls() {
@@ -49,7 +50,7 @@ void StatisticsWindow::create_controls() {
     add(LOG_FOLDER,L"BUTTON",L"Open log folder",BS_PUSHBUTTON|WS_TABSTOP);
     add(TABS,WC_TABCONTROLW,L"",WS_TABSTOP);
     const wchar_t* tabs[]{L"Overview",L"Tracks",L"Artists",L"History",L"Shuffle",L"Learning",L"Logs"};
-    for(int i=0;i<7;++i){TCITEMW item{};item.mask=TCIF_TEXT;item.pszText=const_cast<wchar_t*>(tabs[i]);TabCtrl_InsertItem(GetDlgItem(window_,TABS),i,&item);}
+    for(int i=0;i<5;++i){TCITEMW item{};item.mask=TCIF_TEXT;item.pszText=const_cast<wchar_t*>(tabs[i]);TabCtrl_InsertItem(GetDlgItem(window_,TABS),i,&item);}
     add(SUMMARY,L"STATIC",L"",SS_LEFT|SS_NOPREFIX);
     add(CHART,L"STATIC",L"",SS_OWNERDRAW);
     add(LIST,WC_LISTVIEWW,L"",LVS_REPORT|LVS_SHOWSELALWAYS|LVS_SINGLESEL|WS_TABSTOP,WS_EX_CLIENTEDGE);
@@ -73,8 +74,11 @@ void StatisticsWindow::layout() {
     const int toolbar=m+line+gap;int x=m;
     for(const auto id:{SYNC,CSV,JSON,CLEAR}) {const int width=units(id==CLEAR?150:115);place(id,x,toolbar,width,line);x+=width+gap;}
     const int tabs=toolbar+line+gap;place(TABS,m,tabs,w-2*m,units(30));
-    const int top=tabs+units(38),page=TabCtrl_GetCurSel(GetDlgItem(window_,TABS));
+    ShowWindow(GetDlgItem(window_,TABS),page_override_>=0?SW_HIDE:SW_SHOW);
+    const int page=(page_override_>=0?page_override_:TabCtrl_GetCurSel(GetDlgItem(window_,TABS)));
     const bool learning=page==5,overview=page==0;
+    const int top=learning?m:tabs+(page_override_>=0?0:units(38));
+    for(const int id:{RANGE,SEARCH,COLLECT,SYNC,CSV,JSON,CLEAR})ShowWindow(GetDlgItem(window_,id),learning?SW_HIDE:SW_SHOW);
     ShowWindow(GetDlgItem(window_,LOG_FOLDER),page==6?SW_SHOW:SW_HIDE);place(LOG_FOLDER,x,toolbar,units(120),line);
     ShowWindow(GetDlgItem(window_,SUMMARY),learning?SW_HIDE:SW_SHOW);
     ShowWindow(GetDlgItem(window_,CHART),overview?SW_SHOW:SW_HIDE);
@@ -120,7 +124,7 @@ void StatisticsWindow::refresh() {
     const int period=static_cast<int>(SendDlgItemMessageW(window_,RANGE,CB_GETCURSEL,0,0));
     const std::string since=period==0?ignorant::statistics_day():period==1?ignorant::statistics_day(6):period==2?ignorant::statistics_day(29):"";
     summary_=ignorant::summarize(data_.records,since);
-    const int page=TabCtrl_GetCurSel(GetDlgItem(window_,TABS));if(page==5)return;
+    const int page=(page_override_>=0?page_override_:TabCtrl_GetCurSel(GetDlgItem(window_,TABS)));if(page==5)return;
     std::set<std::string> artists;std::size_t covered=0;
     for(const auto& pair:summary_.tracks){if(!pair.second.artist.empty())artists.insert(pair.second.artist);if(data_.library.count(pair.first))++covered;}
     std::wostringstream description;
@@ -189,7 +193,7 @@ LRESULT CALLBACK StatisticsWindow::procedure(HWND window,UINT message,WPARAM wpa
         if(message==WM_DRAWITEM && wparam==CHART){auto* draw=reinterpret_cast<DRAWITEMSTRUCT*>(lparam);self->chart(draw->hDC,draw->rcItem);return TRUE;}
         if(message==WM_NOTIFY){const auto* n=reinterpret_cast<NMHDR*>(lparam);
             if(n->idFrom==TABS && n->code==TCN_SELCHANGE){self->layout();self->refresh();return 0;}
-            if(n->idFrom==LIST && n->code==NM_DBLCLK){const int index=ListView_GetNextItem(n->hwndFrom,-1,LVNI_SELECTED);if(index>=0 && static_cast<std::size_t>(index)<self->rows_.size()){std::wstring detail;for(const auto& c:self->rows_[index].cells)detail+=c+L"\r\n";MessageBoxW(window,detail.c_str(),L"IgnorantShuffle - Details",MB_OK);}return 0;}
+            if(n->idFrom==LIST && n->code==NM_DBLCLK){const int index=ListView_GetNextItem(n->hwndFrom,-1,LVNI_SELECTED);if(index>=0 && static_cast<std::size_t>(index)<self->rows_.size()){std::wstring detail;for(const auto& c:self->rows_[index].cells)detail+=c+L"\r\n";SetWindowTextW(GetDlgItem(window,SUMMARY),detail.c_str());}return 0;}
         }
         if(message==WM_COMMAND){const int id=LOWORD(wparam),event=HIWORD(wparam);
             if((id==RANGE && event==CBN_SELCHANGE) || (id==SEARCH && event==EN_CHANGE)){self->refresh();return 0;}
@@ -200,11 +204,11 @@ LRESULT CALLBACK StatisticsWindow::procedure(HWND window,UINT message,WPARAM wpa
                 else if(id==SYNC && self->on_sync)self->on_sync();
                 else if((id==CSV || id==JSON) && self->on_export)self->on_export(id==CSV);
                 else if(id==CLEAR && self->on_clear && MessageBoxW(window,L"Clear all known listening and learning records in these libraries? Clear markers synchronize with the statistics files. Previously unseen offline records may arrive later. Weights and logs are kept.",L"Clear statistics?",MB_YESNO|MB_ICONWARNING|MB_DEFBUTTON2)==IDYES)self->on_clear();
-                self->refresh();return 0;
+                self->refresh();if(self->on_feedback)self->on_feedback(L"Action applied.");return 0;
             }
         }
         if(message==WM_CLOSE){ShowWindow(window,SW_HIDE);return 0;}
         if(message==WM_DESTROY){KillTimer(window,1);if(self->font_)DeleteObject(self->font_);self->font_=nullptr;self->window_=nullptr;return 0;}
-    }catch(const std::exception& e){MessageBoxA(window,e.what(),"IgnorantShuffle - Statistics",MB_OK|MB_ICONERROR);return 0;}
+    }catch(const std::exception& e){if(self && self->on_feedback)self->on_feedback(wide(e.what()));return 0;}
     return DefWindowProcW(window,message,wparam,lparam);
 }

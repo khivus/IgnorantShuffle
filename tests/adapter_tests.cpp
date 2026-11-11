@@ -290,7 +290,7 @@ struct PluginChecks {
         const auto stored = plugin.weights_.entries();
         module = GetModuleHandleW(nullptr); plugin.open_monitor();
         const auto editor = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_SETTINGS), nullptr, Plugin::dialog_proc, reinterpret_cast<LPARAM>(&plugin));
-        const auto settings = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_STORAGE), editor, Plugin::storage_proc, reinterpret_cast<LPARAM>(&plugin));
+        const auto settings = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_RULES), editor, Plugin::rules_proc, reinterpret_cast<LPARAM>(&plugin));
         check(Plugin::control_text(settings, IDC_MINIMUM_WEIGHT) == L"1", "The Windows minimum-weight field displays the saved setting.");
         const auto apply = [&](const wchar_t* value) {
             SetDlgItemTextW(settings, IDC_MINIMUM_WEIGHT, value);
@@ -376,7 +376,7 @@ struct PluginChecks {
         plugin.weights_.set(track_key(&second), 5);
         module = GetModuleHandleW(nullptr); plugin.open_monitor();
         const auto editor = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_SETTINGS), nullptr, Plugin::dialog_proc, reinterpret_cast<LPARAM>(&plugin));
-        const auto settings = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_STORAGE), editor, Plugin::storage_proc, reinterpret_cast<LPARAM>(&plugin));
+        const auto settings = CreateDialogParamW(module, MAKEINTRESOURCEW(IDD_RULES), editor, Plugin::rules_proc, reinterpret_cast<LPARAM>(&plugin));
         check(Plugin::control_text(settings, IDC_DEFAULT_WEIGHT) == L"5", "Default-weight settings start at five.");
         ListView_SetItemState(GetDlgItem(editor, IDC_TRACKS), 0, LVIS_SELECTED, LVIS_SELECTED);
         const auto apply = [&](const wchar_t* value) {
@@ -728,8 +728,8 @@ struct PluginChecks {
             prior_box = box;
         }
         RECT old_field{0, 0, 0, 17}; MapDialogRect(panel, &old_field);
-        check(child_bounds(IDC_COOLDOWN).bottom - child_bounds(IDC_COOLDOWN).top < old_field.bottom,
-            "The cooldown input is shorter than the previous fixed-height field.");
+        check(!IsWindowVisible(GetDlgItem(panel,IDC_COOLDOWN)),
+            "Cooldown editing lives in Settings rather than the compact player.");
         plugin.monitor_.restore_position(70, 80);
         plugin.monitor_.restore_size(400, 320);
         SendMessageW(panel, WM_EXITSIZEMOVE, 0, 0);
@@ -759,8 +759,8 @@ struct PluginChecks {
         SendMessageW(panel, WM_MOUSEWHEEL, MAKEWPARAM(0, -WHEEL_DELTA), 0);
         check(scroll_info().nPos > 0, "Mouse wheel scrolls the compact panel.");
         SendMessageW(panel, WM_VSCROLL, SB_TOP, 0);
-        SendMessageW(GetDlgItem(panel, IDC_OPEN_LOGS), WM_SETFOCUS, 0, 0);
-        const auto logs = child_bounds(IDC_OPEN_LOGS);
+        SendMessageW(GetDlgItem(panel, IDC_EDIT_WEIGHTS), WM_SETFOCUS, 0, 0);
+        const auto logs = child_bounds(IDC_EDIT_WEIGHTS);
         check(logs.top >= 0 && logs.bottom <= client.bottom, "Keyboard focus scrolls hidden controls into view.");
         SendMessageW(panel, WM_VSCROLL, SB_TOP, 0);
         capture_preview(panel, L"monitor-compact.bmp");
@@ -1755,6 +1755,48 @@ struct PluginChecks {
         check(ignorant::summarize(plugin.statistics_.records()).counters.at("reroll")==1,"New same-day counters survive clear without restoring old ones");
         plugin.Finalize();restored.Finalize();std::filesystem::remove_all(directory);
     }
+    static void settings_shell_checks(Manager& manager,Messages& messages) {
+        EmptyPlaylist playlist;manager.active=&playlist;
+        Plugin plugin;plugin.playlists_=query<IAIMPServicePlaylistManager>(&manager,IID_IAIMPServicePlaylistManager);
+        plugin.messages_=query<IAIMPServiceMessageDispatcher>(&messages,IID_IAIMPServiceMessageDispatcher);
+        module=GetModuleHandleW(nullptr);plugin.open_monitor();plugin.show_settings();
+        const auto shell=plugin.settings_window_.handle();const auto editor=plugin.dialog_;
+        check(IsWindow(shell) && GetParent(editor)==shell && (GetWindowLongPtrW(editor,GWL_STYLE)&WS_CHILD),"Weights are embedded in the modeless settings shell");
+        check(IsWindowEnabled(plugin.monitor_.handle()) && !IsWindowVisible(GetDlgItem(editor,IDOK)),"Settings keeps player usable and removes popup close buttons");
+        for(int page=1;page<7;++page)SendMessageW(shell,WM_COMMAND,MAKEWPARAM(3000+page,BN_CLICKED),0);
+        check(GetParent(plugin.update_dialog_)==shell && IsWindowVisible(plugin.update_dialog_),"Updates are embedded in Settings");
+        SendMessageW(shell,WM_COMMAND,MAKEWPARAM(3003,BN_CLICKED),0);
+        check(GetParent(plugin.statistics_window_.handle())==shell && IsWindowVisible(GetDlgItem(plugin.statistics_window_.handle(),2103)),"Statistics has its own embedded page tabs");
+        SendMessageW(shell,WM_COMMAND,MAKEWPARAM(3004,BN_CLICKED),0);
+        check(!IsWindowVisible(GetDlgItem(plugin.statistics_window_.handle(),2103)),"Learning is a separate settings category");
+        capture_preview(shell,L"settings-learning.bmp");
+        SendMessageW(shell,WM_COMMAND,MAKEWPARAM(3000,BN_CLICKED),0);
+        check(plugin.dialog_==editor && IsWindowVisible(editor),"Returning to weights reuses the view");
+        capture_preview(shell,L"settings-weights.bmp");
+        SendMessageW(shell,WM_CLOSE,0,0);check(IsWindow(shell) && !IsWindowVisible(shell),"Closing settings hides its reusable shell");
+        plugin.show_settings(1);check(plugin.settings_window_.handle()==shell && IsWindowVisible(plugin.rules_dialog_),"Reopening uses the same settings window");
+        plugin.Finalize();check(!IsWindow(shell) && !IsWindow(editor),"Finalization destroys embedded pages");manager.active=nullptr;
+    }
+    static void shared_settings_checks(Manager& manager,Messages& messages) {
+        EmptyPlaylist playlist;manager.active=&playlist;
+        const auto root=std::filesystem::current_path()/L"shared-settings-fixture";std::filesystem::create_directories(root);
+        const auto file=root/ignorant::shared_settings_filename;
+        std::filesystem::remove(file);std::filesystem::remove(file.wstring()+L".bak");
+        Plugin plugin;plugin.playlists_=query<IAIMPServicePlaylistManager>(&manager,IID_IAIMPServicePlaylistManager);plugin.messages_=query<IAIMPServiceMessageDispatcher>(&messages,IID_IAIMPServiceMessageDispatcher);
+        plugin.music_folders_={root};plugin.reload_shared_settings();
+        check(!plugin.share_settings_ && !std::filesystem::exists(file),"Shared settings are off by default and do no I/O");
+        ignorant::SharedSettings expected;expected.default_weight=7.5;expected.cooldown=12;expected.learning.smart=true;
+        expected.encode().save(file);plugin.reload_shared_settings();check(plugin.weights_.fallback()==5,"Disabled sharing leaves local rules unchanged");
+        plugin.share_settings_=true;plugin.reload_shared_settings();check(plugin.weights_.fallback()==7.5 && plugin.cooldown_==12 && plugin.statistics_.options.smart,"Opt-in loads shared rules and learning");
+        auto remote=expected.encode();remote.set("cooldown",24);remote.save(file);
+        bool conflict=false;try{plugin.publish_shared_settings();}catch(...){conflict=true;}
+        check(conflict && ignorant::SharedSettings::decode(remote).cooldown==24,"Concurrent shared changes reject publishing");
+        plugin.reload_shared_settings();plugin.cooldown_=9;plugin.publish_shared_settings();ignorant::Weights saved;saved.load(file);
+        check(ignorant::SharedSettings::decode(saved).cooldown==9 && std::filesystem::exists(file.wstring()+L".bak"),"Publishing preserves a backup and writes common settings");
+        saved.set("minimum",0);saved.save(file);bool invalid=false;try{plugin.reload_shared_settings();}catch(...){invalid=true;}
+        check(invalid && plugin.cooldown_==9 && plugin.minimum_weight_==1,"Invalid shared data preserves current rules");
+        plugin.Finalize();manager.active=nullptr;std::filesystem::remove_all(root);
+    }
     static void run() {
         Manager manager;
         Messages messages;
@@ -1766,6 +1808,8 @@ struct PluginChecks {
         check(plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Shuffle off must return boolean false, not E_NOTIMPL.");
         check(plugin.GetPrev(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Previous with shuffle off.");
         messages.shuffle = TRUE;
+        settings_shell_checks(manager,messages);
+        shared_settings_checks(manager,messages);
         statistics_checks(manager,messages);
         minimum_weight_checks(manager, messages);
         default_weight_checks(manager, messages);

@@ -84,7 +84,7 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                 }
             })
         }, bottomBar = {
-            Surface(tonalElevation = 3.dp) {
+            Surface(modifier = Modifier.navigationBarsPadding(), tonalElevation = 3.dp) {
                 PrimaryScrollableTabRow(selectedTabIndex = categoryPages.getValue(navigationCategory(page)).indexOf(page), edgePadding = 8.dp) {
                     categoryPages.getValue(navigationCategory(page)).forEach { title ->
                         Tab(selected = page == title, onClick = { page = title }, text = { Text(if (title == "Statistics") "Stats" else title) })

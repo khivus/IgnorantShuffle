@@ -1,3 +1,5 @@
+#include "shared_settings.h"
+#include "settings_window.h"
 #include <windows.h>
 #include <commdlg.h>
 #include <commctrl.h>
@@ -198,6 +200,42 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     bool cooldown_preview_ready_ = false;
     std::wstring preferences_error_;
     MonitorWindow monitor_;
+    HWND rules_dialog_=nullptr;
+    SettingsWindow settings_window_;
+    bool share_settings_=false;
+    std::filesystem::path shared_root_;
+    std::map<std::string,double> shared_before_;
+    bool shared_exists_=false;
+    void reload_shared_settings() {
+        if(!share_settings_)return;
+        if(music_folders_.empty())throw std::runtime_error("Choose a music folder first");
+        const auto root=music_folders_.front();const auto file=root/ignorant::shared_settings_filename;
+        if(!std::filesystem::exists(file) && std::filesystem::exists(file.wstring()+L".bak"))throw std::runtime_error("Restore the shared settings backup before reloading");
+        ignorant::Weights values;values.load(file);
+        const bool exists=std::filesystem::exists(file);
+        if(exists){
+            const auto value=ignorant::SharedSettings::decode(values);
+            weights_.set_default(value.default_weight);minimum_weight_=value.minimum;cooldown_=value.cooldown;
+            const bool changed_finite=finite_!=value.finite;finite_=value.finite;
+            statistics_.options=value.learning;statistics_.options_changed();
+            if(changed_finite){reset_finite_progress();}
+            save_preferences();changed();refresh_cooldown_preview();update_monitor();
+        }
+        shared_root_=root;shared_before_=values.entries();shared_exists_=exists;
+        settings_window_.feedback(exists?L"Shared settings loaded.":L"No shared file yet. Publish current settings to create it.");
+    }
+    void publish_shared_settings() {
+        if(!share_settings_)throw std::runtime_error("Enable shared settings first");
+        if(music_folders_.empty() || shared_root_!=music_folders_.front())throw std::runtime_error("Reload shared settings before publishing");
+        const auto file=shared_root_/ignorant::shared_settings_filename;
+        ignorant::Weights before;before.load(file);
+        if(std::filesystem::exists(file)!=shared_exists_ || before.entries()!=shared_before_)throw std::runtime_error("Settings changed on another device. Reload before publishing");
+        ignorant::SharedSettings value;value.default_weight=weights_.fallback();value.minimum=minimum_weight_;value.cooldown=cooldown_;value.finite=finite_;value.learning=statistics_.options;
+        auto values=before;const auto encoded=value.encode();for(const auto& entry:encoded.entries())values.set(entry.first,entry.second);
+        if(shared_exists_)std::filesystem::copy_file(file,file.wstring()+L".bak",std::filesystem::copy_options::overwrite_existing);
+        values.save(file);shared_before_=values.entries();shared_exists_=true;
+        settings_window_.feedback(L"Shared settings published. Sync the file with your music.");
+    }
     ignorant::LibraryStatistics statistics_;
     StatisticsWindow statistics_window_;
     std::string statistics_origin_="windows-"+ignorant::statistics_guid();
@@ -239,6 +277,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
 
     void save_preferences() {
         if (preferences_file_.empty()) return;
+        WritePrivateProfileStringW(L"Sharing",L"Enabled",share_settings_?L"1":L"0",preferences_file_.c_str());
         bool success = WritePrivateProfileStringW(L"Monitor", L"Enabled", enabled_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE;
         success = (WritePrivateProfileStringW(L"Updates", L"Automatic", auto_updates_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Updates", L"Repository", from_utf8(update_repository_).c_str(), preferences_file_.c_str()) != FALSE) && success;
@@ -269,6 +308,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     }
     void load_preferences() {
         if (preferences_file_.empty()) return;
+        share_settings_=GetPrivateProfileIntW(L"Sharing",L"Enabled",0,preferences_file_.c_str())!=0;
         wchar_t device[256]{};GetPrivateProfileStringW(L"Statistics",L"Device",L"",device,256,preferences_file_.c_str());
         statistics_origin_=utf8(device);
         try {ignorant::statistics_shard(statistics_origin_);}catch(...) {statistics_origin_="windows-"+ignorant::statistics_guid();}
@@ -709,7 +749,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                         throw std::runtime_error("Could not open the release page.");
                 } else if (id == IDOK || id == IDCANCEL) {
                     if (self->install_requested_) { self->install_requested_ = false; self->updater_.cancel(); }
-                    EndDialog(window, id); return TRUE;
+                    ShowWindow(self->settings_window_.handle(),SW_HIDE); return TRUE;
                 }
                 self->update_tick(); return TRUE;
             }
@@ -717,15 +757,35 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             if (message == WM_DESTROY) { KillTimer(window, 1); self->update_dialog_ = nullptr; return TRUE; }
         } catch (const std::exception& error) {
             if (self) self->log_.write("updates.ui.error", error.what());
-            MessageBoxA(window, error.what(), "IgnorantShuffle updates", MB_OK | MB_ICONERROR);
+            if(self)self->settings_window_.feedback(from_utf8(error.what()));
         }
         return FALSE;
     }
-    void show_updates() {
-        if (update_dialog_) { SetForegroundWindow(update_dialog_); return; }
-        if (DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_UPDATES), monitor_.handle(), updates_procedure, reinterpret_cast<LPARAM>(this)) == -1)
-            throw std::runtime_error("Could not open update settings.");
-        update_monitor();
+    void show_updates() { show_settings(6); }
+    void show_settings(int page=0) {
+        settings_window_.on_page=[this](int selected,HWND parent)->HWND {
+            if(selected==0) {
+                if(!dialog_)CreateDialogParamW(module,MAKEINTRESOURCEW(IDD_SETTINGS),parent,dialog_proc,reinterpret_cast<LPARAM>(this));
+                return dialog_;
+            }
+            if(selected==1){
+                if(!rules_dialog_)CreateDialogParamW(module,MAKEINTRESOURCEW(IDD_RULES),parent,rules_proc,reinterpret_cast<LPARAM>(this));
+                SetDlgItemTextW(rules_dialog_,IDC_DEFAULT_WEIGHT,weight_text(weights_.fallback()).c_str());
+                SetDlgItemTextW(rules_dialog_,IDC_MINIMUM_WEIGHT,weight_text(minimum_weight_).c_str());
+                SetDlgItemInt(rules_dialog_,IDC_COOLDOWN,cooldown_,FALSE);CheckDlgButton(rules_dialog_,IDC_FINITE_PLAYLIST,finite_?BST_CHECKED:BST_UNCHECKED);
+                return rules_dialog_;
+            }
+            if(selected==2) {
+                if(!storage_dialog_)CreateDialogParamW(module,MAKEINTRESOURCEW(IDD_STORAGE),parent,storage_proc,reinterpret_cast<LPARAM>(this));
+                return storage_dialog_;
+            }
+            if(selected>=3 && selected<=5){show_statistics(selected==3?0:selected==4?5:6);return statistics_window_.handle();}
+            if(!update_dialog_)CreateDialogParamW(module,MAKEINTRESOURCEW(IDD_UPDATES),parent,updates_procedure,reinterpret_cast<LPARAM>(this));
+            return update_dialog_;
+        };
+        const bool opening=!settings_window_.handle() || !IsWindowVisible(settings_window_.handle());
+        if(opening)try{reload_shared_settings();}catch(const std::exception& e){log_.write("settings.shared.error",e.what());}
+        settings_window_.show(module,monitor_.handle(),page);
     }
     void statistics_tick(bool restarted=false) {
         statistics_.poll();if(!player_)return;
@@ -752,6 +812,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if(active_pass_)data.pass_heard=active_pass_->played.size();return data;
     }
     void show_statistics(int page=0) {
+        statistics_window_.on_feedback=[this](const std::wstring& message){settings_window_.feedback(message);};
         statistics_window_.on_log_folder=[this]{if(!log_file_.empty() && reinterpret_cast<INT_PTR>(ShellExecuteW(statistics_window_.handle(),L"open",log_file_.parent_path().c_str(),nullptr,nullptr,SW_SHOWNORMAL))<=32)throw std::runtime_error("Could not open log folder");};
         statistics_window_.on_data=[this]{return statistics_data();};
         statistics_window_.on_settings=[this](const ignorant::LearningOptions& options,bool collecting){std::lock_guard<std::recursive_mutex> lock(mutex_);statistics_.options=options;statistics_.options_changed();statistics_.pause(!collecting);save_preferences();changed();refresh_cooldown_preview();update_monitor();};
@@ -761,13 +822,13 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             wchar_t filename[MAX_PATH]=L"IgnorantShuffle-statistics";OPENFILENAMEW save{sizeof(save)};save.hwndOwner=statistics_window_.handle();save.lpstrFile=filename;save.nMaxFile=MAX_PATH;save.lpstrFilter=csv?L"CSV files (*.csv)\0*.csv\0\0":L"JSON files (*.json)\0*.json\0\0";save.lpstrDefExt=csv?L"csv":L"json";save.Flags=OFN_OVERWRITEPROMPT|OFN_PATHMUSTEXIST;
             if(!GetSaveFileNameW(&save))return;const auto records=statistics_data().records;std::ofstream output(std::filesystem::path(filename),std::ios::binary);output<<(csv?ignorant::statistics_csv(records):ignorant::statistics_json(records));output.close();if(!output)throw std::runtime_error("Could not export statistics");
         };
-        statistics_window_.show(module,monitor_.handle(),page);
+        statistics_window_.show(module,settings_window_.handle(),page,true);
     }
     void open_monitor(bool activate = false) {
         if (shutting_down_) return;
         if (!monitor_.handle()) {
             monitor_.on_tick = [this] { std::lock_guard<std::recursive_mutex> lock(mutex_);flush_queue_refresh(); statistics_tick(); update_tick(); update_monitor(); };
-            monitor_.on_statistics = [this] { show_statistics(); };
+            monitor_.on_statistics = [this] { show_settings(3); };
             monitor_.on_updates = [this] { show_updates(); };
             monitor_.on_enabled = [this](bool enabled) { set_enabled(enabled); };
             monitor_.on_pinned = [this](bool pinned) { pinned_ = pinned; save_preferences(); update_monitor(); };
@@ -778,7 +839,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             };
             monitor_.on_weights = [this] { Show(monitor_.handle()); };
             monitor_.on_move = [this] { save_preferences(); };
-            monitor_.on_logs = [this] {show_statistics(6);};
+            monitor_.on_logs = [this] {show_settings(5);};
             monitor_.on_error = [this](const std::string& error) { log_.write("monitor.error", error); };
             monitor_.on_reroll = [this] { reroll_next(); };
             monitor_.on_weight = [this](int weight) { apply_current_weight(weight); };
@@ -1288,6 +1349,28 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             roots += folder; SetDlgItemTextW(window, IDC_MUSIC_FOLDER, roots.c_str()); CoTaskMemFree(folder);
         }
     }
+    static INT_PTR CALLBACK rules_proc(HWND window,UINT message,WPARAM wparam,LPARAM lparam){
+        auto* self=reinterpret_cast<Plugin*>(GetWindowLongPtrW(window,DWLP_USER));
+        if(message==WM_INITDIALOG){
+            self=reinterpret_cast<Plugin*>(lparam);SetWindowLongPtrW(window,DWLP_USER,lparam);self->rules_dialog_=window;
+            SetDlgItemTextW(window,IDC_DEFAULT_WEIGHT,weight_text(self->weights_.fallback()).c_str());
+            SetDlgItemTextW(window,IDC_MINIMUM_WEIGHT,weight_text(self->minimum_weight_).c_str());
+            SetDlgItemInt(window,IDC_COOLDOWN,self->cooldown_,FALSE);CheckDlgButton(window,IDC_FINITE_PLAYLIST,self->finite_?BST_CHECKED:BST_UNCHECKED);return TRUE;
+        }
+        if(!self)return FALSE;
+        try {
+            if(message==WM_COMMAND && HIWORD(wparam)==BN_CLICKED){
+                const auto id=LOWORD(wparam);
+                if(id==IDC_APPLY_DEFAULT_WEIGHT)self->apply_default_weight(window);
+                else if(id==IDC_APPLY_MINIMUM_WEIGHT)self->apply_minimum_weight(window);
+                else if(id==IDC_APPLY_COOLDOWN){BOOL valid=FALSE;const auto value=GetDlgItemInt(window,IDC_COOLDOWN,&valid,FALSE);if(!valid || value>10000)throw std::runtime_error("Cooldown must be 0 to 10000");self->set_cooldown(value);}
+                else if(id==IDC_FINITE_PLAYLIST)self->set_finite(IsDlgButtonChecked(window,id)==BST_CHECKED);
+                self->settings_window_.feedback(L"Shuffle rules saved.");return TRUE;
+            }
+            if(message==WM_DESTROY)self->rules_dialog_=nullptr;
+        }catch(const std::exception& e){self->settings_window_.feedback(from_utf8(e.what()));}
+        return FALSE;
+    }
     static INT_PTR CALLBACK storage_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
         auto* self = reinterpret_cast<Plugin*>(GetWindowLongPtrW(window, DWLP_USER));
         try {
@@ -1299,13 +1382,17 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 SetDlgItemTextW(window, IDC_MUSIC_FOLDER, roots.c_str());
                 SetDlgItemTextW(window, IDC_DEFAULT_WEIGHT, weight_text(self->weights_.fallback()).c_str());
                 SetDlgItemTextW(window, IDC_MINIMUM_WEIGHT, weight_text(self->minimum_weight_).c_str());
+                CheckDlgButton(window,IDC_SHARE_SETTINGS,self->share_settings_?BST_CHECKED:BST_UNCHECKED);
                 self->fill_transfer_roots(window);
                 self->storage_status(window); return TRUE;
             }
             if (!self) return FALSE;
             if (message == WM_COMMAND) {
                 const auto id = LOWORD(wparam);
-                if (id == IDOK || id == IDCANCEL) EndDialog(window, 0);
+                if (id == IDOK || id == IDCANCEL) ShowWindow(self->settings_window_.handle(),SW_HIDE);
+                else if(id==IDC_SHARE_SETTINGS){self->share_settings_=IsDlgButtonChecked(window,id)==BST_CHECKED;self->save_preferences();if(self->share_settings_)self->reload_shared_settings();else self->settings_window_.feedback(L"Sharing is off. Current settings stay on this device.");}
+                else if(id==IDC_RELOAD_SETTINGS)self->reload_shared_settings();
+                else if(id==IDC_PUBLISH_SETTINGS)self->publish_shared_settings();
                 else if (id == IDC_BROWSE_MUSIC) self->browse_music_folder(window);
                 else if (id == IDC_APPLY_STORAGE) self->apply_storage_dialog(window);
                 else if (id == IDC_APPLY_DEFAULT_WEIGHT) self->apply_default_weight(window);
@@ -1313,11 +1400,11 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 else if (id == IDC_IMPORT || id == IDC_EXPORT) self->storage_transfer(window, id == IDC_EXPORT);
                 return TRUE;
             }
-            if (message == WM_CLOSE) { EndDialog(window, 0); return TRUE; }
+            if (message == WM_CLOSE) { ShowWindow(self->settings_window_.handle(),SW_HIDE); return TRUE; }
             if (message == WM_DESTROY) self->storage_dialog_ = nullptr;
         } catch (const std::exception& error) {
             if (self) self->log_.write("storage.settings.error", error.what());
-            MessageBoxA(window, error.what(), "IgnorantShuffle - Weight storage", MB_OK | MB_ICONERROR);
+            if(self)self->settings_window_.feedback(from_utf8(error.what()));
         }
         return FALSE;
     }
@@ -1336,13 +1423,13 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     void command(HWND window, int id, int /*notification*/) {
         // Keep the options dialog and folder picker outside the queue lock.
         if (id == IDC_STORAGE) {
-            DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_STORAGE), window, storage_proc, reinterpret_cast<LPARAM>(this)); return;
+            show_settings(2); return;
         }
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (id == IDOK && GetFocus() == GetDlgItem(window, IDC_WEIGHT)) {
             apply_editor_weight(window, parse_custom_weight(control_text(window, IDC_WEIGHT))); return;
         }
-        if (id == IDOK || id == IDCANCEL) { EndDialog(window, 0); return; }
+        if (id == IDOK || id == IDCANCEL) { ShowWindow(settings_window_.handle(),SW_HIDE); return; }
         if (id == IDC_REFRESH) refresh(window);
         if (id == IDC_SELECT_ALL) {
             track_table_.select_all(); selection(window);
@@ -1386,7 +1473,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 }return TRUE;
             }
             if(self && message==WM_GETMINMAXINFO){RECT minimum{0,0,480,288};MapDialogRect(window,&minimum);AdjustWindowRectEx(&minimum,static_cast<DWORD>(GetWindowLongPtrW(window,GWL_STYLE)),FALSE,0);reinterpret_cast<MINMAXINFO*>(lparam)->ptMinTrackSize={minimum.right-minimum.left,minimum.bottom-minimum.top};return TRUE;}
-            if (self && message == WM_COMMAND) { self->command(window, LOWORD(wparam), HIWORD(wparam)); return TRUE; }
+            if (self && message == WM_COMMAND) { self->command(window, LOWORD(wparam), HIWORD(wparam)); if(HIWORD(wparam)==BN_CLICKED)self->settings_window_.feedback(L"Action applied."); return TRUE; }
             if (self && message == WM_APP + 3) {
                 self->editor_selection_pending_ = false; self->selection(window); return TRUE;
             }
@@ -1406,14 +1493,14 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                     SetWindowLongPtrW(window, DWLP_MSGRESULT, self->track_table_.notify(notification)); return TRUE;
                 }
             }
-            if (message == WM_CLOSE) { EndDialog(window, 0); return TRUE; }
+            if (message == WM_CLOSE) { ShowWindow(self->settings_window_.handle(),SW_HIDE); return TRUE; }
             if (self && message == WM_DESTROY) { self->track_table_.detach(); self->dialog_ = nullptr; }
         } catch (const std::exception& error) {
             if (self) self->log_.write("settings.error", error.what());
-            MessageBoxA(window, error.what(), "IgnorantShuffle", MB_OK | MB_ICONERROR);
+            if(self)self->settings_window_.feedback(from_utf8(error.what()));
         } catch (...) {
             if (self) self->log_.write("settings.error", "unknown exception");
-            MessageBoxW(window, L"Unexpected plugin error.", L"IgnorantShuffle", MB_OK | MB_ICONERROR);
+            if(self)self->settings_window_.feedback(L"Unexpected plugin error. See Diagnostics and logs.");
         }
         return FALSE;
     }
@@ -1468,7 +1555,9 @@ public:
             load_preferences();
             try { storage_.configure(music_folders_); }
             catch (const std::exception& error) { storage_error_ = from_utf8(error.what()); log_.write("storage.error", error.what()); }
-            statistics_.configure(statistics_origin_,profile_dir_/L"statistics-cache",music_folders_);statistics_.poll(true);save_preferences();
+            statistics_.configure(statistics_origin_,profile_dir_/L"statistics-cache",music_folders_);statistics_.poll(true);
+            try{reload_shared_settings();}catch(const std::exception& e){preferences_error_=from_utf8(e.what());log_.write("settings.shared.error",e.what());}
+            save_preferences();
             // Loading the plugin during playback must also cool down the track
             // already playing, even though we missed its stream-start event.
             if (auto current = current_track()) {
@@ -1501,10 +1590,11 @@ public:
         install_requested_ = false; updater_.stop();
         if (hooked_ && messages_) messages_->Unhook(static_cast<IAIMPMessageHook*>(this));
         hooked_ = false;
-        statistics_.finish();statistics_window_.destroy();monitor_.destroy();
-        if (update_dialog_) EndDialog(update_dialog_, 0);
-        if (dialog_) EndDialog(dialog_, 0);
-        if (storage_dialog_) EndDialog(storage_dialog_, 0);
+        statistics_.finish();settings_window_.destroy();statistics_window_.destroy();monitor_.destroy();
+        settings_window_.destroy();
+        if (update_dialog_) DestroyWindow(update_dialog_);
+        if (dialog_) DestroyWindow(dialog_);
+        if (storage_dialog_) DestroyWindow(storage_dialog_);
         if (registered_ && core_) core_->UnregisterExtension(static_cast<IAIMPExtensionPlaybackQueue*>(this));
         registered_ = false;
         history_.clear();
@@ -1529,7 +1619,7 @@ public:
                 message == AIMP_MSG_EVENT_LOADED || message == AIMP_MSG_EVENT_TERMINATING ||
                 (message == AIMP_MSG_EVENT_PROPERTY_VALUE && parameter == AIMP_MSG_PROPERTY_SHUFFLE))
                 log_.write("aimp.event", "message=" + std::to_string(message) + " parameter=" + std::to_string(parameter) + " playing=" + context_id(playing_));
-            if (message == AIMP_MSG_EVENT_TERMINATING) { shutting_down_ = true; statistics_.finish();statistics_window_.destroy();monitor_.destroy(); return; }
+            if (message == AIMP_MSG_EVENT_TERMINATING) { shutting_down_ = true; statistics_.finish();settings_window_.destroy();statistics_window_.destroy();monitor_.destroy(); return; }
             if (message == AIMP_MSG_EVENT_LOADED) { open_monitor(); return; }
             if (message == AIMP_MSG_EVENT_STREAM_START) {
                 auto started = prepared_track_ ? prepared_track_ : current_track();
@@ -1565,12 +1655,11 @@ public:
         } catch (...) { log_.write("aimp.event.error", "floating-window update failed"); OutputDebugStringW(L"IgnorantShuffle: could not update floating window.\n"); }
     }
     void WINAPI Show(HWND parent) override {
-        if (dialog_) { SetForegroundWindow(dialog_); return; }
         if (!core_) return;
         INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_LISTVIEW_CLASSES};
         if (!InitCommonControlsEx(&controls)) return;
         open_monitor();
-        DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SETTINGS), parent, dialog_proc, reinterpret_cast<LPARAM>(this));
+        (void)parent; show_settings();
     }
     HRESULT WINAPI GetNext(IUnknown* current, LongWord flags, IAIMPPlaybackQueueItem* output) override {
         if (!output) return FALSE;

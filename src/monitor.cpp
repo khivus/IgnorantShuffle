@@ -200,24 +200,9 @@ void MonitorWindow::layout() {
             place(IDC_QUICK_WEIGHT_0 + weight, margin + inset + left, y + buttons_y, right - left, y_units(window_, 14));
         }
         y += current_height + y_units(window_, 4);
-        const auto cooldown_label_width = label_width(IDC_COOLDOWN_LABEL) + gap;
-        const auto field_width = x_units(window_, 35), apply_width = x_units(window_, 33), off_width = label_width(IDC_COOLDOWN_OFF) + gap;
-        if (width >= cooldown_label_width + field_width + apply_width + off_width + 3 * gap) {
-            place(IDC_COOLDOWN_LABEL, margin, y + y_units(window_, 2), cooldown_label_width, y_units(window_, 10));
-            place(IDC_COOLDOWN, margin + cooldown_label_width + gap, y + y_units(window_, 1), field_width, y_units(window_, 12));
-            place(IDC_APPLY_COOLDOWN, margin + cooldown_label_width + field_width + 2 * gap, y, apply_width, y_units(window_, 14));
-            place(IDC_COOLDOWN_OFF, margin + cooldown_label_width + field_width + apply_width + 3 * gap, y + y_units(window_, 2), off_width, y_units(window_, 10));
-        } else {
-            place(IDC_COOLDOWN_LABEL, margin, y, width, y_units(window_, 10));
-            y += y_units(window_, 12);
-            place(IDC_COOLDOWN, margin, y + y_units(window_, 1), field_width, y_units(window_, 12));
-            place(IDC_APPLY_COOLDOWN, margin + field_width + gap, y, apply_width, y_units(window_, 14));
-            place(IDC_COOLDOWN_OFF, margin + field_width + apply_width + 2 * gap, y + y_units(window_, 2), off_width, y_units(window_, 10));
-        }
-        y += y_units(window_, 17);
-        const auto status_height = text_height(IDC_COOLDOWN_STATUS, width, y_units(window_, 9));
-        place(IDC_COOLDOWN_STATUS, margin, y, width, status_height);
-        y += status_height + y_units(window_, 4);
+        for(const int id:{IDC_COOLDOWN_LABEL,IDC_COOLDOWN,IDC_APPLY_COOLDOWN,IDC_COOLDOWN_OFF})ShowWindow(GetDlgItem(window_,id),SW_HIDE);
+        const auto status_height=text_height(IDC_COOLDOWN_STATUS,width,y_units(window_,9));
+        place(IDC_COOLDOWN_STATUS,margin,y,width,status_height);y+=status_height+y_units(window_,4);
         const auto next_height = std::min(text_height(IDC_NEXT_TRACK, inner, y_units(window_, 9)), y_units(window_, 20));
         const auto details_height = text_height(IDC_DECISION, inner, y_units(window_, 9));
         const auto details_y = y_units(window_, 11) + next_height + y_units(window_, 2);
@@ -225,22 +210,14 @@ void MonitorWindow::layout() {
         place(IDC_NEXT_TRACK, margin + inset, y + y_units(window_, 11), inner, next_height);
         place(IDC_DECISION, margin + inset, y + details_y, inner, details_height);
         y += details_y + details_height + y_units(window_, 8);
-        const int buttons[]{IDC_EDIT_WEIGHTS, IDC_REROLL_NEXT, IDC_OPEN_LOGS};
-        for (int i = 0; i < 3; ++i) {
-            const auto left = i * (width + gap) / 3;
-            const auto right = (i + 1) * (width + gap) / 3 - gap;
-            place(buttons[i], margin + left, y, right - left, y_units(window_, 15));
-        }
-        y += y_units(window_, 19);
-        const auto notice_height = text_height(IDC_PANEL_NOTICE, width, y_units(window_, 9));
-        place(IDC_PANEL_NOTICE, margin, y, width, notice_height);
-        y += notice_height + y_units(window_, 3);
-        place(IDC_STATISTICS,margin,y,width,y_units(window_,15));y+=y_units(window_,19);
-        const auto updates_width = x_units(window_, 59);
-        const auto update_height = text_height(IDC_UPDATE_SUMMARY, width - updates_width - gap, y_units(window_, 14));
-        place(IDC_UPDATES, margin, y, updates_width, y_units(window_, 15));
-        place(IDC_UPDATE_SUMMARY, margin + updates_width + gap, y, width - updates_width - gap, update_height);
-        content_height_ = y + std::max(update_height, y_units(window_, 15)) + y_units(window_, 4);
+        place(IDC_EDIT_WEIGHTS, margin, y, (width-gap)/2, y_units(window_, 17));
+        place(IDC_REROLL_NEXT, margin+(width+gap)/2, y, (width-gap)/2, y_units(window_,17));
+        for(const int id:{IDC_OPEN_LOGS,IDC_STATISTICS,IDC_UPDATES,IDC_UPDATE_SUMMARY})ShowWindow(GetDlgItem(window_,id),SW_HIDE);
+        SetDlgItemTextW(window_,IDC_EDIT_WEIGHTS,L"Settings...");
+        y+=y_units(window_,22);
+        const auto notice_height=text_height(IDC_PANEL_NOTICE,width,y_units(window_,9));
+        place(IDC_PANEL_NOTICE,margin,y,width,notice_height);
+        content_height_=y+notice_height+y_units(window_,6);
     };
     // Account for the width consumed by the vertical scrollbar before wrapping.
     const auto style = GetWindowLongPtrW(window_, GWL_STYLE);

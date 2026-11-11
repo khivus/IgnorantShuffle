@@ -3,7 +3,7 @@
 #include "resource.h"
 #include "windows_version.h"
 IDD_SETTINGS DIALOGEX 0, 0, 480, 430
-STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MAXIMIZEBOX
+STYLE DS_SETFONT | DS_CONTROL | WS_POPUP | WS_CLIPCHILDREN
 CAPTION "IgnorantShuffle"
 FONT 9, "Segoe UI"
 BEGIN
@@ -26,12 +26,12 @@ BEGIN
     PUSHBUTTON "Apply custom", IDC_APPLY_WEIGHT, 166, 357, 91, 16
     PUSHBUTTON "Refresh playlist", IDC_REFRESH, 279, 357, 101, 16
     LTEXT "", IDC_STATUS, 10, 379, 460, 20
-    PUSHBUTTON "Weight storage...", IDC_STORAGE, 10, 406, 90, 18
+    PUSHBUTTON "Music folders and rules", IDC_STORAGE, 10, 406, 90, 18
     PUSHBUTTON "Use default", IDC_RESET_WEIGHT, 110, 406, 78, 18
     DEFPUSHBUTTON "Close", IDOK, 392, 406, 78, 18
 END
 IDD_STORAGE DIALOGEX 0, 0, 350, 342
-STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+STYLE DS_SETFONT | DS_CONTROL | WS_POPUP | WS_CLIPCHILDREN
 CAPTION "IgnorantShuffle - Weight storage"
 FONT 9, "Segoe UI"
 BEGIN
@@ -46,15 +46,10 @@ BEGIN
     PUSHBUTTON "Import...", IDC_IMPORT, 10, 210, 76, 16
     PUSHBUTTON "Export...", IDC_EXPORT, 94, 210, 76, 16
     LTEXT "Import replaces this root's file. Export copies it unchanged. Sync the file together with its music subfolders to share weights with Android.", -1, 10, 232, 330, 22
-    LTEXT "Default weight:", -1, 10, 264, 80, 10
-    EDITTEXT IDC_DEFAULT_WEIGHT, 96, 261, 78, 14, ES_AUTOHSCROLL | WS_TABSTOP
-    PUSHBUTTON "Apply default", IDC_APPLY_DEFAULT_WEIGHT, 182, 261, 88, 16
-    LTEXT "Used for songs without a saved weight. Initially 5.", -1, 10, 281, 330, 10
-    LTEXT "Minimum weight:", -1, 10, 299, 80, 10
-    EDITTEXT IDC_MINIMUM_WEIGHT, 96, 296, 78, 14, ES_AUTOHSCROLL | WS_TABSTOP
-    PUSHBUTTON "Apply minimum", IDC_APPLY_MINIMUM_WEIGHT, 182, 296, 88, 16
-    LTEXT "Initially 1. Must be greater than 0. Weights below this are excluded.", -1, 10, 317, 260, 16
-    DEFPUSHBUTTON "Close", IDOK, 274, 318, 66, 16
+    CONTROL "Share settings between devices (off by default)", IDC_SHARE_SETTINGS, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 10, 264, 330, 16
+    LTEXT "Shares shuffle rules and learning options using the first music root. Sync IgnorantShuffle.settings.tsv with your music. Device preferences stay local.", -1, 10, 285, 330, 24
+    PUSHBUTTON "Reload shared", IDC_RELOAD_SETTINGS, 10, 316, 115, 18
+    PUSHBUTTON "Publish current settings", IDC_PUBLISH_SETTINGS, 136, 316, 160, 18
 END
 IDD_MONITOR DIALOGEX 0, 0, 260, 230
 STYLE DS_SETFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_VSCROLL
@@ -89,7 +84,7 @@ BEGIN
     GROUPBOX "Next weighted choice", IDC_NEXT_GROUP, 10, 202, 290, 103
     LTEXT "Waiting for AIMP to request a track", IDC_NEXT_TRACK, 18, 216, 274, 24, SS_NOPREFIX | SS_PATHELLIPSIS
     LTEXT "", IDC_DECISION, 18, 244, 274, 55, SS_NOPREFIX
-    PUSHBUTTON "Track weights...", IDC_EDIT_WEIGHTS, 10, 313, 88, 18, WS_GROUP
+    PUSHBUTTON "Settings...", IDC_EDIT_WEIGHTS, 10, 313, 88, 18, WS_GROUP
     PUSHBUTTON "Reroll next", IDC_REROLL_NEXT, 106, 313, 116, 18
     PUSHBUTTON "Open logs", IDC_OPEN_LOGS, 230, 313, 70, 18
     LTEXT "AIMP's manual queue and repeat settings can take priority.", IDC_PANEL_NOTICE, 10, 339, 290, 20, SS_NOPREFIX
@@ -98,7 +93,7 @@ BEGIN
     LTEXT "", IDC_UPDATE_SUMMARY, 80, 364, 210, 20, SS_NOPREFIX
 END
 IDD_UPDATES DIALOGEX 0, 0, 350, 202
-STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+STYLE DS_SETFONT | DS_CONTROL | WS_POPUP | WS_CLIPCHILDREN
 CAPTION "IgnorantShuffle - Updates"
 FONT 9, "Segoe UI"
 BEGIN
@@ -135,4 +130,23 @@ BEGIN
  BEGIN
   VALUE "Translation", 0x0409, 1200
  END
+END
+
+IDD_RULES DIALOGEX 0, 0, 350, 300
+STYLE DS_SETFONT | DS_CONTROL | WS_POPUP | WS_CLIPCHILDREN
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT "Default weight", -1, 12, 12, 150, 12
+    EDITTEXT IDC_DEFAULT_WEIGHT, 12, 30, 90, 16, ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON "Apply default", IDC_APPLY_DEFAULT_WEIGHT, 112, 30, 100, 16
+    LTEXT "Used for tracks without a saved weight. Initially 5.", -1, 12, 54, 320, 20
+    LTEXT "Minimum eligible weight", -1, 12, 85, 240, 12
+    EDITTEXT IDC_MINIMUM_WEIGHT, 12, 103, 90, 16, ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON "Apply minimum", IDC_APPLY_MINIMUM_WEIGHT, 112, 103, 100, 16
+    LTEXT "Must be greater than zero. Lower weights are excluded.", -1, 12, 127, 320, 20
+    LTEXT "Cooldown (other tracks before a repeat; 0 = off)", -1, 12, 158, 320, 12
+    EDITTEXT IDC_COOLDOWN, 12, 176, 90, 16, ES_NUMBER | WS_TABSTOP
+    PUSHBUTTON "Apply cooldown", IDC_APPLY_COOLDOWN, 112, 176, 100, 16
+    CONTROL "Play playlist once", IDC_FINITE_PLAYLIST, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 12, 214, 250, 16
+    LTEXT "", IDC_STORAGE_STATUS, 12, 250, 320, 40
 END
