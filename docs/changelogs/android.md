@@ -4,6 +4,13 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.11.0 (versionCode 13)
+
+- Add full-width, fixed icon-and-label bottom navigation and retain all pages in the grouped drawer.
+- Add brief action feedback, queue positions beside playlist titles, animated drag reordering and accessible reorder actions.
+- Add optional shared shuffle and learning settings, disabled by default, with explicit reload/publish and conflict detection.
+- Arrange track-weight presets in a compact five-column grid.
+
 ## 0.10.0 (versionCode 12)
 
 - Save per-device statistics sidecars alongside each music root's weights so folder synchronization shares listening history and feedback with Windows.

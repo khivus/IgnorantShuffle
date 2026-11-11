@@ -1,19 +1,20 @@
-# IgnorantShuffle Android v0.10.0
+# IgnorantShuffle Android v0.11.0
 
-## Navigation and browsing
+## Shared settings
 
-- Use the standard left drawer with distinct section headings, grouped settings and a Connected / Disconnected AIMP indicator.
-- Browse roomier Playlist and Logs screens with retained scroll/search positions and quick weights from 0 to 10.
-- Add tracks from the searchable Playlist to the app queue, then reorder or remove them on Queue.
+- Optionally share shuffle rules and listening-learning options with Windows through the selected music root. Sharing is off by default. Reload shared settings or publish local settings explicitly; conflicting edits are rejected.
 
-## Statistics and learning
+## Navigation and feedback
 
-- Browse overview cards, daily listening, track/artist rankings, history, per-track totals, early exits, library coverage and shuffle summaries.
-- Filter Today, 7 days, 30 days or All time; pause collection, confirm clearing and export CSV/JSON.
-- Enable configurable listening balance and smart weights, with gentle feedback from early skips, full listens, qualified replays and volume increases.
-- Save per-device statistics alongside weights and share history/learning with Windows through your folder sync. Existing private history migrates when linked to music files.
+- Use a larger, fixed, full-width bottom navigation bar with icons and labels. All pages also remain available under grouped drawer headings.
+- See brief action confirmations and errors without blocking the rest of the app.
+- See every queued position beside a playlist title, including repeated entries.
 
-Android version: **0.10.0**, versionCode **12**. Bundled core: **0.2.0**.
+## Queue and weights
+
+- Hold a queue handle to drag tracks into order, with row animations, scrolling near the list edges and accessible reorder actions.
+- Choose track weights from a compact five-column preset grid.
+
+Android version: **0.11.0**, versionCode **13**. Bundled core: **0.2.0**.
 Requires Android 8.0+; retains the application ID and pinned update signing key.
-The app provides no statistics server or cloud backup. Include all
-`IgnorantShuffle.statistics.*.tsv` files when syncing weights and music roots.
+The Android companion remains a preview build. File synchronization is external to the app.

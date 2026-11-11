@@ -3,6 +3,12 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## 0.16.0
+
+- Consolidate weights, shuffle rules, folders, statistics, learning, logs and updates in one grouped modeless settings window; simplify the player footer.
+- Add optional shared shuffle and learning settings, disabled by default, with explicit reload/publish, conflict detection and backups.
+- Prevent overlapping sidebar controls from erasing buttons during redraws.
+
 ## 0.15.0
 
 - Add configurable listening balance and smart weights, with per-signal switches, small rewards/penalties and bounded session/track adjustments shared with Android.

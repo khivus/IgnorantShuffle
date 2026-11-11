@@ -1,12 +1,14 @@
 ## What's new
 
-- Both versions: Statistics shows listening time, qualified plays, top tracks and artists, recent history, library coverage and shuffle summaries. Filter by Today, 7 days, 30 days or All time, export CSV/JSON, pause collection or clear it with confirmation.
-- Both versions: listening balance favors less-played tracks. Optional smart weights learn gently from early skips, full listens, replays and volume increases, with configurable strengths, limits and individual signals.
-- Android: add tracks from the searchable Playlist to an app queue, then reorder or remove them on Queue.
+- Optionally share shuffle rules and listening-learning settings between Windows and Android. Sharing is off by default on each device. Enable it in Music folders, sync `IgnorantShuffle.settings.tsv` with your music, and use Reload shared or Publish current settings to choose which settings to use.
 
 ## Improvements
 
-- Android: a standard left navigation drawer, clearer category headings, grouped settings and a labeled AIMP connection indicator.
-- Android: smoother, roomier Playlist and Logs screens, retained browsing positions and quick weight choices from 0 to 10.
-- Windows: a taller, resizable track-weight list and a searchable Logs view with full event details.
-- Statistics are saved beside music-root weights in separate per-device files. Include every `IgnorantShuffle.statistics.*.tsv` file in your folder sync to share history and learning between Windows and Android. Existing Android history migrates when linked to music files; unlinked history stays on the device. No statistics server or app-managed cloud backup is used.
+- Android preview: use larger, full-width bottom navigation with icons and labels. Every page remains available in the grouped left drawer.
+- Android: hold a queue handle to drag tracks into a new order. Playlist titles show queue positions, and brief action messages keep the rest of the app usable.
+- Android: choose track weights from a compact five-column preset grid.
+- Windows: keep the player focused on playback and quick weights. Open one Settings window with grouped categories for weights, shuffle rules, folders, statistics, learning, logs and updates.
+
+## Fixes
+
+- Windows: prevent overlapping settings backgrounds from painting over sidebar buttons when the window redraws.
