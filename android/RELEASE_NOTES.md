@@ -1,20 +1,16 @@
-# IgnorantShuffle Android v0.11.0
+# IgnorantShuffle Android v0.12.0
 
-## Shared settings
+## Direct update controls
 
-- Optionally share shuffle rules and listening-learning options with Windows through the selected music root. Sharing is off by default. Reload shared settings or publish local settings explicitly; conflicting edits are rejected.
+- Put check preferences, release notes, download progress and installation controls directly on the Updates page.
+- Show Update available above the AIMP connection status and open Updates when the status area is tapped. Automatic checks no longer open a separate full-screen update dialog.
 
-## Navigation and feedback
+## Automatic check schedule
 
-- Use a larger, fixed, full-width bottom navigation bar with icons and labels. All pages also remain available under grouped drawer headings.
-- See brief action confirmations and errors without blocking the rest of the app.
-- See every queued position beside a playlist title, including repeated entries.
+- Save a check interval from 1 to 10080 minutes, defaulting to 1440 (24 hours), with convenient interval presets.
+- Check on every fresh app launch when automatic checks are enabled, even after a recent check or with a verified APK already cached.
+- Continue periodic checks while the process runs and catch up on foreground when due. Android may delay background timers. Disable automatic checks to stop future scheduled requests; manual checks still work.
 
-## Queue and weights
-
-- Hold a queue handle to drag tracks into order, with row animations, scrolling near the list edges and accessible reorder actions.
-- Choose track weights from a compact five-column preset grid.
-
-Android version: **0.11.0**, versionCode **13**. Bundled core: **0.2.0**.
+Android version: **0.12.0**, versionCode **14**. Bundled core: **0.2.0**.
 Requires Android 8.0+; retains the application ID and pinned update signing key.
-The Android companion remains a preview build. File synchronization is external to the app.
+The Android companion remains a preview build.

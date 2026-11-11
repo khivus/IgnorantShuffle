@@ -248,6 +248,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     std::string update_repository_ = ignorant::default_update_repository;
     bool auto_updates_ = true, install_requested_ = false;
     ULONGLONG next_update_check_ = 0;
+    int update_interval_minutes_ = 1440;
     HWND update_dialog_ = nullptr;
     std::string last_update_status_;
     std::mt19937_64 random_{std::random_device{}()};
@@ -279,6 +280,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (preferences_file_.empty()) return;
         WritePrivateProfileStringW(L"Sharing",L"Enabled",share_settings_?L"1":L"0",preferences_file_.c_str());
         bool success = WritePrivateProfileStringW(L"Monitor", L"Enabled", enabled_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE;
+        success = (WritePrivateProfileStringW(L"Updates",L"IntervalMinutes",std::to_wstring(update_interval_minutes_).c_str(),preferences_file_.c_str())!=FALSE) && success;
         success = (WritePrivateProfileStringW(L"Updates", L"Automatic", auto_updates_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Updates", L"Repository", from_utf8(update_repository_).c_str(), preferences_file_.c_str()) != FALSE) && success;
         success = (WritePrivateProfileStringW(L"Monitor", L"Pinned", pinned_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
@@ -319,6 +321,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         auto number=[&](const wchar_t* key,const wchar_t* fallback){wchar_t value[128]{};GetPrivateProfileStringW(L"Learning",key,fallback,value,128,preferences_file_.c_str());return parse_custom_weight(value);};
         try {learning.balance_strength=number(L"BalanceStrength",L"1");learning.strength=number(L"Strength",L"1");learning.limit=number(L"Limit",L"0.15");learning.validate();}
         catch(const std::exception& e){learning.balance_strength=1;learning.strength=1;learning.limit=.15;log_.write("preferences.learning.error",e.what());}
+        update_interval_minutes_=static_cast<int>(GetPrivateProfileIntW(L"Updates",L"IntervalMinutes",1440,preferences_file_.c_str()));
+        if(update_interval_minutes_<1 || update_interval_minutes_>10080)update_interval_minutes_=1440;
         auto_updates_ = GetPrivateProfileIntW(L"Updates", L"Automatic", 1, preferences_file_.c_str()) != 0;
         wchar_t repository[512]{};
         GetPrivateProfileStringW(L"Updates", L"Repository", from_utf8(ignorant::default_update_repository).c_str(), repository, 512, preferences_file_.c_str());
@@ -636,9 +640,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (!shutting_down_ && monitor_.handle()) {
             auto state = monitor_state();
             const auto update = updater_.state();
-            state.update_status = update.phase == ignorant::UpdatePhase::Available && update.release
-                ? L"Windows v" + from_utf8(update.release->version) + L" available"
-                : update_status(update);
+            state.update_status = update.release ? L"Update available: Windows v" + from_utf8(update.release->version) : L"";
             const auto summary = "playing=" + context_id(playing_) + " current=\"" + utf8(state.current_track) +
                 "\" next=\"" + utf8(state.next_track) + "\" cooldown=\"" + utf8(state.cooldown_status) + "\" detail=\"" + utf8(state.decision) + '"';
             if (summary != last_display_) { log_.write("display.change", summary); last_display_ = summary; }
@@ -659,7 +661,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     }
     void check_updates() {
         if (updater_.check(update_repository_)) log_.write("updates.check", "repository=" + update_repository_);
-        next_update_check_ = GetTickCount64() + 24ULL * 60 * 60 * 1000;
+        next_update_check_ = GetTickCount64() + static_cast<ULONGLONG>(update_interval_minutes_) * 60 * 1000;
     }
     std::wstring update_status(const ignorant::UpdateState& state) const {
         if (update_repository_.empty()) return L"Release source not configured";
@@ -721,6 +723,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 SetDlgItemTextW(window, IDC_UPDATE_REPOSITORY, from_utf8(self->update_repository_).c_str());
                 SendDlgItemMessageW(window, IDC_UPDATE_REPOSITORY, EM_SETLIMITTEXT, 500, 0);
                 CheckDlgButton(window, IDC_UPDATE_AUTO, self->auto_updates_ ? BST_CHECKED : BST_UNCHECKED);
+                SetDlgItemInt(window,IDC_UPDATE_INTERVAL,self->update_interval_minutes_,FALSE);
+                SendDlgItemMessageW(window,IDC_UPDATE_INTERVAL,EM_SETLIMITTEXT,5,0);
                 SetTimer(window, 1, 250, nullptr); self->update_tick(); return TRUE;
             }
             if (!self) return FALSE;
@@ -728,7 +732,15 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             if (message == WM_COMMAND) {
                 const auto id = LOWORD(wparam);
                 if (id == IDC_UPDATE_AUTO) {
-                    self->auto_updates_ = IsDlgButtonChecked(window, id) == BST_CHECKED; self->save_preferences();
+                    self->auto_updates_ = IsDlgButtonChecked(window, id) == BST_CHECKED;
+                    if(self->auto_updates_)self->next_update_check_=0;
+                    self->save_preferences();self->settings_window_.feedback(self->auto_updates_?L"Automatic checks enabled: on startup and at the configured interval.":L"Automatic checks disabled.");
+                } else if(id==IDC_UPDATE_INTERVAL_SAVE){
+                    BOOL valid=FALSE;const auto minutes=GetDlgItemInt(window,IDC_UPDATE_INTERVAL,&valid,FALSE);
+                    if(!valid || minutes<1 || minutes>10080)throw std::runtime_error("Check interval must be 1 to 10080 minutes.");
+                    self->update_interval_minutes_=static_cast<int>(minutes);
+                    self->next_update_check_=GetTickCount64()+static_cast<ULONGLONG>(minutes)*60*1000;
+                    self->save_preferences();self->settings_window_.feedback(L"Update interval saved. Startup checks remain enabled whenever automatic checks are on.");
                 } else if (id == IDC_UPDATE_SAVE && !self->updater_.state().busy()) {
                     wchar_t value[512]{}; GetDlgItemTextW(window, IDC_UPDATE_REPOSITORY, value, 512);
                     self->update_repository_ = ignorant::normalize_repository(utf8(value));

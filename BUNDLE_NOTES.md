@@ -1,14 +1,12 @@
 ## What's new
 
-- Optionally share shuffle rules and listening-learning settings between Windows and Android. Sharing is off by default on each device. Enable it in Music folders, sync `IgnorantShuffle.settings.tsv` with your music, and use Reload shared or Publish current settings to choose which settings to use.
+- Choose an automatic update-check interval on Windows and Android, from 1 minute to 7 days. Automatic checks also run on every app startup, even after a recent check. Turn automatic checks off to use manual checks only.
+- Android shows Update available above the AIMP connection status. Tap it to open Updates. Windows shows a plain update notice at the bottom of the player.
 
 ## Improvements
 
-- Android preview: use larger, full-width bottom navigation with icons and labels. Every page remains available in the grouped left drawer.
-- Android: hold a queue handle to drag tracks into a new order. Playlist titles show queue positions, and brief action messages keep the rest of the app usable.
-- Android: choose track weights from a compact five-column preset grid.
-- Windows: keep the player focused on playback and quick weights. Open one Settings window with grouped categories for weights, shuffle rules, folders, statistics, learning, logs and updates.
+- The Android preview's Updates page now contains the settings, release notes, download progress and installation controls directly. Automatic checks keep you on your current page.
 
 ## Fixes
 
-- Windows: prevent overlapping settings backgrounds from painting over sidebar buttons when the window redraws.
+- Android checks for the latest release at startup even when a verified APK is already waiting to install.

@@ -103,6 +103,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         exportKind = savedInstanceState?.getString("exportKind") ?: "log"
         installAfterPermission = savedInstanceState?.getBoolean("installAfterPermission") ?: false
+        if(savedInstanceState == null) updates.onStartup()
         enableEdgeToEdge()
         setContent {
             ShuffleTheme(monitor.preferences, window) { Surface(Modifier.fillMaxSize()) {
@@ -111,9 +112,8 @@ class MainActivity : ComponentActivity() {
                     { exportKind = "weights"; export.launch(PortableWeights.FILENAME) },
                     { import.launch(arrayOf("text/*", "application/octet-stream")) }, ::requestNotifications, ::chooseMusicFolder,
                     batteryExempt, ::openBatterySettings, updates,
-                    { format -> exportKind = format; export.launch("ignorant-shuffle-statistics.$format") })
-                if (updates.visible) UpdatesScreen(updates, updates::prepareInstall, ::openUpdateRelease)
-                if (showBatteryPrompt && !updates.visible) AlertDialog(
+                    { format -> exportKind = format; export.launch("ignorant-shuffle-statistics.$format") }, updates::prepareInstall, ::openUpdateRelease)
+                if (showBatteryPrompt) AlertDialog(
                     onDismissRequest = ::dismissBatteryPrompt,
                     title = { Text("Keep shuffle working in the background") },
                     text = { Text("Android battery optimization can delay IgnorantShuffle and make AIMP skip the next weighted choice when the app is in the background or the screen is off.\n\nAllow IgnorantShuffle to run without battery optimization. This can use more battery during timed playback. You can change this later under Player > Background playback.") },

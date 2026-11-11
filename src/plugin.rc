@@ -92,23 +92,27 @@ BEGIN
     PUSHBUTTON "Updates...", IDC_UPDATES, 10, 364, 65, 15
     LTEXT "", IDC_UPDATE_SUMMARY, 80, 364, 210, 20, SS_NOPREFIX
 END
-IDD_UPDATES DIALOGEX 0, 0, 350, 202
+IDD_UPDATES DIALOGEX 0, 0, 350, 252
 STYLE DS_SETFONT | DS_CONTROL | WS_POPUP | WS_CLIPCHILDREN
 CAPTION "IgnorantShuffle - Updates"
 FONT 9, "Segoe UI"
 BEGIN
     LTEXT "", IDC_UPDATE_VERSION, 10, 8, 330, 12
-    CONTROL "Automatically check for updates (daily)", IDC_UPDATE_AUTO, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 10, 26, 330, 12
-    LTEXT "GitHub repository (owner/repository or release-page URL):", -1, 10, 46, 330, 10
-    EDITTEXT IDC_UPDATE_REPOSITORY, 10, 59, 330, 14, ES_AUTOHSCROLL | WS_TABSTOP
-    PUSHBUTTON "Save source", IDC_UPDATE_SAVE, 10, 80, 78, 16
-    PUSHBUTTON "Check now", IDC_UPDATE_CHECK, 96, 80, 78, 16
-    PUSHBUTTON "View release", IDC_UPDATE_RELEASE, 182, 80, 78, 16
-    EDITTEXT IDC_UPDATE_STATUS, 10, 104, 330, 36, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
-    LTEXT "Installation opens AIMP's package installer. Finish installation and restart when AIMP asks.", -1, 10, 146, 330, 20
-    PUSHBUTTON "Download and install", IDC_UPDATE_INSTALL, 10, 177, 130, 17
-    PUSHBUTTON "Open package folder", IDC_UPDATE_FOLDER, 146, 177, 120, 17
-    DEFPUSHBUTTON "Close", IDOK, 274, 177, 66, 17
+    CONTROL "Automatically check on startup and periodically", IDC_UPDATE_AUTO, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 10, 26, 330, 12
+    LTEXT "Check interval (minutes):", -1, 10, 48, 125, 12
+    EDITTEXT IDC_UPDATE_INTERVAL, 139, 46, 60, 14, ES_NUMBER | WS_TABSTOP
+    PUSHBUTTON "Save interval", IDC_UPDATE_INTERVAL_SAVE, 211, 45, 100, 16
+    LTEXT "1-10080 minutes. The interval applies while AIMP is running.", -1, 10, 68, 330, 12
+    LTEXT "GitHub repository (owner/repository or release-page URL):", -1, 10, 91, 330, 10
+    EDITTEXT IDC_UPDATE_REPOSITORY, 10, 104, 330, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON "Save source", IDC_UPDATE_SAVE, 10, 125, 78, 16
+    PUSHBUTTON "Check now", IDC_UPDATE_CHECK, 96, 125, 78, 16
+    PUSHBUTTON "View release", IDC_UPDATE_RELEASE, 182, 125, 78, 16
+    EDITTEXT IDC_UPDATE_STATUS, 10, 149, 330, 36, ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
+    LTEXT "Installation opens AIMP's package installer. Finish installation and restart when AIMP asks.", -1, 10, 191, 330, 20
+    PUSHBUTTON "Download and install", IDC_UPDATE_INSTALL, 10, 222, 130, 17
+    PUSHBUTTON "Open package folder", IDC_UPDATE_FOLDER, 146, 222, 120, 17
+    DEFPUSHBUTTON "Close", IDOK, 274, 222, 66, 17
 END
 1 VERSIONINFO
  FILEVERSION IGNORANT_SHUFFLE_WINDOWS_VERSION_RC

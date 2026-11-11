@@ -212,12 +212,17 @@ void MonitorWindow::layout() {
         y += details_y + details_height + y_units(window_, 8);
         place(IDC_EDIT_WEIGHTS, margin, y, (width-gap)/2, y_units(window_, 17));
         place(IDC_REROLL_NEXT, margin+(width+gap)/2, y, (width-gap)/2, y_units(window_,17));
-        for(const int id:{IDC_OPEN_LOGS,IDC_STATISTICS,IDC_UPDATES,IDC_UPDATE_SUMMARY})ShowWindow(GetDlgItem(window_,id),SW_HIDE);
+        for(const int id:{IDC_OPEN_LOGS,IDC_STATISTICS,IDC_UPDATES})ShowWindow(GetDlgItem(window_,id),SW_HIDE);
         SetDlgItemTextW(window_,IDC_EDIT_WEIGHTS,L"Settings...");
         y+=y_units(window_,22);
         const auto notice_height=text_height(IDC_PANEL_NOTICE,width,y_units(window_,9));
         place(IDC_PANEL_NOTICE,margin,y,width,notice_height);
-        content_height_=y+notice_height+y_units(window_,6);
+        y+=notice_height+y_units(window_,6);
+        const auto update_label=GetDlgItem(window_,IDC_UPDATE_SUMMARY);
+        const bool update_available=GetWindowTextLengthW(update_label)>0;
+        ShowWindow(update_label,update_available?SW_SHOWNA:SW_HIDE);
+        if(update_available){const auto height=text_height(IDC_UPDATE_SUMMARY,width,y_units(window_,10));place(IDC_UPDATE_SUMMARY,margin,y,width,height);y+=height+y_units(window_,6);}
+        content_height_=y;
     };
     // Account for the width consumed by the vertical scrollbar before wrapping.
     const auto style = GetWindowLongPtrW(window_, GWL_STYLE);

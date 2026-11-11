@@ -4,7 +4,17 @@
 
 ## Automatic and manual checks
 
-Open **Updates...** at the bottom of the floating panel. **Automatically check for updates** is enabled by default. The first check starts immediately in the background at startup, then at most once per day during that session, including while the panel is hidden. The panel shows checking progress without waiting for the network response; a configured source is never labeled missing just because it has not been checked yet.
+Open **Settings > About and updates** from the floating player. **Automatically
+check on startup and periodically** is enabled by default. Each plugin startup
+checks immediately, regardless of the previous session's checks. Set **Check
+interval (minutes)** and save it: 1–10080 minutes, with a default of 1440 (24 hours).
+Periodic checks run while AIMP is running, including when the player panel is
+hidden. The updater toggle and interval are device preferences and do not travel
+in shared settings.
+
+When a newer Windows version is known, plain **Update available: Windows v…** text
+appears at the bottom of the player. Checking and errors remain in About and
+updates rather than adding buttons or interrupting playback.
 
 Checks never start a download or installation. Unchecking the option persists across restarts; **Check now** still works.
 

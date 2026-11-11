@@ -4,6 +4,12 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.12.0 (versionCode 14)
+
+- Embed updater controls directly in Updates and show a tappable availability notice above the connection status.
+- Add a saved periodic update-check interval and check at every fresh app launch when enabled, including with a cached APK ready.
+- Replace automatic full-screen prompts with an unobtrusive status indicator; retain manual check, download, cancellation and installation verification.
+
 ## 0.11.0 (versionCode 13)
 
 - Add full-width, fixed icon-and-label bottom navigation and retain all pages in the grouped drawer.

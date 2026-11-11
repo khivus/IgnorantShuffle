@@ -18,7 +18,7 @@ Windows uses the first configured music root. Android uses the folder selected f
 
 ## Agent checks
 
-Automated verification covers Android compilation, 204 passing JVM tests, lint, APK signing and compilation of the device navigation test APK; Windows x64 and x86 builds and eight native suites per architecture; a common settings fixture consumed on both platforms; malformed settings; opt-in behavior; conflict rejection; backup creation; embedded page ownership, reuse and teardown; and existing selection, cooldown, finite-pass, weight-storage, statistics and update contracts. See the chat for final results. Automated native tests use fixture players, not a running AIMP installation.
+Automated verification covers Android compilation, 205 passing JVM tests, lint, APK signing and compilation of the device navigation test APK; Windows x64 and x86 builds and eight native suites per architecture; a common settings fixture consumed on both platforms; malformed settings; opt-in behavior; conflict rejection; backup creation; embedded page ownership, reuse and teardown; and existing selection, cooldown, finite-pass, weight-storage, statistics and update contracts. See the chat for final results. Automated native tests use fixture players, not a running AIMP installation.
 
 ## User testing still required
 
@@ -35,3 +35,11 @@ Automated verification covers Android compilation, 204 passing JVM tests, lint, 
 - Sharing lifecycle: disable sharing, sync another change and reopen the apps. Values must stay local. Re-enable and reload to adopt the file. Check restart persistence, revoked Android folder permission, unavailable Windows root, and changing the selected/first music root.
 
 Live AIMP playback, touch/TalkBack interaction, cross-device file sync, installer interaction and visual checks at the user's display scaling require manual verification.
+
+## Update settings and notices
+
+- On Android, open Support > Updates. Expect all controls on that page, with no Manage updates launcher or separate update dialog. Test manual check, release notes, download/cancel/retry and installation permissions while normal navigation remains available.
+- On each platform, enable automatic checks, choose 1 minute, save and wait with the app running. Expect another metadata check after the interval. Restart immediately after a check: startup must check again. Repeat with automatic checks off: startup and elapsed intervals must not check, while manual checking must still work. Restore your preferred interval afterward.
+- Restart both apps after saving a custom interval and confirm it persists. Reject zero, a non-number and more than 10080 minutes without changing the saved interval. Update settings must remain local when shared settings is enabled.
+- With a newer test release, expect Android's Update available text above the connection status; tapping the area opens Updates directly. Windows must show only a text notice at the bottom of the player, including during download/ready states. After installing the newer version, a completed check should clear the notice. Check both connected and disconnected Android states.
+- On Android, restart with a verified APK already cached and check that startup still requests current release information. Rotate or navigate away during download, return and install; the existing signing and package-verification rules must remain in force. Background timing and real network/package-installer behavior require device testing.

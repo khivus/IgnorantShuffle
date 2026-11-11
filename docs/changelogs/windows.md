@@ -3,6 +3,11 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## 0.17.0
+
+- Add a saved update-check interval and automatic-check toggle, with checks at every plugin startup when enabled.
+- Show plain update-availability text in the player footer; keep progress and errors in update settings.
+
 ## 0.16.0
 
 - Consolidate weights, shuffle rules, folders, statistics, learning, logs and updates in one grouped modeless settings window; simplify the player footer.

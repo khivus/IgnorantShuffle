@@ -75,7 +75,7 @@ private fun navigationIcon(page: String) = when(page) {
 internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: () -> Unit, copy: () -> Unit,
     exportLog: () -> Unit, exportWeights: () -> Unit, importWeights: () -> Unit, requestNotifications: () -> Unit,
     chooseMusicFolder: () -> Unit, batteryExempt: Boolean, batterySettings: () -> Unit, updates: AppUpdates,
-    exportStatistics: (String) -> Unit) {
+    exportStatistics: (String) -> Unit, installUpdate: () -> Unit, openUpdateRelease: () -> Unit) {
     var page by rememberSaveable { mutableStateOf("Player") }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -107,11 +107,17 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
             TopAppBar(title = { Text(page, maxLines = 1, overflow = TextOverflow.Ellipsis) }, navigationIcon = {
                 IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(painterResource(R.drawable.ic_menu), "Open navigation drawer") }
             }, actions = {
-                Row(Modifier.padding(end=12.dp).semantics(mergeDescendants=true) {
-                    contentDescription = if (m.connected) "AIMP connected" else "AIMP disconnected"
-                },verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    Box(Modifier.size(8.dp).background(if(m.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,CircleShape))
-                    Text(if(m.connected) "Connected" else "Disconnected",style=MaterialTheme.typography.labelSmall,maxLines=1)
+                Column(Modifier.padding(end = 12.dp).heightIn(min = 48.dp)
+                    .clickable(enabled = updates.release != null, role = Role.Button) { page = "Updates" },
+                    horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                    if(updates.release != null) Text("Update available", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Row(Modifier.semantics(mergeDescendants = true) {
+                        contentDescription = if (m.connected) "AIMP connected" else "AIMP disconnected"
+                    }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(8.dp).background(if(m.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape))
+                        Text(if(m.connected) "Connected" else "Disconnected", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                    }
                 }
             })
         }, bottomBar = {
@@ -144,13 +150,7 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                         "Appearance" -> ThemePage(m)
                         "Diagnostics" -> DiagnosticsPage(m, requestNotifications)
                         "Logs" -> LogsPage(m, copy, exportLog)
-                        "Updates" -> Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            Intro("About and updates", "Installed Android v${BuildConfig.VERSION_NAME}")
-                            Section {
-                                Text(updates.notice)
-                                ActionButton(onClick = { if(updates.release != null || updates.busy) updates.open() else updates.check(true) }) { Text("Manage updates") }
-                            }
-                        }
+                        "Updates" -> UpdatesScreen(updates, installUpdate, openUpdateRelease)
                     }
                 } }
             }

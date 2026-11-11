@@ -1,14 +1,20 @@
 # Android app updates
 
-Tap the **Android version / Updates** button at the top right. The dedicated
-screen shows the new version, release notes, a primary Download/Install action,
-progress, retry/cancel, **Not now**, and **Skip this version**. Its presentation
-draws on [Mihon's update screen](https://github.com/mihonapp/mihon/blob/main/app/src/main/java/eu/kanade/presentation/more/NewUpdateScreen.kt)
-and the existing local Carriex update flow.
+Open **Support > Updates** in the drawer or bottom navigation. The page contains
+version details, check preferences, release notes, progress, retry/cancel, and
+Download/Install controls directly. When a newer Android version is known,
+**Update available** appears above the Connected / Disconnected status. Tap that
+status area to open Updates; automatic checks do not interrupt the current page.
 
-Automatic checks are on by default and run at most daily when the app comes to
-the foreground. No periodic background service is installed. Turn them off in
-Updates to avoid automatic requests; **Check for updates** remains available.
+Automatic checks are on by default. Every fresh app launch checks again,
+even when the previous check was recent or an APK is already ready. Set **Check
+interval (minutes)** from 1 to 10080 and save it; the default is 1440 minutes
+(24 hours). Periodic checks continue while the app process runs. Android may
+suspend or delay the timer in the background; returning to the app catches up
+when due. No alarm or periodic background service is installed. Turning automatic
+checks off cancels future scheduled checks; **Check for updates** still works.
+These updater preferences stay on this device rather than using shared settings.
+
 Only public GitHub release information is fetched, without credentials. Debug
 previews include preview releases by default; production builds default to stable.
 Changing **Include preview releases** changes the channel for the next check.
@@ -27,10 +33,10 @@ reported as a request, not as confirmed installation. Use Install again to retry
 
 The updater's state survives Activity recreation. A verified APK/metadata is
 retained in the private update cache and validated again after process restart.
-Interrupted downloads are discarded and can be restarted. **Not now** closes the
-screen; an already requested download can continue while the process is alive.
-**Cancel** stops the active request. **Skip this version** suppresses that tag's
-automatic prompt; manual checks still show it and newer tags can prompt normally.
+Interrupted downloads are discarded and can be restarted. Navigating away from
+Updates keeps the download running while the process is alive. **Cancel** stops
+the active request. Available updates remain visible in the status area until a
+later check no longer finds a newer version or the update is installed.
 
 Updates use `INTERNET` and `REQUEST_INSTALL_PACKAGES`. The first is for GitHub
 HTTPS; the second enables Android's user-approved installer. A private
@@ -72,7 +78,8 @@ Building/testing this feature does not push, tag or publish a release.
 ## Phone checks
 
 Check with notification access denied and with AIMP playing. Verify manual and
-daily checking, preview filtering, Skip/manual override, release notes and errors
+startup checking after a recent attempt, saved periodic intervals, automatic opt-out,
+manual checks, preview filtering, the status indicator, inline release notes and errors
 when offline. With a newer same-key test release, verify progress/cancel/retry,
 rotate during download, restart with a ready APK, decline/grant installation
 permission, cancel/retry the installer, and finally confirm the new version and

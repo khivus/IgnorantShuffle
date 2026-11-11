@@ -1312,8 +1312,9 @@ struct PluginChecks {
         check(window && IsWindowVisible(window), "Initialization automatically opens the floating window.");
         check(plugin.updater_.state().phase == ignorant::UpdatePhase::Checking && !finish_check,
             "Startup immediately starts a background check without waiting for the network response.");
-        check(Plugin::control_text(window, IDC_UPDATE_SUMMARY) == L"Checking GitHub releases...",
-            "The first visible panel reports checking instead of an unconfigured release source.");
+        check(Plugin::control_text(window, IDC_UPDATE_SUMMARY).empty() && !IsWindowVisible(GetDlgItem(window,IDC_UPDATE_SUMMARY)),
+            "The player footer is reserved for available updates rather than check progress.");
+        check(plugin.update_status(plugin.updater_.state())==L"Checking GitHub releases...","Checking progress remains available in update settings.");
         finish_check = true;
         const auto deadline = GetTickCount64() + 3000;
         while (plugin.updater_.state().busy() && GetTickCount64() < deadline) Sleep(1);
@@ -1332,8 +1333,9 @@ struct PluginChecks {
         Plugin opted_out([&](const auto&, auto, const auto&, const auto&) { ++requests; return ignorant::HttpReply{404, {}}; });
         check(opted_out.Initialize(&core) == S_OK && !opted_out.auto_updates_ && requests == 1,
             "Startup still honors the persisted automatic-check opt-out.");
-        check(Plugin::control_text(opted_out.monitor_.handle(), IDC_UPDATE_SUMMARY) == L"Automatic update checks are off. Use Check now.",
-            "A configured source with automatic checks off never appears unconfigured.");
+        check(Plugin::control_text(opted_out.monitor_.handle(), IDC_UPDATE_SUMMARY).empty(),
+            "An opted-out player has no footer notice without an available update.");
+        check(opted_out.update_status(opted_out.updater_.state())==L"Automatic update checks are off. Use Check now.","Update settings explain the persisted opt-out.");
         opted_out.Finalize();
         {
             std::ifstream legacy(old_weights); std::string line; std::getline(legacy, line);
@@ -1487,11 +1489,27 @@ struct PluginChecks {
         check(requests == 1 && plugin.updater_.state().phase == ignorant::UpdatePhase::Available && !plugin.install_requested_, "Auto check reports new releases without downloading or installing.");
         plugin.update_tick(); plugin.update_tick();
         check(requests == 1 && plugin.next_update_check_ > GetTickCount64() + 23ULL * 60 * 60 * 1000, "Automatic checks are limited to daily polling.");
+        SetDlgItemInt(window,IDC_UPDATE_INTERVAL,60,FALSE);
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(IDC_UPDATE_INTERVAL_SAVE,BN_CLICKED),0);
+        check(plugin.update_interval_minutes_==60 && plugin.next_update_check_>GetTickCount64()+59ULL*60*1000 && plugin.next_update_check_<=GetTickCount64()+60ULL*60*1000,"Saving the interval re-arms periodic checks");
+        restored.load_preferences();check(restored.update_interval_minutes_==60,"Update interval survives restart");
+        for(const auto value:{0,10081}){SetDlgItemInt(window,IDC_UPDATE_INTERVAL,value,FALSE);SendMessageW(window,WM_COMMAND,MAKEWPARAM(IDC_UPDATE_INTERVAL_SAVE,BN_CLICKED),0);check(plugin.update_interval_minutes_==60,"Invalid intervals preserve the saved schedule");}
+        SetDlgItemInt(window,IDC_UPDATE_INTERVAL,60,FALSE);
+        plugin.next_update_check_=GetTickCount64()-1;plugin.update_tick();finish();
+        check(requests==2,"Automatic checks run again when the configured interval is due");
+        plugin.next_update_check_=0;plugin.update_tick();finish();
+        check(requests==3,"A startup schedule checks even immediately after the previous attempt");
+        Manager manager;EmptyPlaylist playlist;manager.active=&playlist;
+        plugin.playlists_=query<IAIMPServicePlaylistManager>(&manager,IID_IAIMPServicePlaylistManager);
+        plugin.open_monitor();plugin.update_monitor();
+        check(Plugin::control_text(plugin.monitor_.handle(),IDC_UPDATE_SUMMARY).find(L"Update available: Windows v1.0.0")!=std::wstring::npos && IsWindowVisible(GetDlgItem(plugin.monitor_.handle(),IDC_UPDATE_SUMMARY)),"Available updates appear as plain text in the player footer");
         CheckDlgButton(window, IDC_UPDATE_AUTO, BST_UNCHECKED);
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(IDC_UPDATE_AUTO, BN_CLICKED), 0);
+        plugin.next_update_check_=0;plugin.update_tick();check(requests==3,"Disabling automatic checks suppresses startup and periodic checks");
         SendMessageW(window, WM_COMMAND, MAKEWPARAM(IDC_UPDATE_CHECK, BN_CLICKED), 0); finish();
-        check(requests == 2, "Manual check works with automatic checks off.");
+        check(requests == 4, "Manual check works with automatic checks off.");
         restored.load_preferences(); check(restored.update_repository_ == "example/shuffle", "Configured source survives restart.");
+        WritePrivateProfileStringW(L"Updates",L"IntervalMinutes",L"0",plugin.preferences_file_.c_str());restored.load_preferences();check(restored.update_interval_minutes_==1440,"Invalid saved intervals use the daily default");
         DestroyWindow(window); plugin.Finalize(); std::filesystem::remove(plugin.preferences_file_);
     }
     static void update_install_checks() {

@@ -94,20 +94,27 @@ class AndroidUpdatesTest {
         val entries = JSONArray(); repeat(101) { entries.put(release()) }
         rejects { AndroidReleases.page(entries.toString(), "0.4.0", false, true) }
     }
-    @Test fun skippedVersionCanStillBeCheckedManually() {
-        assertFalse(UpdateSchedule.prompt("0.5.0", "0.5.0", false)) // Same APK in another combined bundle.
-        assertTrue(UpdateSchedule.prompt("0.5.0", "0.5.0", true))
-        assertTrue(UpdateSchedule.prompt("0.5.1", "0.5.0", false))
-        assertFalse(UpdateSchedule.prompt("android/v0.5.0", "android/v0.5.0", false))
-        assertTrue(UpdateSchedule.prompt("android/v0.5.0", "android/v0.5.0", true))
-        assertTrue(UpdateSchedule.prompt("android/v0.6.0", "android/v0.5.0", false))
-    }
     @Test fun automaticChecksRespectDailyLimitOptOutAndClockChanges() {
         assertFalse(UpdateSchedule.due(false, 0, 1000))
         assertTrue(UpdateSchedule.due(true, 0, 1000))
         assertFalse(UpdateSchedule.due(true, 1000, 2000))
         assertTrue(UpdateSchedule.due(true, 1000, 86_401_000))
         assertTrue(UpdateSchedule.due(true, 2000, 1000))
+    }
+    @Test fun startupAlwaysChecksWhenEnabledEvenAfterARecentAttempt() {
+        assertTrue(UpdateSchedule.due(true, 1000, 1001, minutes = 1440, startup = true))
+        assertFalse(UpdateSchedule.due(false, 1000, 1001, minutes = 1440, startup = true))
+        assertFalse(UpdateSchedule.due(true, 1000, 1001, minutes = 1440, startup = false))
+    }
+    @Test fun configuredIntervalsScheduleOnlyWhenDue() {
+        assertFalse(UpdateSchedule.due(true, 1000, 60_999, minutes = 1))
+        assertTrue(UpdateSchedule.due(true, 1000, 61_000, minutes = 1))
+        assertEquals(59_999L, UpdateSchedule.delay(1000, 1001, 1))
+        assertEquals(0L, UpdateSchedule.delay(1000, 61_000, 1))
+        assertEquals(0L, UpdateSchedule.delay(2000, 1000, 60))
+        assertEquals(604_800_000L, UpdateSchedule.intervalMillis(10080))
+        assertThrows(IllegalArgumentException::class.java) { UpdateSchedule.intervalMillis(0) }
+        assertThrows(IllegalArgumentException::class.java) { UpdateSchedule.intervalMillis(10081) }
     }
     @Test fun packageMustUpgradeSameAppWithSameKeyAndSupportedAndroidVersion() {
         val update = page(release()).newest!!

@@ -113,6 +113,10 @@ class NavigationDeviceTest : InstrumentationTestCase() {
                     }
                     "Playback" -> waitFor("Background playback")
                     "Diagnostics" -> waitFor("Playback debug mode")
+                    "Updates" -> {
+                        assertNull("Updates controls are embedded directly",find("Manage updates"))
+                        click("Save check interval",scroll=true)
+                    }
                     "Logs" -> {waitFor("Search log");click("Tools");waitFor("Load saved history");click("Load saved history")}
                 }
             }

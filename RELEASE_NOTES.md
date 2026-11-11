@@ -1,17 +1,9 @@
-# IgnorantShuffle Windows v0.16.0
+# IgnorantShuffle Windows v0.17.0
 
-## Shared settings
+## Update checks and notices
 
-- Optionally load and publish shuffle rules and learning options through a music-root settings file understood by Android. Sharing is off by default, rejects conflicting edits and retains a backup when publishing.
+- Configure automatic update checks from 1 to 10080 minutes in Settings > About and updates. Keep the default 1440 minutes or save a custom interval.
+- Check at every plugin startup when automatic checks are enabled. Turning them off preserves manual checks and the saved interval.
+- Show a plain Update available notice at the bottom of the player when a newer Windows version is found. Keep check progress and errors in update settings.
 
-## Simpler settings
-
-- Keep main playback controls, quick weights, Settings and Reroll in the player.
-- Embed track weights, shuffle rules, music folders, statistics, learning, logs and updates in one reusable settings window with grouped categories.
-- Move cooldown editing into Shuffle rules and show action results within settings.
-
-## Fixes
-
-- Remove the overlapping sidebar background and refresh embedded views without repeatedly changing their parent or frame, preventing controls from being overpainted during redraws.
-
-Windows version: **0.16.0**. Bundled core: **0.2.0**. Includes x64 and x86.
+Windows version: **0.17.0**. Bundled core: **0.2.0**. Includes x64 and x86.

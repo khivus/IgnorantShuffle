@@ -23,8 +23,16 @@ import java.util.zip.ZipFile
 class UpdateFileProvider : FileProvider(R.xml.update_paths)
 enum class UpdatePhase { IDLE, CHECKING, AVAILABLE, DOWNLOADING, VERIFYING, READY, CURRENT, NO_RELEASE, ERROR }
 object UpdateSchedule {
-    fun due(enabled: Boolean, last: Long, now: Long): Boolean = enabled && (last <= 0 || now < last || now - last >= 86_400_000L)
-    fun prompt(tag: String, skipped: String?, manual: Boolean): Boolean = manual || tag != skipped
+    const val DEFAULT_MINUTES = 1440
+    const val MAX_MINUTES = 10080
+    fun intervalMillis(minutes: Int): Long {
+        require(minutes in 1..MAX_MINUTES) { "Check interval must be 1–10080 minutes" }
+        return minutes * 60_000L
+    }
+    fun due(enabled: Boolean, last: Long, now: Long, minutes: Int = DEFAULT_MINUTES, startup: Boolean = false): Boolean =
+        enabled && (startup || last <= 0 || now < last || now - last >= intervalMillis(minutes))
+    fun delay(last: Long, now: Long, minutes: Int): Long =
+        if(last <= 0 || now < last) 0 else (intervalMillis(minutes) - (now - last)).coerceAtLeast(0)
 }
 
 /** Application-scoped so progress and a verified download survive Activity recreation. */
@@ -40,6 +48,7 @@ class AppUpdates(private val context: Context, private val event: (String) -> Un
     private var restoring = true
     private var foregroundPending = false
     private var manualPending = false
+    private var startupPending = true
     var phase by mutableStateOf(UpdatePhase.VERIFYING); private set
     var release by mutableStateOf<AndroidRelease?>(null); private set
     var progress by mutableStateOf(0); private set
@@ -47,8 +56,10 @@ class AppUpdates(private val context: Context, private val event: (String) -> Un
     var notice by mutableStateOf("Loading saved update state"); private set
     var downloaded by mutableStateOf<File?>(null); private set
     var installRequest by mutableStateOf<File?>(null); private set
-    var visible by mutableStateOf(false); private set
     var automatic by mutableStateOf(prefs.getBoolean("automatic", true)); private set
+    var intervalMinutes by mutableStateOf(prefs.getInt("intervalMinutes", UpdateSchedule.DEFAULT_MINUTES)
+        .takeIf { it in 1..UpdateSchedule.MAX_MINUTES } ?: UpdateSchedule.DEFAULT_MINUTES); private set
+    private val periodicCheck = Runnable { onForeground() }
     var previews by mutableStateOf(prefs.getBoolean("previews", BuildConfig.DEBUG)); private set
     val busy get() = phase in setOf(UpdatePhase.CHECKING, UpdatePhase.DOWNLOADING, UpdatePhase.VERIFYING)
 
@@ -78,36 +89,49 @@ class AppUpdates(private val context: Context, private val event: (String) -> Un
                     release = result.first; downloaded = result.second; phase = UpdatePhase.READY
                     notice = "Verified update is ready to install"
                 } else { phase = UpdatePhase.IDLE; notice = "Check for a newer Android version" }
-                when { manualPending -> check(true); foregroundPending && downloaded == null -> check(false) }
+                when { manualPending -> check(true); foregroundPending -> onForeground() }
                 manualPending = false; foregroundPending = false
             }
         }
     }
     private fun eventOnMain(text: String) { handler.post { event("UPDATE $text") } }
-    fun onForeground() { if (restoring) foregroundPending = true else check(false) }
-    fun open() { visible = true }
-    fun dismiss(skip: Boolean = false) {
-        if (skip) release?.let { prefs.edit().putString("skipped", it.tag).putString("skippedVersion", it.version).apply() }
-        visible = false
+    fun onStartup() { startupPending = true; onForeground() }
+    fun onForeground() {
+        if(restoring) { foregroundPending = true; return }
+        if(!automatic) startupPending = false
+        if(!busy) check(false, startup = startupPending)
+        schedulePeriodic()
     }
-    fun preferences(auto: Boolean = automatic, preview: Boolean = previews) {
-        if (busy) return
-        automatic = auto; previews = preview
-        prefs.edit().putBoolean("automatic", auto).putBoolean("previews", preview).apply()
+    private fun schedulePeriodic() {
+        handler.removeCallbacks(periodicCheck)
+        if(!automatic || restoring) return
+        val delay = if(startupPending) 0L else UpdateSchedule.delay(prefs.getLong("lastAttempt", 0), System.currentTimeMillis(), intervalMinutes)
+        handler.postDelayed(periodicCheck, if(delay == 0L && busy) 60_000L else delay.coerceAtLeast(1000L))
+    }
+    fun preferences(auto: Boolean = automatic, preview: Boolean = previews, minutes: Int = intervalMinutes) {
+        if (busy && preview != previews) return
+        UpdateSchedule.intervalMillis(minutes)
+        val enabledNow = auto && !automatic
+        automatic = auto; previews = preview; intervalMinutes = minutes
+        if(!auto) startupPending = false
+        prefs.edit().putBoolean("automatic", auto).putBoolean("previews", preview).putInt("intervalMinutes", minutes).apply()
         if (release?.preview == true && !preview) {
             release = null; downloaded = null; saved.delete(); phase = UpdatePhase.IDLE
         }
-        notice = "Update preferences saved"; event("UPDATE preferences automatic=$auto previews=$preview")
+        notice = "Update preferences saved"; event("UPDATE preferences automatic=$auto previews=$preview intervalMinutes=$minutes")
+        if(enabledNow) check(false, startup = true)
+        schedulePeriodic()
     }
-    fun check(manual: Boolean = true) {
-        if (manual) visible = true
-        if (restoring) { manualPending = manualPending || manual; return }
-        if (busy || (!manual && downloaded != null)) return
-        if (!manual && !UpdateSchedule.due(automatic, prefs.getLong("lastAttempt", 0), System.currentTimeMillis())) return
+    fun check(manual: Boolean = true, startup: Boolean = false) {
+        if (restoring) { manualPending = manualPending || manual; foregroundPending = foregroundPending || !manual; return }
+        if (busy) return
+        if (!manual && !UpdateSchedule.due(automatic, prefs.getLong("lastAttempt", 0), System.currentTimeMillis(), intervalMinutes, startup)) return
+        startupPending = false
         prefs.edit().putLong("lastAttempt", System.currentTimeMillis()).apply()
         val token = ++generation; val canceled = AtomicBoolean(false); cancellation = canceled
         val allowPreviews = previews
         phase = UpdatePhase.CHECKING; error = null; notice = "Checking Android releases…"
+        schedulePeriodic()
         event("UPDATE checking; manual=$manual previews=$allowPreviews")
         worker.execute {
             try {
@@ -135,8 +159,7 @@ class AppUpdates(private val context: Context, private val event: (String) -> Un
                         UpdatePhase.READY -> "Verified update is ready to install"
                         else -> "Android ${found?.version} is available"
                     }
-                    if (found != null && UpdateSchedule.prompt(found.version, prefs.getString("skippedVersion", null), manual) &&
-                        UpdateSchedule.prompt(found.tag, prefs.getString("skipped", null), manual)) visible = true
+                    schedulePeriodic()
                     event("UPDATE check result: $notice; tag=${found?.tag}; installable=${found?.asset != null}")
                 }
             } catch (e: Exception) { failure(token, canceled, e) }
@@ -145,16 +168,16 @@ class AppUpdates(private val context: Context, private val event: (String) -> Un
     private fun httpError(status: Int) = if (status == 403 || status == 429) "GitHub rate limit or access restriction. Try again later"
         else "GitHub request failed (HTTP $status)"
     fun cancel() {
-        manualPending = false; foregroundPending = false
+        manualPending = false; foregroundPending = false; startupPending = false
         cancellation.set(true); ++generation; http.cancel()
         phase = if (downloaded != null) UpdatePhase.READY else if (release != null) UpdatePhase.AVAILABLE else UpdatePhase.IDLE
-        notice = "Update operation canceled"; error = null; event("UPDATE canceled")
+        notice = "Update operation canceled"; error = null; event("UPDATE canceled"); schedulePeriodic()
     }
     private fun failure(token: Long, canceled: AtomicBoolean, exception: Exception) { handler.post {
         if (token != generation || canceled.get()) return@post
         phase = if (downloaded != null) UpdatePhase.READY else UpdatePhase.ERROR
         error = exception.message ?: exception.toString(); notice = "Update operation failed; you can retry"
-        event("UPDATE ERROR: $exception")
+        event("UPDATE ERROR: $exception"); schedulePeriodic()
     } }
     fun download() {
         if (busy) return
@@ -247,5 +270,5 @@ class AppUpdates(private val context: Context, private val event: (String) -> Un
         event("UPDATE installer opened; installation completion is not yet confirmed")
     }
     fun installProblem(message: String) { error = message; event("UPDATE INSTALL: $message") }
-    fun snapshot() = "Updates: $phase; daily=$automatic previews=$previews tag=${release?.tag} progress=$progress ready=${downloaded != null}; error=$error"
+    fun snapshot() = "Updates: $phase; automatic=$automatic intervalMinutes=$intervalMinutes previews=$previews tag=${release?.tag} progress=$progress ready=${downloaded != null}; error=$error"
 }
