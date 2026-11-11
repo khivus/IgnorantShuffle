@@ -1,0 +1,15 @@
+# IgnorantShuffle settings v1: value<TAB>key (UTF-8)
+1	version
+7.5	default
+0.5	minimum
+12	cooldown
+1	finite
+1	balance
+0.5	balanceStrength
+1	smart
+2	strength
+0.25	limit
+1	skips
+0	completions
+1	replays
+0	volume

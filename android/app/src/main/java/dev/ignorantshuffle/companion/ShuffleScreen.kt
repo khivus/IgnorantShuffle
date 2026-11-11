@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.window.DialogProperties
@@ -38,7 +39,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private val destinations = listOf("Player", "Playlist", "Queue", "Statistics", "Shuffle rules", "Music folders", "Playback", "Notifications", "Appearance", "Diagnostics", "Logs")
+
+private val categoryPages = linkedMapOf(
+    "Listen" to listOf("Player", "Playlist", "Queue", "Statistics"),
+    "Settings" to listOf("Shuffle rules", "Music folders", "Playback", "Notifications", "Appearance"),
+    "Support" to listOf("Diagnostics", "Logs", "Updates"))
+private fun navigationCategory(page: String) = categoryPages.entries.first { page in it.value }.key
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,26 +64,15 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
         ModalDrawerSheet {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
                 Text("IgnorantShuffle", Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
-                destinations.forEachIndexed { index, title ->
-                    if (index == 0 || index == 4 || index == 9) {
-                        if(index>0) HorizontalDivider(Modifier.padding(vertical=12.dp))
-                        Surface(Modifier.fillMaxWidth().padding(bottom=6.dp).semantics { heading() },
-                            color=MaterialTheme.colorScheme.surfaceContainerHigh, shape=RoundedCornerShape(8.dp)) {
-                            Text(when(index) { 0 -> "LISTEN & EXPLORE"; 4 -> "SETTINGS"; else -> "SUPPORT" },
-                                Modifier.padding(horizontal=12.dp,vertical=8.dp),style=MaterialTheme.typography.labelSmall,
-                                fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    NavigationDrawerItem(modifier=Modifier.padding(start=12.dp),label = { Text(title) }, selected = page == title,
-                        onClick = { page = title; scope.launch { drawer.close() } })
+                listOf("Listen", "Settings", "Support").forEach { category ->
+                    NavigationDrawerItem(label = { Text(category) }, selected = navigationCategory(page) == category,
+                        onClick = { page = categoryPages.getValue(category).first(); scope.launch { drawer.close() } })
                 }
-                TextButton(onClick = { scope.launch { drawer.close() }; if (updates.release != null || updates.busy) updates.open() else updates.check(true) }) {
-                    Text("Updates · v${BuildConfig.VERSION_NAME}")
-                }
+
             }
         }
     }) {
-        Scaffold(modifier = Modifier.fillMaxSize(), topBar = {
+        Scaffold(modifier = Modifier.fillMaxSize(), snackbarHost = { ActionFeedback(m) }, topBar = {
             TopAppBar(title = { Text(page, maxLines = 1, overflow = TextOverflow.Ellipsis) }, navigationIcon = {
                 IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(painterResource(R.drawable.ic_menu), "Open navigation drawer") }
             }, actions = {
@@ -88,6 +83,14 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                     Text(if(m.connected) "Connected" else "Disconnected",style=MaterialTheme.typography.labelSmall,maxLines=1)
                 }
             })
+        }, bottomBar = {
+            Surface(tonalElevation = 3.dp) {
+                PrimaryScrollableTabRow(selectedTabIndex = categoryPages.getValue(navigationCategory(page)).indexOf(page), edgePadding = 8.dp) {
+                    categoryPages.getValue(navigationCategory(page)).forEach { title ->
+                        Tab(selected = page == title, onClick = { page = title }, text = { Text(if (title == "Statistics") "Stats" else title) })
+                    }
+                }
+            }
         }) { insets ->
             Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
                 m.debugIssue?.let { issue ->
@@ -109,6 +112,13 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                         "Appearance" -> ThemePage(m)
                         "Diagnostics" -> DiagnosticsPage(m, requestNotifications)
                         "Logs" -> LogsPage(m, copy, exportLog)
+                        "Updates" -> Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Intro("About and updates", "Installed Android v${BuildConfig.VERSION_NAME}")
+                            Section {
+                                Text(updates.notice)
+                                ActionButton(onClick = { if(updates.release != null || updates.busy) updates.open() else updates.check(true) }) { Text("Manage updates") }
+                            }
+                        }
                     }
                 } }
             }
@@ -227,7 +237,7 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
                     containerColor = if (current) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         if (current) Text("PLAYING", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        Text(track.title.ifBlank { "Untitled track" }, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text((m.appQueue.mapIndexedNotNull { i, entry -> if (entry.key == track.key) "[${i + 1}]" else null }.joinToString(" ").let { if (it.isBlank()) "" else "$it " }) + track.title.ifBlank { "Untitled track" }, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilledTonalButton(onClick = { edit(track) }, modifier = Modifier.weight(1f), enabled = !m.pending && m.storageError == null && !m.folder.blocked) { Text("Weight ${m.weight(track)}") }
@@ -274,6 +284,16 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
     var removingRoot by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Intro(group, "Changes are saved on this device") }
+        if (group == "Music folders") item {
+            Section("Shared settings") {
+                Toggle("Share settings between devices", "Off by default. Sync the settings file with your music. Rules and learning options are shared; appearance, permissions and playback controls stay local.", m.shareSettings, onChange = m::changeSharedSettings)
+                Text(m.sharedSettingsStatus, style = MaterialTheme.typography.bodySmall)
+                Row {
+                    TextButton(onClick = m::reloadSharedSettings, enabled = m.shareSettings) { Text("Reload shared") }
+                    TextButton(onClick = m::publishSharedSettings, enabled = m.shareSettings) { Text("Publish current settings") }
+                }
+            }
+        }
         if (group == "Playback") item {
             Section("Background playback") {
                 Text(if (batteryExempt) "Battery optimization is disabled for IgnorantShuffle." else
@@ -722,3 +742,21 @@ private fun FileLinkDialog(m: AimpController, track: Track, close: () -> Unit) {
 
 private fun clock(ms: Long): String = if (ms < 0) "unknown" else "${ms / 60000}:${(ms / 1000 % 60).toString().padStart(2, '0')}"
 private fun stateText(state: Int) = when (state) { 3 -> "Playing"; 2 -> "Paused"; 1 -> "Stopped"; 6 -> "Buffering"; else -> "State $state" }
+
+@Composable
+private fun ActionFeedback(m: AimpController) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(m.statistics.actionSequence) { if(m.statistics.actionSequence>0) m.acknowledge(m.statistics.actionStatus) }
+    LaunchedEffect(m.statistics.error) { m.statistics.error?.let(m::acknowledge) }
+    LaunchedEffect(m.feedbackSequence) {
+        if (m.feedbackSequence > 0) { visible = true; kotlinx.coroutines.delay(3200); visible = false }
+    }
+    androidx.compose.animation.AnimatedVisibility(visible) {
+        Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth().semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(m.feedback, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                TextButton(onClick = { visible = false }) { Text("Dismiss") }
+            }
+        }
+    }
+}

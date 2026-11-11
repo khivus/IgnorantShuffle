@@ -76,8 +76,8 @@ class MainActivity : ComponentActivity() {
             if (exportKind == "weights") monitor.exportWeights(write)
             else if (exportKind == "json" || exportKind == "csv") monitor.statistics.export(exportKind, write)
             else Thread {
-                try { write(monitor.report(true)); runOnUiThread { monitor.log("Export completed") } }
-                catch (e: Exception) { runOnUiThread { monitor.log("Export error: $e") } }
+                try { write(monitor.report(true)); runOnUiThread { monitor.log("Export completed"); monitor.acknowledge("Log exported") } }
+                catch (e: Exception) { runOnUiThread { monitor.log("Export error: $e"); monitor.acknowledge("Export failed: ${e.message}") } }
             }.start()
         }
     }
@@ -95,7 +95,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val text = Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(data.toByteArray())).toString()
                 runOnUiThread { monitor.importWeights(text) }
-            } catch (e: Exception) { runOnUiThread { monitor.log("Import error: $e") } }
+            } catch (e: Exception) { runOnUiThread { monitor.log("Import error: $e"); monitor.acknowledge("Import failed: ${e.message}") } }
         }.start()
     }
 
@@ -189,7 +189,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun copySummary() {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Ignorant Shuffle", monitor.report().take(200_000)))
-        monitor.log("Summary copied")
+        monitor.log("Summary copied"); monitor.acknowledge("Summary copied")
     }
     private fun requestNotifications() {
         val history = getPreferences(MODE_PRIVATE)

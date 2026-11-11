@@ -78,16 +78,11 @@ class NavigationDeviceTest : InstrumentationTestCase() {
             waitFor("Disconnected")
             for((index,page) in listOf("Playlist","Queue","Statistics","Shuffle rules","Music folders","Playback","Notifications","Appearance","Diagnostics","Logs").withIndex()) {
                 click("Open navigation drawer")
-                if(index==0) {
-                    waitFor("IgnorantShuffle");waitFor("LISTEN & EXPLORE")
-                    if(android.os.Build.VERSION.SDK_INT>=28) {
-                        var header=find("LISTEN & EXPLORE")
-                        while(header!=null && !header.isHeading)header=header.parent
-                        assertNotNull("Drawer group must be an accessibility heading",header)
-                        assertFalse("Drawer group must not behave like a page",header!!.isClickable)
-                    }
-                }
-                click(page,scroll=true);waitFor(page)
+                val category=when(page) { "Playlist","Queue","Statistics" -> "Listen"; "Diagnostics","Logs" -> "Support"; else -> "Settings" }
+                waitFor("Listen");waitFor("Settings");waitFor("Support")
+                assertNull("Drawer contains categories only", find("Music folders"))
+                click(category)
+                click(if(page=="Statistics") "Stats" else page,scroll=true);waitFor(page)
                 when(page) {
                     "Playlist" -> waitFor("Search 0 tracks by title or artist")
                     "Queue" -> waitFor("App queue")

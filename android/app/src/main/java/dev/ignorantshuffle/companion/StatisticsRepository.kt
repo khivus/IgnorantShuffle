@@ -57,6 +57,9 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
     var error by mutableStateOf<String?>(null); private set
     var snapshot by mutableStateOf(StatisticsSnapshot()); private set
     var exportStatus by mutableStateOf<String?>(null); private set
+    var actionSequence by mutableStateOf(0L); private set
+    var actionStatus by mutableStateOf(""); private set
+    private fun completed(text: String) { actionStatus = text; actionSequence++ }
     private var generation = 0L
     private var lastLibraryFlush=0L
     private var counterEpoch=""
@@ -145,7 +148,7 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
     }
     fun pause(paused: Boolean) {
         if (!ready) return
-        collecting = !paused; engine.collecting(!paused)
+        collecting = !paused; engine.collecting(!paused); completed(if(paused) "Statistics collection paused" else "Statistics collection resumed")
         execute { helper.writableDatabase.execSQL("INSERT OR REPLACE INTO options VALUES('collecting',?)", arrayOf<Any>(if(paused)0 else 1)) }
     }
     fun flushShared() = execute {publishLearning(allRecords(force=true))}
@@ -160,7 +163,7 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
             try { listOf("slices","sessions","shuffle","smart_weights","smart_feedback").forEach { db.delete(it,null,null) }
                 db.execSQL("INSERT OR REPLACE INTO options VALUES('shuffle_epoch',?)",arrayOf<Any>(counterEpoch));db.setTransactionSuccessful() }
             finally { db.endTransaction() }
-            main.post { snapshot=StatisticsSnapshot(); smartScores=emptyMap(); onSmartScores(emptyMap()); onCounts(emptyMap()) }
+            main.post { completed("Statistics cleared"); snapshot=StatisticsSnapshot(); smartScores=emptyMap(); onSmartScores(emptyMap()); onCounts(emptyMap()) }
         }
     }
     fun shuffle(kind: String) {
@@ -210,7 +213,7 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
         val learned=JSONArray()
         PortableStatistics.scores(records,smartOptions.limit).forEach { (key,score) -> learned.put(JSONObject().put("track",key).put("score",score)) }
         write(StatisticsExport.encode(format, rows, counters, learned))
-        main.post { exportStatus = "${format.uppercase()} export saved" }
+        main.post { exportStatus = "${format.uppercase()} export saved"; completed(requireNotNull(exportStatus)) }
     }
     override fun close() { engine.disconnect();io.execute {try {allRecords(force=true)} finally {helper.close()}};io.shutdown() }
 }
