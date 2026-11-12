@@ -55,16 +55,16 @@ class DiagnosticsAndHandoffTest {
     }
     @Test fun handoffUsesPublishedChoiceAndRejectsAnotherRoll() {
         val track = Track(4, "b", null, "Published", "Artist")
-        val plan = ScheduledRoll("source", Choice(track), 7, 10_700, 10_700)
+        val plan = ScheduledRoll("source", Choice(track), 7, 10_850, 10_850)
         val sample = TimingSnapshot("source", 3, 20_000, 30_000, 1f, 1000)
-        assertTrue(HandoffPolicy.valid(plan, sample, 7, 10_700))
-        assertFalse(HandoffPolicy.valid(plan, sample, 8, 10_700))
+        assertTrue(HandoffPolicy.valid(plan, sample, 7, 10_850))
+        assertFalse(HandoffPolicy.valid(plan, sample, 8, 10_850))
         assertEquals("b", plan.choice.track!!.mediaId)
     }
     @Test fun lateOrDifferentSourceCannotDispatchCapturedChoice() {
-        val plan = ScheduledRoll("source", Choice(null), 1, 10_700, 10_700)
+        val plan = ScheduledRoll("source", Choice(null), 1, 10_850, 10_850)
         val sample = TimingSnapshot("other", 3, 20_000, 30_000, 1f, 1000)
-        assertFalse(HandoffPolicy.valid(plan, sample, 1, 10_700))
+        assertFalse(HandoffPolicy.valid(plan, sample, 1, 10_850))
         assertFalse(HandoffPolicy.valid(plan, sample.copy(key = "source"), 1, 15_000))
     }
     @Test fun preferencesDefaultToAutomaticLogsAndAimpOrange() {
@@ -86,11 +86,11 @@ class DiagnosticsAndHandoffTest {
     }
     @Test fun aTimerCapturedBeforeShuffleOffCannotDispatchAndCanResumeTheSameRoll() {
         val track = Track(4, "b", null, "Published", "Artist")
-        val plan = ScheduledRoll("source", Choice(track), 7, 10_700, 10_700)
+        val plan = ScheduledRoll("source", Choice(track), 7, 10_850, 10_850)
         val sample = TimingSnapshot("source", 3, 20_000, 30_000, 1f, 1000)
-        assertFalse(HandoffPolicy.valid(plan, sample, 7, 10_700, AimpShuffleMode.OFF))
-        assertFalse(HandoffPolicy.valid(plan, sample, 7, 10_700, AimpShuffleMode.UNKNOWN))
-        assertTrue(HandoffPolicy.valid(plan, sample, 7, 10_700, AimpShuffleMode.ON))
+        assertFalse(HandoffPolicy.valid(plan, sample, 7, 10_850, AimpShuffleMode.OFF))
+        assertFalse(HandoffPolicy.valid(plan, sample, 7, 10_850, AimpShuffleMode.UNKNOWN))
+        assertTrue(HandoffPolicy.valid(plan, sample, 7, 10_850, AimpShuffleMode.ON))
         assertEquals(track, plan.choice.track)
     }
 

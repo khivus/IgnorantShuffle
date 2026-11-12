@@ -1812,6 +1812,53 @@ struct PluginChecks {
         plugin.show_settings(1);check(plugin.settings_window_.handle()==shell && IsWindowVisible(plugin.rules_dialog_),"Reopening uses the same settings window");check_navigation_paint_bounds();
         plugin.Finalize();check(!IsWindow(shell) && !IsWindow(editor),"Finalization destroys embedded pages");manager.active=nullptr;
     }
+    static void settings_value_checks(Manager& manager,Messages& messages) {
+        EmptyPlaylist playlist;manager.active=&playlist;
+        const auto root=std::filesystem::current_path()/L"settings-values-fixture";
+        std::filesystem::create_directories(root);
+        ignorant::SharedSettings shared;shared.minimum=1;shared.finite=false;
+        shared.encode().save(root/ignorant::shared_settings_filename);
+        Plugin plugin;plugin.playlists_=query<IAIMPServicePlaylistManager>(&manager,IID_IAIMPServicePlaylistManager);
+        plugin.messages_=query<IAIMPServiceMessageDispatcher>(&messages,IID_IAIMPServiceMessageDispatcher);
+        plugin.music_folders_={root};plugin.share_settings_=true;
+        plugin.weights_.set_default(7.5);plugin.minimum_weight_=6;plugin.cooldown_=10;plugin.finite_=true;
+        auto& o=plugin.statistics_.options;o.balance=true;o.smart=true;o.balance_strength=.7;o.strength=1.3;o.limit=.12;
+        o.skips=false;o.completions=false;o.replays=false;o.volume=false;plugin.statistics_.collecting=false;
+        plugin.auto_updates_=false;plugin.update_interval_minutes_=73;plugin.update_repository_="example/actual";
+        module=GetModuleHandleW(nullptr);plugin.open_monitor();
+        for(int cycle=0;cycle<2;++cycle){
+            plugin.show_settings(1);const auto shell=plugin.settings_window_.handle();
+            check(plugin.minimum_weight_==6 && plugin.finite_ && plugin.weights_.fallback()==7.5 && plugin.cooldown_==10,
+                "Opening Settings must not import stale shared rules or disable finite playback");
+            check(Plugin::control_text(plugin.rules_dialog_,IDC_MINIMUM_WEIGHT)==L"6" &&
+                Plugin::control_text(plugin.rules_dialog_,IDC_DEFAULT_WEIGHT)==L"7.5" &&
+                GetDlgItemInt(plugin.rules_dialog_,IDC_COOLDOWN,nullptr,FALSE)==10 &&
+                IsDlgButtonChecked(plugin.rules_dialog_,IDC_FINITE_PLAYLIST)==BST_CHECKED,"Rules show actual values on every opening");
+            for(int page=0;page<7;++page)SendMessageW(shell,WM_COMMAND,MAKEWPARAM(3000+page,BN_CLICKED),0);
+            check(!plugin.auto_updates_ && plugin.update_interval_minutes_==73 && plugin.update_repository_=="example/actual",
+                "Opening every page must preserve update settings");
+            check(IsDlgButtonChecked(plugin.update_dialog_,IDC_UPDATE_AUTO)==BST_UNCHECKED &&
+                GetDlgItemInt(plugin.update_dialog_,IDC_UPDATE_INTERVAL,nullptr,FALSE)==73 &&
+                Plugin::control_text(plugin.update_dialog_,IDC_UPDATE_REPOSITORY)==L"example/actual","Updates display actual values");
+            check(o.balance && o.smart && !o.skips && !o.completions && !o.replays && !o.volume && !plugin.statistics_.collecting,
+                "Page initialization must preserve every learning and collection flag");
+            // Simulate a change made outside a cached page, plus unsaved stale text.
+            SetDlgItemTextW(plugin.update_dialog_,IDC_UPDATE_INTERVAL,L"999");
+            SetDlgItemTextW(plugin.storage_dialog_,IDC_MUSIC_FOLDER,L"stale unsaved root");
+            CheckDlgButton(plugin.storage_dialog_,IDC_SHARE_SETTINGS,BST_UNCHECKED);
+            plugin.show_settings(2);
+            check(Plugin::control_text(plugin.storage_dialog_,IDC_MUSIC_FOLDER)==root.wstring() &&
+                IsDlgButtonChecked(plugin.storage_dialog_,IDC_SHARE_SETTINGS)==BST_CHECKED,"Music folders refresh actual roots and sharing state");
+            plugin.show_settings(6);
+            check(GetDlgItemInt(plugin.update_dialog_,IDC_UPDATE_INTERVAL,nullptr,FALSE)==73,"Cached update fields refresh from actual settings");
+            plugin.show_settings(4);const auto learning=plugin.statistics_window_.handle();
+            SendMessageW(learning,WM_COMMAND,MAKEWPARAM(2121,BN_CLICKED),reinterpret_cast<LPARAM>(GetDlgItem(learning,2121)));
+            check(o.balance_strength==.7 && o.strength==1.3 && o.limit==.12,"Applying unchanged learning controls preserves custom numeric settings");
+            SendMessageW(shell,WM_CLOSE,0,0);
+        }
+        plugin.reload_shared_settings();check(plugin.minimum_weight_==1 && !plugin.finite_,"Explicit shared reload still adopts shared rules");
+        plugin.Finalize();manager.active=nullptr;std::filesystem::remove_all(root);
+    }
     static void shared_settings_checks(Manager& manager,Messages& messages) {
         EmptyPlaylist playlist;manager.active=&playlist;
         const auto root=std::filesystem::current_path()/L"shared-settings-fixture";std::filesystem::create_directories(root);
@@ -1844,6 +1891,7 @@ struct PluginChecks {
         check(plugin.GetPrev(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output) == FALSE, "Previous with shuffle off.");
         messages.shuffle = TRUE;
         settings_shell_checks(manager,messages);
+        settings_value_checks(manager,messages);
         shared_settings_checks(manager,messages);
         statistics_checks(manager,messages);
         minimum_weight_checks(manager, messages);

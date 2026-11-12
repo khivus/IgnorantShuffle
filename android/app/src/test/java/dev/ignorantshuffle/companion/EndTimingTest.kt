@@ -5,10 +5,10 @@ import org.junit.Test
 
 class EndTimingTest {
     private val sample = TimingSnapshot("a", 3, 20_000, 30_000, 1f, 1000)
-    @Test fun deadlineProjectsPositionWithoutPolling() { assertEquals(9700L, EndTiming.delayMillis(sample, 1000)) }
+    @Test fun deadlineProjectsPositionWithoutPolling() { assertEquals(9850L, EndTiming.delayMillis(sample, 1000)) }
     @Test fun elapsedTimeAndPlaybackSpeedAreApplied() {
-        assertEquals(8700L, EndTiming.delayMillis(sample, 2000))
-        assertEquals(4850L, EndTiming.delayMillis(sample.copy(speed = 2f), 1000))
+        assertEquals(8850L, EndTiming.delayMillis(sample, 2000))
+        assertEquals(4925L, EndTiming.delayMillis(sample.copy(speed = 2f), 1000))
     }
     @Test fun pauseStopBufferingCannotTrigger() {
         listOf(0, 1, 2, 6, 7).forEach { assertNull(EndTiming.delayMillis(sample.copy(state = it), 1000)) }
@@ -21,17 +21,17 @@ class EndTimingTest {
         }
     }
     @Test fun changedSourceCannotBeTakenOverAtOldDeadline() {
-        assertFalse(EndTiming.due(sample.copy(key = "manual-selection"), "a", 10_700))
+        assertFalse(EndTiming.due(sample.copy(key = "manual-selection"), "a", 10_850))
     }
     @Test fun lateSuspendedHandlerCannotTakeOverAmbiguousPlayback() {
         assertNull(EndTiming.delayMillis(sample, 15_000))
         assertFalse(EndTiming.due(sample, "a", 15_000))
     }
     @Test fun seekingBackRequiresARescheduledDeadline() {
-        assertFalse(EndTiming.due(sample.copy(position = 0, updatedAt = 10_700), "a", 10_700))
+        assertFalse(EndTiming.due(sample.copy(position = 0, updatedAt = 10_850), "a", 10_850))
     }
     @Test fun thresholdNeverFiresBeforeLeadBoundary() {
-        assertFalse(EndTiming.due(sample, "a", 10_699))
-        assertTrue(EndTiming.due(sample, "a", 10_700))
+        assertFalse(EndTiming.due(sample, "a", 10_849))
+        assertTrue(EndTiming.due(sample, "a", 10_850))
     }
 }

@@ -6,7 +6,7 @@ data class TimingSnapshot(val key: String?, val state: Int, val position: Long, 
     val speed: Float, val updatedAt: Long)
 
 object EndTiming {
-    const val LEAD_MS = 300L
+    const val LEAD_MS = 150L
     // One deadline per playing track, not a session-polling loop. A very late
     // handler must not take over an ambiguous end/stop/repeat transition.
     fun delayMillis(sample: TimingSnapshot, now: Long, leadMs: Long = LEAD_MS): Long? {

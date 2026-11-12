@@ -192,7 +192,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     bool shutting_down_ = false;
     bool queue_refresh_pending_ = false;
     bool awaiting_stream_start_ = false;
-    int cooldown_ = 0;
+    int cooldown_ = 3;
     double minimum_weight_ = 1.0;
     std::deque<std::string> recent_tracks_;
     Ref<IAIMPPlaylistItem> prepared_track_;
@@ -336,7 +336,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         enabled_ = GetPrivateProfileIntW(L"Monitor", L"Enabled", 1, preferences_file_.c_str()) != 0;
         pinned_ = GetPrivateProfileIntW(L"Monitor", L"Pinned", 1, preferences_file_.c_str()) != 0;
         side_panel_ = GetPrivateProfileIntW(L"Monitor", L"Attached", 0, preferences_file_.c_str()) != 0;
-        cooldown_ = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Monitor", L"CooldownTracks", 0, preferences_file_.c_str())), 0, 10000);
+        cooldown_ = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Monitor", L"CooldownTracks", 3, preferences_file_.c_str())), 0, 10000);
         finite_ = GetPrivateProfileIntW(L"Shuffle", L"FinitePlaylist", 0, preferences_file_.c_str()) != 0;
         wchar_t fallback[512]{};
         GetPrivateProfileStringW(L"Shuffle", L"DefaultWeight", L"5", fallback, 512, preferences_file_.c_str());
@@ -731,6 +731,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             if (message == WM_TIMER) { self->update_tick(); return TRUE; }
             if (message == WM_COMMAND) {
                 const auto id = LOWORD(wparam);
+                if(HIWORD(wparam)!=BN_CLICKED)return FALSE;
                 if (id == IDC_UPDATE_AUTO) {
                     self->auto_updates_ = IsDlgButtonChecked(window, id) == BST_CHECKED;
                     if(self->auto_updates_)self->next_update_check_=0;
@@ -778,25 +779,28 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         settings_window_.on_page=[this](int selected,HWND parent)->HWND {
             if(selected==0) {
                 if(!dialog_)CreateDialogParamW(module,MAKEINTRESOURCEW(IDD_SETTINGS),parent,dialog_proc,reinterpret_cast<LPARAM>(this));
+                refresh(dialog_);
                 return dialog_;
             }
             if(selected==1){
                 if(!rules_dialog_)CreateDialogParamW(module,MAKEINTRESOURCEW(IDD_RULES),parent,rules_proc,reinterpret_cast<LPARAM>(this));
-                SetDlgItemTextW(rules_dialog_,IDC_DEFAULT_WEIGHT,weight_text(weights_.fallback()).c_str());
-                SetDlgItemTextW(rules_dialog_,IDC_MINIMUM_WEIGHT,weight_text(minimum_weight_).c_str());
-                SetDlgItemInt(rules_dialog_,IDC_COOLDOWN,cooldown_,FALSE);CheckDlgButton(rules_dialog_,IDC_FINITE_PLAYLIST,finite_?BST_CHECKED:BST_UNCHECKED);
+                refresh_rules_controls(rules_dialog_);
                 return rules_dialog_;
             }
             if(selected==2) {
                 if(!storage_dialog_)CreateDialogParamW(module,MAKEINTRESOURCEW(IDD_STORAGE),parent,storage_proc,reinterpret_cast<LPARAM>(this));
+                refresh_storage_controls(storage_dialog_);
                 return storage_dialog_;
             }
             if(selected>=3 && selected<=5){show_statistics(selected==3?0:selected==4?5:6);return statistics_window_.handle();}
             if(!update_dialog_)CreateDialogParamW(module,MAKEINTRESOURCEW(IDD_UPDATES),parent,updates_procedure,reinterpret_cast<LPARAM>(this));
+            SetDlgItemTextW(update_dialog_,IDC_UPDATE_REPOSITORY,from_utf8(update_repository_).c_str());
+            CheckDlgButton(update_dialog_,IDC_UPDATE_AUTO,auto_updates_?BST_CHECKED:BST_UNCHECKED);
+            SetDlgItemInt(update_dialog_,IDC_UPDATE_INTERVAL,update_interval_minutes_,FALSE);
             return update_dialog_;
         };
-        const bool opening=!settings_window_.handle() || !IsWindowVisible(settings_window_.handle());
-        if(opening)try{reload_shared_settings();}catch(const std::exception& e){log_.write("settings.shared.error",e.what());}
+        // Viewing settings must not replace local edits with an older shared file.
+        // Shared rules are imported at startup, when enabling sharing, or by Reload shared.
         settings_window_.show(module,monitor_.handle(),page);
     }
     void statistics_tick(bool restarted=false) {
@@ -1361,13 +1365,28 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             roots += folder; SetDlgItemTextW(window, IDC_MUSIC_FOLDER, roots.c_str()); CoTaskMemFree(folder);
         }
     }
+    void refresh_rules_controls(HWND window) {
+        SetDlgItemTextW(window,IDC_DEFAULT_WEIGHT,weight_text(weights_.fallback()).c_str());
+        SetDlgItemTextW(window,IDC_MINIMUM_WEIGHT,weight_text(minimum_weight_).c_str());
+        SetDlgItemInt(window,IDC_COOLDOWN,cooldown_,FALSE);
+        CheckDlgButton(window,IDC_FINITE_PLAYLIST,finite_?BST_CHECKED:BST_UNCHECKED);
+        for(const auto id:{IDC_COOLDOWN,IDC_APPLY_COOLDOWN})EnableWindow(GetDlgItem(window,id),!finite_);
+        storage_status(window);
+    }
+    void refresh_storage_controls(HWND window) {
+        std::wstring roots;
+        for(const auto& root:music_folders_){if(!roots.empty())roots+=L"\r\n";roots+=root.wstring();}
+        SetDlgItemTextW(window,IDC_MUSIC_FOLDER,roots.c_str());
+        SetDlgItemTextW(window,IDC_DEFAULT_WEIGHT,weight_text(weights_.fallback()).c_str());
+        SetDlgItemTextW(window,IDC_MINIMUM_WEIGHT,weight_text(minimum_weight_).c_str());
+        CheckDlgButton(window,IDC_SHARE_SETTINGS,share_settings_?BST_CHECKED:BST_UNCHECKED);
+        fill_transfer_roots(window);storage_status(window);
+    }
     static INT_PTR CALLBACK rules_proc(HWND window,UINT message,WPARAM wparam,LPARAM lparam){
         auto* self=reinterpret_cast<Plugin*>(GetWindowLongPtrW(window,DWLP_USER));
         if(message==WM_INITDIALOG){
             self=reinterpret_cast<Plugin*>(lparam);SetWindowLongPtrW(window,DWLP_USER,lparam);self->rules_dialog_=window;
-            SetDlgItemTextW(window,IDC_DEFAULT_WEIGHT,weight_text(self->weights_.fallback()).c_str());
-            SetDlgItemTextW(window,IDC_MINIMUM_WEIGHT,weight_text(self->minimum_weight_).c_str());
-            SetDlgItemInt(window,IDC_COOLDOWN,self->cooldown_,FALSE);CheckDlgButton(window,IDC_FINITE_PLAYLIST,self->finite_?BST_CHECKED:BST_UNCHECKED);return TRUE;
+            self->refresh_rules_controls(window);return TRUE;
         }
         if(!self)return FALSE;
         try {
@@ -1376,7 +1395,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 if(id==IDC_APPLY_DEFAULT_WEIGHT)self->apply_default_weight(window);
                 else if(id==IDC_APPLY_MINIMUM_WEIGHT)self->apply_minimum_weight(window);
                 else if(id==IDC_APPLY_COOLDOWN){BOOL valid=FALSE;const auto value=GetDlgItemInt(window,IDC_COOLDOWN,&valid,FALSE);if(!valid || value>10000)throw std::runtime_error("Cooldown must be 0 to 10000");self->set_cooldown(value);}
-                else if(id==IDC_FINITE_PLAYLIST)self->set_finite(IsDlgButtonChecked(window,id)==BST_CHECKED);
+                else if(id==IDC_FINITE_PLAYLIST){self->set_finite(IsDlgButtonChecked(window,id)==BST_CHECKED);for(const auto control:{IDC_COOLDOWN,IDC_APPLY_COOLDOWN})EnableWindow(GetDlgItem(window,control),!self->finite_);}
+                else return FALSE;
                 self->settings_window_.feedback(L"Shuffle rules saved.");return TRUE;
             }
             if(message==WM_DESTROY)self->rules_dialog_=nullptr;
@@ -1389,18 +1409,12 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             if (message == WM_INITDIALOG) {
                 self = reinterpret_cast<Plugin*>(lparam);
                 SetWindowLongPtrW(window, DWLP_USER, lparam); self->storage_dialog_ = window;
-                std::wstring roots;
-                for (const auto& root : self->music_folders_) { if (!roots.empty()) roots += L"\r\n"; roots += root.wstring(); }
-                SetDlgItemTextW(window, IDC_MUSIC_FOLDER, roots.c_str());
-                SetDlgItemTextW(window, IDC_DEFAULT_WEIGHT, weight_text(self->weights_.fallback()).c_str());
-                SetDlgItemTextW(window, IDC_MINIMUM_WEIGHT, weight_text(self->minimum_weight_).c_str());
-                CheckDlgButton(window,IDC_SHARE_SETTINGS,self->share_settings_?BST_CHECKED:BST_UNCHECKED);
-                self->fill_transfer_roots(window);
-                self->storage_status(window); return TRUE;
+                self->refresh_storage_controls(window);return TRUE;
             }
             if (!self) return FALSE;
             if (message == WM_COMMAND) {
                 const auto id = LOWORD(wparam);
+                if(HIWORD(wparam)!=BN_CLICKED)return FALSE;
                 if (id == IDOK || id == IDCANCEL) ShowWindow(self->settings_window_.handle(),SW_HIDE);
                 else if(id==IDC_SHARE_SETTINGS){self->share_settings_=IsDlgButtonChecked(window,id)==BST_CHECKED;self->save_preferences();if(self->share_settings_)self->reload_shared_settings();else self->settings_window_.feedback(L"Sharing is off. Current settings stay on this device.");}
                 else if(id==IDC_RELOAD_SETTINGS)self->reload_shared_settings();

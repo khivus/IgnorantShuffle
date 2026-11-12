@@ -8,7 +8,7 @@ namespace ignorant {
 inline constexpr auto shared_settings_filename="IgnorantShuffle.settings.tsv";
 struct SharedSettings {
     double default_weight=5,minimum=1;
-    int cooldown=0;
+    int cooldown=3;
     bool finite=false;
     LearningOptions learning;
     void validate() const {

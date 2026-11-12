@@ -14,7 +14,7 @@ Sharing is disabled by default **independently on each device**. Enable it in Mu
 
 The file carries default weight, minimum eligible weight, cooldown, finite-pass mode, listening balance and its strength, smart-learning mode, strength, limit and signal toggles. Appearance, Android timing and permissions, automatic playback, Windows attachment, update sources and collection permissions remain device preferences. The opt-in itself never travels in the shared file.
 
-Windows uses the first configured music root. Android uses the folder selected for import/export. Choose corresponding roots. Sharing is imported on app foreground/startup and when Windows Settings is opened; use **Reload shared** after syncing while an app remains open. Use **Publish current settings** after changing local rules or learning options. Publishing refuses a file changed since the last reload and preserves a backup. Disabling sharing keeps the current values locally and stops subsequent shared imports.
+Windows uses the first configured music root. Android uses the folder selected for import/export. Choose corresponding roots. Android imports shared settings on foreground/startup; Windows imports them on startup and when sharing is enabled. Opening Windows Settings only displays current values. Use **Reload shared** to adopt synced changes while Windows remains open. Use **Publish current settings** after changing local rules or learning options. Publishing refuses a file changed since the last reload and preserves a backup. Disabling sharing keeps the current values locally and stops subsequent shared imports.
 
 ## Agent checks
 
@@ -43,3 +43,10 @@ Live AIMP playback, touch/TalkBack interaction, cross-device file sync, installe
 - Restart both apps after saving a custom interval and confirm it persists. Reject zero, a non-number and more than 10080 minutes without changing the saved interval. Update settings must remain local when shared settings is enabled.
 - With a newer test release, expect Android's Update available text above the connection status; tapping the area opens Updates directly. Windows must show only a text notice at the bottom of the player, including during download/ready states. After installing the newer version, a completed check should clear the notice. Check both connected and disconnected Android states.
 - On Android, restart with a verified APK already cached and check that startup still requests current release information. Rotate or navigate away during download, return and install; the existing signing and package-verification rules must remain in force. Background timing and real network/package-installer behavior require device testing.
+
+## Windows settings value checks
+
+- With sharing enabled and an older shared file present, change minimum weight to 6 and enable Play playlist once locally. Close and reopen Settings, then visit every category. Both values and active playback mode must stay unchanged. Reload shared explicitly to adopt the file.
+- Reopen Shuffle rules after edits from the monitor; verify default/minimum weights, cooldown and finite mode show current values. Finite mode disables cooldown editing without clearing the stored cooldown.
+- Revisit Music folders and About and updates after changing saved values. Roots, sharing, update source, automatic checks and interval must reflect current settings. Unsaved field edits are discarded when revisiting a page.
+- Load custom shared learning strengths/limits between the preset values. The Learning page must show Custom values; applying without edits must preserve them exactly. Collection and all learning signal switches must survive category changes and reopening.

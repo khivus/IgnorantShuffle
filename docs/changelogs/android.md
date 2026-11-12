@@ -4,6 +4,11 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.12.1 (versionCode 15)
+
+- Default cooldown to 3 track starts, end-of-track lead to 150 ms, and reactive correction delay to 0 ms.
+- Preserve existing saved values and keep combined switching optional.
+
 ## 0.12.0 (versionCode 14)
 
 - Embed updater controls directly in Updates and show a tappable availability notice above the connection status.

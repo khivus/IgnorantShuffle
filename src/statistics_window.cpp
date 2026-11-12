@@ -103,17 +103,28 @@ void StatisticsWindow::layout() {
 }
 void StatisticsWindow::learning_controls() {
     if(!on_data)return;data_=on_data();const auto& o=data_.options;
+    displayed_options_=o;
     for(const auto pair:std::vector<std::pair<int,bool>>{{BALANCE,o.balance},{SMART,o.smart},{SKIPS,o.skips},{FULL,o.completions},{REPLAYS,o.replays},{VOLUME,o.volume},{COLLECT,data_.collecting}})CheckDlgButton(window_,pair.first,pair.second?BST_CHECKED:BST_UNCHECKED);
-    SendDlgItemMessageW(window_,BALANCE_STRENGTH,CB_SETCURSEL,o.balance_strength<=.25?0:o.balance_strength<=.5?1:2,0);
-    SendDlgItemMessageW(window_,STRENGTH,CB_SETCURSEL,o.strength<=.5?0:o.strength<=1?1:2,0);
-    SendDlgItemMessageW(window_,LIMIT,CB_SETCURSEL,o.limit<=.05?0:o.limit<=.15?1:2,0);
+    const auto select_value=[&](int id,double value,const std::vector<double>& presets){
+        if(SendDlgItemMessageW(window_,id,CB_GETCOUNT,0,0)>3)SendDlgItemMessageW(window_,id,CB_DELETESTRING,3,0);
+        const auto found=std::find(presets.begin(),presets.end(),value);
+        const int index=static_cast<int>(found-presets.begin());
+        if(found==presets.end()){
+            std::wostringstream label;label<<L"Custom: "<<std::setprecision(17)<<value;
+            SendDlgItemMessageW(window_,id,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(label.str().c_str()));
+        }
+        SendDlgItemMessageW(window_,id,CB_SETCURSEL,index,0);
+    };
+    select_value(BALANCE_STRENGTH,o.balance_strength,{.25,.5,1});
+    select_value(STRENGTH,o.strength,{.5,1,2});
+    select_value(LIMIT,o.limit,{.05,.15,.25});
 }
 void StatisticsWindow::apply_learning() {
     auto o=data_.options;
     auto checked=[&](int id){return IsDlgButtonChecked(window_,id)==BST_CHECKED;};
     o.balance=checked(BALANCE);o.smart=checked(SMART);o.skips=checked(SKIPS);o.completions=checked(FULL);o.replays=checked(REPLAYS);o.volume=checked(VOLUME);
-    const double balance[]{.25,.5,1},strength[]{.5,1,2},limits[]{.05,.15,.25};
-    const auto index=[&](int id){return std::clamp(static_cast<int>(SendDlgItemMessageW(window_,id,CB_GETCURSEL,0,0)),0,2);};
+    const double balance[]{.25,.5,1,displayed_options_.balance_strength},strength[]{.5,1,2,displayed_options_.strength},limits[]{.05,.15,.25,displayed_options_.limit};
+    const auto index=[&](int id){return std::clamp(static_cast<int>(SendDlgItemMessageW(window_,id,CB_GETCURSEL,0,0)),0,3);};
     o.balance_strength=balance[index(BALANCE_STRENGTH)];o.strength=strength[index(STRENGTH)];o.limit=limits[index(LIMIT)];o.validate();
     if(on_settings)on_settings(o,checked(COLLECT));refresh();
 }

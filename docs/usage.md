@@ -19,7 +19,7 @@ Set **Track weights... > Weight storage... > Default weight**, then click **Appl
 
 Set **Track weights... > Weight storage... > Minimum weight**, then click **Apply minimum** to control eligibility. The default is **1**. A track is eligible when its effective weight is **greater than or equal to** the minimum; lower values are excluded. The minimum must be finite and **greater than 0**, including positive fractions such as **0.1**. It applies to default and music-root weights before cooldown and finite-pass selection, without changing stored weights. Changes refresh prefetched choices and the panel/editor immediately. The minimum is saved per AIMP profile, separately from shared TSV files.
 
-By default shuffle continues indefinitely. With cooldown off, every draw includes all candidates that meet the minimum weight, so immediate repeats are possible. With cooldown on, the draw uses eligible tracks outside cooldown. Returning from cooldown makes a track eligible; it does not guarantee that it will be selected immediately.
+By default shuffle continues indefinitely with a cooldown of **3 track starts**. With cooldown off, every draw includes all candidates that meet the minimum weight, so immediate repeats are possible. With cooldown on, the draw uses eligible tracks outside cooldown. Returning from cooldown makes a track eligible; it does not guarantee that it will be selected immediately.
 
 Weights below the minimum are filtered before drawing. In the default endless mode, if no eligible tracks remain, the plugin supplies no next track and tells AIMP to stop. AIMP checks disabled playlist entries itself. Explicit user-queue entries and repeat settings can take precedence over the plugin's choice.
 

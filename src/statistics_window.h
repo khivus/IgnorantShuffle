@@ -18,6 +18,7 @@ class StatisticsWindow {
     int dpi_=96, page_override_=-1;
     bool updating_=false;
     StatisticsWindowData data_;
+    ignorant::LearningOptions displayed_options_;
     ignorant::StatisticsSummary summary_;
     struct Row {std::string id;std::vector<std::wstring> cells;};
     std::vector<Row> rows_;

@@ -1,12 +1,8 @@
-## What's new
-
-- Choose an automatic update-check interval on Windows and Android, from 1 minute to 7 days. Automatic checks also run on every app startup, even after a recent check. Turn automatic checks off to use manual checks only.
-- Android shows Update available above the AIMP connection status. Tap it to open Updates. Windows shows a plain update notice at the bottom of the player.
-
 ## Improvements
 
-- The Android preview's Updates page now contains the settings, release notes, download progress and installation controls directly. Automatic checks keep you on your current page.
+- New installations use a cooldown of 3 track starts on Windows and Android. Android switches 150 ms before track end and uses a 0 ms reactive correction delay. Existing saved values are preserved; reactive correction remains optional.
 
 ## Fixes
 
-- Android checks for the latest release at startup even when a verified APK is already waiting to install.
+- Opening Windows Settings no longer reloads an older shared file and reverses local changes, including minimum weight and Play playlist once. Use Reload shared to import changes, or Publish current settings to share your edits.
+- Windows settings pages show current saved values when reopened. Custom learning strengths and limits display accurately and remain unchanged when applied without edits.

@@ -3,6 +3,12 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## 0.17.1
+
+- Default track cooldown to 3 track starts while preserving saved preferences.
+- Preserve local minimum weight, finite-playlist mode and learning rules when opening Settings instead of reloading an older shared file.
+- Refresh fields on returning to settings pages and preserve custom learning strengths and limits when applying unchanged controls.
+
 ## 0.17.0
 
 - Add a saved update-check interval and automatic-check toggle, with checks at every plugin startup when enabled.

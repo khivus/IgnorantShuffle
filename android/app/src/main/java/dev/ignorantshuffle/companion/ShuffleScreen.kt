@@ -401,7 +401,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
                             StateChip(selected = correctionDelay == ms.toString(), onClick = { correctionDelay = ms.toString() }, label = { Text("$ms") })
                         }
                     }
-                    Text("0–2000 ms; default 200. Lower values reduce the audible fragment. Zero sends immediately when a different PLAYING track is identified, but may react to temporary metadata. AIMP response time still adds delay.", style = MaterialTheme.typography.bodySmall)
+                    Text("0–2000 ms; default 0. Lower values reduce the audible fragment. Zero sends immediately when a different PLAYING track is identified, but may react to temporary metadata. AIMP response time still adds delay.", style = MaterialTheme.typography.bodySmall)
                     correctionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     ActionButton(onClick = {
                         val ms = correctionDelay.toLongOrNull()
@@ -422,7 +422,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
                         StateChip(selected = lead == ms.toString(), onClick = { lead = ms.toString() }, label = { Text("$ms") })
                     }
                 }
-                Text("0–5000 ms; default 300. Smaller values preserve more of the ending but may let AIMP advance first. Try 100, then 50 or 0; compare exported timing logs.", style = MaterialTheme.typography.bodySmall)
+                Text("0–5000 ms; default 150. Smaller values preserve more of the ending but may let AIMP advance first. Try 100, then 50 or 0; compare exported timing logs.", style = MaterialTheme.typography.bodySmall)
                 ActionButton(onClick = {
                     val ms = lead.toLongOrNull()
                     if (ms == null || ms !in 0..5000) error = "Enter 0–5000 ms"

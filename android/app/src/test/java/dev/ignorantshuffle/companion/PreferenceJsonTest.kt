@@ -7,7 +7,7 @@ class PreferenceJsonTest {
     @Test fun correctionDelayMigratesAndPersistsIndependentlyOfTrackEndLead() {
         val old = PreferenceJson.decode("""{"reactivePlayback":true,"leadMs":150}""")
         assertTrue(old.reactivePlayback)
-        assertEquals(200L, old.correctionDelayMs)
+        assertEquals(0L, old.correctionDelayMs)
         assertEquals(150L, old.leadMs)
         for (delay in listOf(0L, 25L, 200L, 2000L)) {
             val choice = old.copy(correctionDelayMs = delay)

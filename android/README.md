@@ -98,19 +98,19 @@ Enable **Playback > Automatic switching > Combined switching (experimental)**,
 with **Player > Enable weighted shuffle** and AIMP Shuffle on. This saved, opt-in
 mode combines the existing end timer with correction after early AIMP/headset
 skips. Normal endings switch to the weighted choice using **Switch before track
-end** (0–5000 ms; default 300). An early change is compared with the previously
+end** (0–5000 ms; default 150). An early change is compared with the previously
 displayed weighted choice, and one correction requests that saved target. The end
 timer is canceled while a change is settling or a correction is awaiting confirmation.
 It also corrects a natural AIMP transition if the end timer was missed.
 
 **Correction delay after track change** is separate: choose **0–2000 ms** (default
-200), then **Apply correction delay**. Presets are 0/25/50/100/200 ms. Lower values
+0), then **Apply correction delay**. Presets are 0/25/50/100/200 ms. Lower values
 reduce the unwanted fragment. Zero requests the target as soon as a different
 PLAYING track is identified, with more risk of reacting to temporary metadata.
 Small delays are not rounded up to 100 ms. This delay begins on an identified
 PLAYING observation; AIMP's own metadata and command latency still add time.
-Both timings persist independently. Existing experimental-mode users automatically
-get combined switching with the previous 200 ms correction delay. Debug mode is
+Both timings persist independently. Saved timing values are preserved; missing
+values use the current defaults. Debug mode is
 independent. Phone testing is needed for audible latency and screen-off reliability.
 
 To select a specific track in AIMP, select it again **within five seconds after

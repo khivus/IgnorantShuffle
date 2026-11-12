@@ -11,7 +11,7 @@ sealed interface ReactiveDecision {
 /** Captures a roll before AIMP advances. Repeated callbacks never count as a second selection. */
 class ReactivePlayback {
     companion object {
-        const val SETTLE_MS = 200L
+        const val SETTLE_MS = 0L
         const val MAX_DELAY_MS = 2000L
         const val OVERRIDE_MS = 5000L
         const val PAUSE_GRACE_MS = 1000L

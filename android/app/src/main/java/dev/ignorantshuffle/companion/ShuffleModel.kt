@@ -14,7 +14,7 @@ data class Track(val queueId: Long, val mediaId: String?, val uri: String?, val 
     val selectable get() = mediaId != null || uri != null || queueId >= 0
 }
 
-data class Settings(val defaultWeight: Double = 5.0, val cooldown: Int = 0, val finite: Boolean = false,
+data class Settings(val defaultWeight: Double = 5.0, val cooldown: Int = 3, val finite: Boolean = false,
     val minimumWeight: Double = 1.0) {
     fun validate() {
         require(defaultWeight.isFinite() && defaultWeight >= 0) { "Default weight must be finite and nonnegative" }
