@@ -3,6 +3,10 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## 0.17.2
+
+- Preserve play-once progress when AIMP briefly reports a stopped state between tracks; reset the pass only when the stream ends without a next track.
+
 ## 0.17.1
 
 - Default track cooldown to 3 track starts while preserving saved preferences.

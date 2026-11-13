@@ -1580,6 +1580,14 @@ struct PluginChecks {
             auto item = query<IAIMPPlaylistItem>(output.item.get(), IID_IAIMPPlaylistItem);
             check(item && heard.insert(track_key(item.get())).second && !same_object(item.get(), &zero), "Finite pass visits each positive filename once, including duplicate entries.");
             player.current = item.get();
+            if (i > 0) {
+                const auto pass = stop.active_pass_;
+                player.state = AIMP_PLAYER_STATE_STOPPED;
+                stop.CoreMessage(AIMP_MSG_EVENT_PLAYER_STATE, AIMP_PLAYER_STATE_STOPPED, nullptr, &result);
+                check(stop.active_pass_ == pass && stop.playing_, "A transient stopped state before selection must preserve finite progress.");
+                stop.CoreMessage(AIMP_MSG_EVENT_STREAM_END, AIMP_MES_HAS_NEXT_TRACK, nullptr, &result);
+                player.state = AIMP_PLAYER_STATE_PLAYING;
+            }
             if (i == 1) output.custom = {}; // tokenless transition recovery
             stop.OnSelect(item.get(), &output);
             const auto played_before = stop.playing_->pass->played.size();
@@ -1617,8 +1625,15 @@ struct PluginChecks {
             if (i % 3 == 0) heard.clear();
             auto item = query<IAIMPPlaylistItem>(output.item.get(), IID_IAIMPPlaylistItem);
             check(item && heard.insert(track_key(item.get())).second, "Each repeated pass remains finite and contains no duplicate filename.");
+            const auto pass = stop.active_pass_;
+            player.state = AIMP_PLAYER_STATE_STOPPED;
+            stop.CoreMessage(AIMP_MSG_EVENT_PLAYER_STATE, AIMP_PLAYER_STATE_STOPPED, nullptr, &result);
+            stop.CoreMessage(AIMP_MSG_EVENT_STREAM_END, AIMP_MES_HAS_NEXT_TRACK, nullptr, &result);
+            check(stop.active_pass_ == pass, "Automatic transitions preserve the current pass, including a prefetched repeat boundary.");
+            player.state = AIMP_PLAYER_STATE_PLAYING;
             player.current = item.get(); stop.OnSelect(item.get(), &output);
             stop.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+            check(stop.active_pass_->played.size() == static_cast<std::size_t>(i % 3 + 1), "Repeated passes count all three starts before beginning a new pass.");
             QueueOutput upcoming, future;
             stop.GetNext(item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &upcoming);
             stop.GetNext(upcoming.item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &future);
@@ -1627,9 +1642,18 @@ struct PluginChecks {
         }
         player.state = AIMP_PLAYER_STATE_STOPPED;
         stop.CoreMessage(AIMP_MSG_EVENT_PLAYER_STATE, 0, nullptr, &result);
+        stop.CoreMessage(AIMP_MSG_EVENT_STREAM_END, 0, nullptr, &result);
         check(!stop.active_pass_ && !stop.playing_, "Stopping clears the finite pass for a fresh start.");
         stop.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_BEGINNING, &output);
         check(static_cast<bool>(output.item), "Restart after stop has a fresh weighted order.");
+        player.state = AIMP_PLAYER_STATE_PLAYING;
+        auto restarted = query<IAIMPPlaylistItem>(output.item.get(), IID_IAIMPPlaylistItem);
+        player.current = restarted.get(); stop.OnSelect(restarted.get(), &output);
+        stop.CoreMessage(AIMP_MSG_EVENT_STREAM_START, 0, nullptr, &result);
+        stop.CoreMessage(AIMP_MSG_EVENT_STREAM_END, AIMP_MES_END_OF_PLAYLIST, nullptr, &result);
+        player.state = AIMP_PLAYER_STATE_STOPPED;
+        stop.CoreMessage(AIMP_MSG_EVENT_PLAYER_STATE, 0, nullptr, &result);
+        check(!stop.active_pass_ && !stop.playing_, "A final stream end clears the finite pass even before the stopped notification.");
         stop.Finalize(); player.state = AIMP_PLAYER_STATE_PLAYING;
 
         // Next playlist follows loaded order, skips empty/excluded lists, and wraps.

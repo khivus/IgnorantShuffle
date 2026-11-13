@@ -1670,7 +1670,11 @@ public:
             if(message==AIMP_MSG_EVENT_PLAYER_STATE || message==AIMP_MSG_EVENT_PLAYING_FILE_INFO || (message==AIMP_MSG_EVENT_PROPERTY_VALUE && parameter==AIMP_MSG_PROPERTY_VOLUME))statistics_tick();
             if (message == AIMP_MSG_EVENT_PROPERTY_VALUE && parameter == AIMP_MSG_PROPERTY_SHUFFLE) { reset_finite_progress(); changed(); }
             if (message == AIMP_MSG_EVENT_PROPERTY_VALUE && parameter == AIMP_MSG_PROPERTY_ACTION_ON_END_OF_PLAYLIST && finite_) changed();
-            if (message == AIMP_MSG_EVENT_PLAYER_STATE && finite_ && player_ && player_->GetState() == AIMP_PLAYER_STATE_STOPPED && !awaiting_stream_start_) {
+            // AIMP briefly reports STOPPED before STREAM_END and OnSelect even
+            // during automatic transitions. Only a stream end without a next
+            // track confirms that playback has actually finished.
+            if (message == AIMP_MSG_EVENT_STREAM_END && finite_ && !(parameter & AIMP_MES_HAS_NEXT_TRACK) && !awaiting_stream_start_) {
+                log_.write("shuffle.finite.reset", "reason=stream_ended_without_next flags=" + std::to_string(parameter));
                 reset_finite_progress();
                 history_.clear(); playing_.reset(); audible_.reset(); cursor_source_.reset(); beginning_.reset();
                 queue_refresh_pending_ = false;
