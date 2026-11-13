@@ -190,9 +190,11 @@ class AimpController(private val context: Context) {
             } }.onFailure { e -> handler.post { sharedSettingsStatus = "Shared settings not saved: ${e.message}"; acknowledge(sharedSettingsStatus) } }
         }
     }
-    fun enqueue(track: Track) = guarded {
+    fun enqueue(track: Track, atBeginning: Boolean = false) = guarded {
         check(track.selectable && !pending) { "Wait for playback confirmation" }
-        saveQueue(appQueue + QueueEntry.from(track)); acknowledge("Added [${appQueue.size}] ${track.title}")
+        val entry = QueueEntry.from(track)
+        saveQueue(if (atBeginning) listOf(entry) + appQueue else appQueue + entry)
+        acknowledge("Added [${if (atBeginning) 1 else appQueue.size}] ${track.title}")
     }
     fun removeQueue(id: String) = guarded { check(!pending); saveQueue(appQueue.filterNot { it.id == id }); acknowledge("Removed from queue") }
     fun clearQueue() = guarded { check(!pending); saveQueue(emptyList()); acknowledge("Queue cleared") }

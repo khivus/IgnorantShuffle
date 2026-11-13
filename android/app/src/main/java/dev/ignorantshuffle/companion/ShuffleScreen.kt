@@ -275,7 +275,10 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
                             FilledTonalButton(onClick = { edit(track) }, modifier = Modifier.weight(1f), enabled = !m.pending && m.storageError == null && !m.folder.blocked) { Text("Weight ${m.weight(track)}") }
                             ActionButton(onClick = { m.play(track) }, modifier = Modifier.weight(1f), enabled = m.ready() && track.selectable) { Text("Play now") }
                         }
-                        TextButton(onClick = { m.enqueue(track) }, enabled = track.selectable && !m.pending) { Text("Add to queue") }
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { m.enqueue(track, atBeginning = true) }, enabled = track.selectable && !m.pending) { Text("Add to beginning") }
+                            TextButton(onClick = { m.enqueue(track) }, enabled = track.selectable && !m.pending) { Text("Add to end") }
+                        }
                         if (expanded == track.key) {
                         if(m.preferences.smartWeights.enabled) {
                             val score=m.statistics.smartScores[m.statisticsKey(track)]?:m.statistics.smartScores[track.key]?:0.0
@@ -315,7 +318,11 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
     var correctionError by rememberSaveable { mutableStateOf<String?>(null) }
     var removingRoot by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Intro(group, "Changes are saved on this device") }
+        item { Intro(group, when (group) {
+            "Shuffle rules" -> "Listening balance and Smart weights apply immediately. Weights, cooldown and Finite pass require Apply shuffle settings."
+            "Playback" -> "Combined switching applies immediately. Timing fields and presets require their Apply button."
+            else -> "Changes are saved when you use each action."
+        }) }
         if (group == "Music folders") item {
             Section("Shared settings") {
                 Toggle("Share settings between devices", "Off by default. Sync the settings file with your music. Rules and learning options are shared; appearance, permissions and playback controls stay local.", m.shareSettings, onChange = m::changeSharedSettings)
@@ -389,8 +396,8 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
         }
         if (group == "Playback") item {
             Section("Automatic switching") {
-                Toggle("Combined switching (experimental)",
-                    "Switch before a normal track end, and correct early AIMP/headset skips to the saved weighted choice. Requires Enable weighted shuffle and AIMP Shuffle.",
+                Toggle("Combined switching",
+                    "Switch before a normal track end, and correct early AIMP/headset skips to the saved weighted choice. Skipped tracks can sometimes be heard briefly before correction. Applies immediately; requires Enable weighted shuffle and AIMP Shuffle.",
                     m.preferences.reactivePlayback, enabled = !m.pending,
                     onChange = { m.changePreferences(m.preferences.copy(reactivePlayback = it)) })
                 if (m.preferences.reactivePlayback) {
@@ -401,7 +408,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
                             StateChip(selected = correctionDelay == ms.toString(), onClick = { correctionDelay = ms.toString() }, label = { Text("$ms") })
                         }
                     }
-                    Text("0–2000 ms; default 0. Lower values reduce the audible fragment. Zero sends immediately when a different PLAYING track is identified, but may react to temporary metadata. AIMP response time still adds delay.", style = MaterialTheme.typography.bodySmall)
+                    Text("0–2000 ms; default 0. Tap Apply correction delay after editing or choosing a preset. Lower values reduce the audible fragment. Zero sends immediately when a different PLAYING track is identified, but may react to temporary metadata. AIMP response time still adds delay.", style = MaterialTheme.typography.bodySmall)
                     correctionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     ActionButton(onClick = {
                         val ms = correctionDelay.toLongOrNull()
@@ -422,7 +429,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
                         StateChip(selected = lead == ms.toString(), onClick = { lead = ms.toString() }, label = { Text("$ms") })
                     }
                 }
-                Text("0–5000 ms; default 150. Smaller values preserve more of the ending but may let AIMP advance first. Try 100, then 50 or 0; compare exported timing logs.", style = MaterialTheme.typography.bodySmall)
+                Text("0–5000 ms; default 150. Tap Apply timing after editing or choosing a preset. Smaller values preserve more of the ending but may let AIMP advance first. Try 100, then 50 or 0; compare exported timing logs.", style = MaterialTheme.typography.bodySmall)
                 ActionButton(onClick = {
                     val ms = lead.toLongOrNull()
                     if (ms == null || ms !in 0..5000) error = "Enter 0–5000 ms"
@@ -472,6 +479,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
         }
         if (group == "Shuffle rules") item {
             Section("Weights & cooldown") {
+                Text("Changes in this section take effect only after tapping Apply shuffle settings, including Finite pass.", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(default, { default = it }, label = { Text("Default weight") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Text("Used for tracks without a saved weight. Fractions and values above 10 are supported.", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(minimum, { minimum = it }, label = { Text("Minimum eligible weight") },

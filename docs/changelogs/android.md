@@ -4,6 +4,13 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.13.0 (versionCode 16)
+
+- Add a left-edge drag grip and long-press row reordering in Queue.
+- Add tracks to the beginning or end of the app queue from Playlist.
+- Explain which settings apply immediately and which require their Apply button.
+- Remove the experimental label from combined switching and explain that skipped tracks may be heard briefly.
+
 ## 0.12.1 (versionCode 15)
 
 - Default cooldown to 3 track starts, end-of-track lead to 150 ms, and reactive correction delay to 0 ms.

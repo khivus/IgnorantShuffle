@@ -51,7 +51,7 @@ history. Use **Notifications > Show Next button / Show Previous button** to enab
 notification button independently; expand the notification if needed.
 AIMP's separate media card, its own Next button, and headset controls
 remain under AIMP's own control unless combined switching below is enabled.
-The app has its own persistent queue: search Playlist and tap **Add to queue**, then inspect/reorder/remove entries under **Queue**. Available app-queue entries take priority over weighted rolls and are consumed only after a requested start is observed. AIMP's private queue is unchanged.
+The app has its own persistent queue: search Playlist and tap **Add to beginning** or **Add to end**, then inspect/reorder/remove entries under **Queue**. Drag the grip along a track’s left edge, or long-press the track, to reorder it. Available app-queue entries take priority over weighted rolls and are consumed only after a requested start is observed. AIMP's private queue is unchanged.
 The first version cannot provide Windows's native pre-playback queue hook.
 
 ## Navigation, statistics and listening balance
@@ -61,7 +61,7 @@ Listen & explore contains Player, Playlist, Queue and Statistics. Settings conta
 Shuffle rules, Music folders, Playback, Notifications and Appearance. Support
 contains Diagnostics, Logs and Updates. Settings formerly under Shuffle are split
 among the first three settings groups. Playlist retains its search, quick weights
-**0–10**, Play now, Add to queue, and expandable file/link details. Logs dedicates
+**0–10**, Play now, Add to beginning / Add to end, and expandable file/link details. Logs dedicates
 the screen to search and events; filtering, saved history and exports are in Tools.
 Scroll/search positions survive switching drawer pages.
 
@@ -92,11 +92,11 @@ The two modes can work together, and saved weights remain unchanged. See the
 The launcher, Android settings and external metadata use **Ignorant Shuffle**.
 The repository identity and the application's own interface remain **IgnorantShuffle**.
 
-## Experimental combined switching
+## Combined switching
 
-Enable **Playback > Automatic switching > Combined switching (experimental)**,
+Enable **Playback > Automatic switching > Combined switching**,
 with **Player > Enable weighted shuffle** and AIMP Shuffle on. This saved, opt-in
-mode combines the existing end timer with correction after early AIMP/headset
+mode can briefly let you hear a skipped track before correction. It combines the existing end timer with correction after early AIMP/headset
 skips. Normal endings switch to the weighted choice using **Switch before track
 end** (0–5000 ms; default 150). An early change is compared with the previously
 displayed weighted choice, and one correction requests that saved target. The end
@@ -149,7 +149,7 @@ Phone checks for this mode:
    app listening history or consume pass entries. A failed command must not loop.
 4. Turn AIMP Shuffle off/on, disable the app switch, disconnect/reconnect, and
    restart the app. Verify the mode preference persists, stale corrections do not
-   run, and turning the experimental setting off restores timed switching.
+   run, and turning combined switching off restores timed switching.
 5. Skip repeatedly through AIMP, including immediately after a correction. Each
    settled unexpected track should still be corrected despite AIMP's brief PAUSED
    state. Pause for over one second and resume; no stale correction should fire.
@@ -161,7 +161,7 @@ captured timed handoff against AIMP's observed PLAYING track. A stable mismatch
 or missing confirmation after eight seconds produces a persistent in-app banner
 and a separate debug notification (allow notifications when asked). This also
 works when next-roll notifications or file logging are off. The debug check itself
-never retries or changes playback; experimental switching is a separate option.
+never retries or changes playback; combined switching is a separate option.
 Disconnecting or turning debug off cancels debug checks.
 External manual track changes during a timed handoff can also produce a warning.
 
@@ -202,6 +202,13 @@ PC. Reindex after changing the music library. **Remove music root** asks for
 confirmation; Cancel retains its assignment and index. Confirming removal keeps
 the music and weights files, but adding that root again requires indexing. See the
 [shared-folder guide](../docs/shared-music-folder.md) for setup and recovery.
+
+## Applying settings
+
+Listening balance, Smart weights, Combined switching, notification options and
+appearance save and apply immediately. Default/minimum weights, cooldown and
+Finite pass require **Apply shuffle settings**. Timing fields and their presets
+require **Apply timing** or **Apply correction delay**.
 
 ## Appearance
 
