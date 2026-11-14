@@ -232,8 +232,10 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if(std::filesystem::exists(file)!=shared_exists_ || before.entries()!=shared_before_)throw std::runtime_error("Settings changed on another device. Reload before publishing");
         ignorant::SharedSettings value;value.default_weight=weights_.fallback();value.minimum=minimum_weight_;value.cooldown=cooldown_;value.finite=finite_;value.learning=statistics_.options;
         auto values=before;const auto encoded=value.encode();for(const auto& entry:encoded.entries())values.set(entry.first,entry.second);
-        if(shared_exists_)std::filesystem::copy_file(file,file.wstring()+L".bak",std::filesystem::copy_options::overwrite_existing);
-        values.save(file);shared_before_=values.entries();shared_exists_=true;
+        if(!shared_exists_ || values.entries()!=before.entries()) {
+            if(shared_exists_)std::filesystem::copy_file(file,file.wstring()+L".bak",std::filesystem::copy_options::overwrite_existing);
+            values.save(file);shared_before_=values.entries();shared_exists_=true;
+        }
         settings_window_.feedback(L"Shared settings published. Sync the file with your music.");
     }
     ignorant::LibraryStatistics statistics_;
@@ -278,35 +280,41 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
 
     void save_preferences() {
         if (preferences_file_.empty()) return;
-        WritePrivateProfileStringW(L"Sharing",L"Enabled",share_settings_?L"1":L"0",preferences_file_.c_str());
-        bool success = WritePrivateProfileStringW(L"Monitor", L"Enabled", enabled_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE;
-        success = (WritePrivateProfileStringW(L"Updates",L"IntervalMinutes",std::to_wstring(update_interval_minutes_).c_str(),preferences_file_.c_str())!=FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Updates", L"Automatic", auto_updates_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Updates", L"Repository", from_utf8(update_repository_).c_str(), preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Monitor", L"Pinned", pinned_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Monitor", L"Attached", side_panel_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Monitor", L"CooldownTracks", std::to_wstring(cooldown_).c_str(), preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Shuffle", L"FinitePlaylist", finite_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Shuffle", L"DefaultWeight", weight_text(weights_.fallback()).c_str(), preferences_file_.c_str()) != FALSE) && success;
-        success = (WritePrivateProfileStringW(L"Shuffle", L"MinimumWeight", weight_text(minimum_weight_).c_str(), preferences_file_.c_str()) != FALSE) && success;
-        auto save=[&](const wchar_t* section,const wchar_t* key,const std::wstring& value) {success=(WritePrivateProfileStringW(section,key,value.c_str(),preferences_file_.c_str())!=FALSE)&&success;};
+        auto write_changed=[&](const wchar_t* section,const wchar_t* key,const wchar_t* value,const wchar_t* file) {
+            // Read before writing so moving the monitor does not rewrite every preference.
+            std::vector<wchar_t> old(32768);
+            GetPrivateProfileStringW(section,key,L"\x1",old.data(),static_cast<DWORD>(old.size()),file);
+            return std::wstring(old.data())==value || WritePrivateProfileStringW(section,key,value,file)!=FALSE;
+        };
+        bool sharing_saved=write_changed(L"Sharing",L"Enabled",share_settings_?L"1":L"0",preferences_file_.c_str());
+        bool success = write_changed(L"Monitor", L"Enabled", enabled_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE;
+        success = (write_changed(L"Updates",L"IntervalMinutes",std::to_wstring(update_interval_minutes_).c_str(),preferences_file_.c_str())!=FALSE) && success;
+        success = (write_changed(L"Updates", L"Automatic", auto_updates_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
+        success = (write_changed(L"Updates", L"Repository", from_utf8(update_repository_).c_str(), preferences_file_.c_str()) != FALSE) && success;
+        success = (write_changed(L"Monitor", L"Pinned", pinned_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
+        success = (write_changed(L"Monitor", L"Attached", side_panel_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
+        success = (write_changed(L"Monitor", L"CooldownTracks", std::to_wstring(cooldown_).c_str(), preferences_file_.c_str()) != FALSE) && success;
+        success = (write_changed(L"Shuffle", L"FinitePlaylist", finite_ ? L"1" : L"0", preferences_file_.c_str()) != FALSE) && success;
+        success = (write_changed(L"Shuffle", L"DefaultWeight", weight_text(weights_.fallback()).c_str(), preferences_file_.c_str()) != FALSE) && success;
+        success = (write_changed(L"Shuffle", L"MinimumWeight", weight_text(minimum_weight_).c_str(), preferences_file_.c_str()) != FALSE) && success;
+        auto save=[&](const wchar_t* section,const wchar_t* key,const std::wstring& value) {success=(write_changed(section,key,value.c_str(),preferences_file_.c_str())!=FALSE)&&success;};
         const auto& o=statistics_.options;
         save(L"Statistics",L"Device",from_utf8(statistics_origin_));save(L"Statistics",L"Collecting",statistics_.collecting?L"1":L"0");
         for(const auto& option:std::vector<std::pair<const wchar_t*,bool>>{{L"Balance",o.balance},{L"Smart",o.smart},{L"Skips",o.skips},{L"Completions",o.completions},{L"Replays",o.replays},{L"Volume",o.volume}})save(L"Learning",option.first,option.second?L"1":L"0");
         save(L"Learning",L"BalanceStrength",weight_text(o.balance_strength));save(L"Learning",L"Strength",weight_text(o.strength));save(L"Learning",L"Limit",weight_text(o.limit));
         std::wstring roots;
         for (const auto& root : music_folders_) { if (!roots.empty()) roots += L"|"; roots += root.wstring(); }
-        success = (WritePrivateProfileStringW(L"Storage", L"MusicRoots", roots.c_str(), preferences_file_.c_str()) != FALSE) && success;
+        success = (write_changed(L"Storage", L"MusicRoots", roots.c_str(), preferences_file_.c_str()) != FALSE) && success;
         RECT rectangle{};
         if (monitor_.handle()) {
             rectangle = monitor_.saved_bounds();
-            success = (WritePrivateProfileStringW(L"Monitor", L"X", std::to_wstring(rectangle.left).c_str(), preferences_file_.c_str()) != FALSE) && success;
-            success = (WritePrivateProfileStringW(L"Monitor", L"Y", std::to_wstring(rectangle.top).c_str(), preferences_file_.c_str()) != FALSE) && success;
-            success = (WritePrivateProfileStringW(L"Monitor", L"Width", std::to_wstring(rectangle.right - rectangle.left).c_str(), preferences_file_.c_str()) != FALSE) && success;
-            success = (WritePrivateProfileStringW(L"Monitor", L"Height", std::to_wstring(rectangle.bottom - rectangle.top).c_str(), preferences_file_.c_str()) != FALSE) && success;
+            success = (write_changed(L"Monitor", L"X", std::to_wstring(rectangle.left).c_str(), preferences_file_.c_str()) != FALSE) && success;
+            success = (write_changed(L"Monitor", L"Y", std::to_wstring(rectangle.top).c_str(), preferences_file_.c_str()) != FALSE) && success;
+            success = (write_changed(L"Monitor", L"Width", std::to_wstring(rectangle.right - rectangle.left).c_str(), preferences_file_.c_str()) != FALSE) && success;
+            success = (write_changed(L"Monitor", L"Height", std::to_wstring(rectangle.bottom - rectangle.top).c_str(), preferences_file_.c_str()) != FALSE) && success;
         }
-        preferences_error_ = success ? L"" : L"Could not save window preferences; changes apply to this session.";
-        if (!success) log_.write("preferences.error", "Could not save preferences.ini");
+        preferences_error_ = (success && sharing_saved) ? L"" : L"Could not save window preferences; changes apply to this session.";
+        if (!success || !sharing_saved) log_.write("preferences.error", "Could not save preferences.ini");
     }
     void load_preferences() {
         if (preferences_file_.empty()) return;

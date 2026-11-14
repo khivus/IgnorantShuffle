@@ -49,6 +49,15 @@ and pause choices migrate. The applications configure no backup/upload for
 statistics. Shared-root copies can be handled by a user's chosen sync tool.
 Do not edit or delete shards while the application is writing them.
 
+Shared-root exchanges are batched to roughly two minutes while active. Windows
+keeps private recovery snapshots about every ten seconds; Android batches private
+SQLite listening transactions for up to ten seconds, flushing sooner when needed.
+Explicit synchronization and normal shutdown flush pending data. Android also
+publishes when the activity backgrounds or the player disconnects. Unchanged
+sidecars/caches keep their modification times. An abrupt kill can lose the most
+recent unflushed observations. See the shared-folder guide for Syncthing ignores
+and the one-writer-per-device identity requirement.
+
 ## Exports
 
 Both versions export all retained active data, independent of the screen filter.

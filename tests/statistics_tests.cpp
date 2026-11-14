@@ -62,6 +62,11 @@ int main() {try {
     sync_statistics(root,"android",android);const auto merged=sync_statistics(root,"windows",windows);
     check(summarize(merged.active()).plays==2,"Read both device shards beside weights");
     check(sync_statistics(root,"android",android).text()==merged.text(),"Repeated sync is idempotent");
+    const auto shard=root/statistics_shard("android");
+    std::filesystem::last_write_time(shard,std::filesystem::file_time_type::clock::now()-std::chrono::hours(1));
+    const auto unchanged_time=std::filesystem::last_write_time(shard);
+    sync_statistics(root,"android",android);
+    check(std::filesystem::last_write_time(shard)==unchanged_time,"Unchanged statistics preserve modification time");
     {std::ifstream fixture(STATISTICS_FIXTURE,std::ios::binary);std::ostringstream text;text<<fixture.rdbuf();check(StatisticsLedger::parse(text.str()).active().size()==2,"Cross-platform golden fixture");}
     std::filesystem::remove_all(root);
     std::cout<<"Portable statistics merge, clear, learning, observation and files passed\n";return 0;

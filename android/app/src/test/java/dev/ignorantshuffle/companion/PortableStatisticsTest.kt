@@ -9,11 +9,12 @@ class PortableStatisticsTest {
     private class Documents: WeightDocuments {
         val files=linkedMapOf(PortableWeights.FILENAME to "# weights kept unchanged\n5\tArtist/Track.flac\n")
         var failWrites=false
+        var writes=0
         override fun names()=files.keys.toList()
         override fun find(name: String)=name.takeIf {it in files}
         override fun read(id: String)=requireNotNull(files[id])
         override fun create(name: String): String {check(name !in files);files[name]="";return name}
-        override fun write(id: String,text: String) {check(!failWrites);files[id]=text}
+        override fun write(id: String,text: String) {check(!failWrites);writes++;files[id]=text}
         override fun rename(id: String,name: String): String {check(name !in files);files[name]=requireNotNull(files.remove(id));return name}
         override fun delete(id: String) {check(files.remove(id)!=null)}
     }
@@ -72,6 +73,28 @@ class PortableStatisticsTest {
             repeat(3) {assertEquals(1,store.sync(listOf(play()),true).size)}
             assertEquals(1,PortableStatistics.parse(requireNotNull(docs.files[PortableStatistics.filename("android")])).active().size)
             assertEquals("root" to "Artist/Track.flac",PortableStatistics.location(store.records(listOf(play())).single().key))
+        } finally {dir.deleteRecursively()}
+    }
+    @Test fun frequentObservationsPublishInBatchesAndUnchangedCachesAreNotReplaced() {
+        val docs=Documents();val dir=Files.createTempDirectory("statistics-batch-test").toFile()
+        var now=0L
+        try {
+            val store=SharedStatisticsStore(dir,"android") {now}
+            store.configure(listOf(StatisticsRoot("root",docs))) {_,_,_->FileMatch("Artist/Track.flac","Fixture","root")}
+            store.sync(listOf(play()))
+            assertEquals(1,docs.writes)
+            // Set a distinctive timestamp, so no sleep or filesystem timestamp resolution is needed.
+            dir.listFiles()!!.forEach {assertTrue(it.setLastModified(1000000L))}
+            store.sync(listOf(play()),true)
+            assertEquals(1,docs.writes)
+            assertTrue(dir.listFiles()!!.all {it.lastModified()==1000000L})
+            now=119999;assertEquals(40000L,store.sync(listOf(play(ms=40000))).single().ms)
+            assertEquals(1,docs.writes)
+            now=120000;store.sync(listOf(play(ms=50000)))
+            assertEquals(2,docs.writes)
+            assertEquals(50000L,PortableStatistics.parse(docs.read(PortableStatistics.filename("android"))).active().single().ms)
+            store.sync(listOf(play(ms=60000)),true)
+            assertEquals(3,docs.writes)
         } finally {dir.deleteRecursively()}
     }
 }

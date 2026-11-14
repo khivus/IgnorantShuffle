@@ -113,8 +113,10 @@ void WeightStorage::set_many(const std::vector<std::string>& tracks, double weig
     std::map<std::filesystem::path, Weights> updates;
     for (const auto& [path, entries] : grouped) {
         auto next = read_current(path);
+        const auto before=next.entries();
         for (const auto& track : entries) next.set(key_for(path, track), weight);
-        updates.emplace(path, std::move(next));
+        if(next.entries()!=before)updates.emplace(path, std::move(next));
+        else files_[path]=std::move(next);
     }
     std::size_t saved = 0;
     try {
@@ -132,8 +134,10 @@ void WeightStorage::clear_many(const std::vector<std::string>& tracks) {
     }
     for (const auto& [path, entries] : grouped) {
         auto next = read_current(path);
+        const auto before=next.entries();
         for (const auto& track : entries) next.erase(key_for(path, track));
-        next.save(path); files_[path] = std::move(next);
+        if(next.entries()!=before)next.save(path);
+        files_[path] = std::move(next);
     }
 }
 void WeightStorage::transfer(const std::filesystem::path& root, const std::filesystem::path& external, bool exporting) {

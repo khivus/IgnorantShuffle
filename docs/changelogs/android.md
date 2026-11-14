@@ -4,6 +4,13 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.13.1 (versionCode 17)
+
+- Batch shared statistics exchanges to two minutes and private listening database writes for up to ten seconds.
+- Preserve unchanged statistics caches and local settings instead of rewriting them.
+- Avoid forcing statistics publication for each shuffle counter event; retain explicit, background and disconnect flushes.
+- Add Syncthing setup and conflict-review guidance.
+
 ## 0.13.0 (versionCode 16)
 
 - Add a left-edge drag grip and long-press row reordering in Queue.

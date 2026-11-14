@@ -1,7 +1,11 @@
-# IgnorantShuffle Windows v0.17.2
+# IgnorantShuffle Windows v0.17.3
 
-## Fixes
+## Improvements
 
-- Keep Play playlist once progress when AIMP briefly reports a stopped state between tracks. Previously, this could reset the played list and allow tracks to repeat before the pass finished.
+- Batch shared statistics updates to roughly two minutes while keeping local recovery snapshots about every ten seconds. Reload / sync and normal shutdown still publish pending observations.
+- Preserve modification times when weights and preferences have not changed, and skip unchanged shared settings publications.
+- Document Syncthing folder setup, temporary-file exclusions and safe weight-conflict review.
 
-Windows version: **0.17.2**. Bundled core: **0.2.0**. Includes x64 and x86.
+Shared weight/settings files do not merge concurrent offline edits. An abrupt termination can lose the most recent unflushed listening observations.
+
+Windows version: **0.17.3**. Bundled core: **0.2.0**. Includes x64 and x86.

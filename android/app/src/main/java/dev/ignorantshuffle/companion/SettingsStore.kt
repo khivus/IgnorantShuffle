@@ -18,6 +18,7 @@ class SettingsStore(private val context: Context) {
 
     fun save(settings: Settings) {
         val json = SettingsJson.encodeSettings(settings)
+        if(file.baseFile.exists() && file.openRead().bufferedReader(Charsets.UTF_8).use {it.readText()}==json)return
         val stream = file.startWrite()
         try {
             stream.write(json.toByteArray(Charsets.UTF_8))

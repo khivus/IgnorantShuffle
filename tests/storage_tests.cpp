@@ -40,6 +40,11 @@ int main() {
         check(saved.entries().count("Artist/Song.flac") == 1 && saved.entries().count(first) == 0, "Only relative keys are saved in the root file.");
         check(!storage.target("https://radio/stream") && !storage.target((fixture / "outside.flac").u8string()), "URLs and unconfigured trees have no private fallback target.");
         const auto before = contents(root / "IgnorantShuffle.weights.tsv");
+        const auto weights_file=root / "IgnorantShuffle.weights.tsv";
+        fs::last_write_time(weights_file,fs::file_time_type::clock::now()-std::chrono::hours(1));
+        const auto unchanged_time=fs::last_write_time(weights_file);
+        storage.set_many({first},0);storage.clear_many({(root / "Missing.flac").u8string()});
+        check(fs::last_write_time(weights_file)==unchanged_time,"Unchanged weight edits preserve modification time for sync tools.");
         rejects([&] { storage.set_many({first, (fixture / "outside.flac").u8string()}, 7); });
         check(contents(root / "IgnorantShuffle.weights.tsv") == before, "An unconfigured track rejects the whole batch before writes.");
         storage.set_many({first, second}, 7);

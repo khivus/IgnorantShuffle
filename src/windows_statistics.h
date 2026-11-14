@@ -16,9 +16,10 @@ class LibraryStatistics {
     std::filesystem::path cache_;
     std::string origin_,run_=statistics_guid(),session_,current_;
     std::future<std::vector<Result>> worker_;
-    std::uint64_t next_sync_=0;
+    std::uint64_t next_sync_=0,next_publish_=0;
     std::int64_t last_start_=-1,last_start_position_=-1;
     bool learning_dirty_=true;
+    bool publishing_=false;
     std::map<std::string,std::int64_t> counts_;
     std::map<std::string,double> scores_;
     ListeningObserver observer_;

@@ -27,7 +27,9 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
         publishLearning(records)
     }
     private val main = Handler(Looper.getMainLooper())
-    private val io = Executors.newSingleThreadExecutor()
+    private val io = Executors.newSingleThreadScheduledExecutor()
+    private val pendingListening=PendingListening()
+    private var pendingFlush: java.util.concurrent.ScheduledFuture<*>?=null
     private val helper = object : SQLiteOpenHelper(context, java.io.File(context.noBackupFilesDir, "listening-statistics.db").absolutePath, null, 3) {
         private fun learningTables(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE smart_weights(track TEXT PRIMARY KEY, score REAL NOT NULL)")
@@ -87,17 +89,35 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
         } }
     } }
     private fun record(delta: ListeningDelta) = execute {
-        val s = delta.session; val db = helper.writableDatabase
-        db.beginTransaction()
-        try {
-            db.execSQL("INSERT OR REPLACE INTO sessions VALUES(?,?,?,?,?,?,?,?,?)", arrayOf<Any>(s.id,s.key,s.title,s.artist,s.started,s.updated,s.listeningMs,if(s.qualified)1 else 0,if(s.earlyExit)1 else 0))
-            db.execSQL("INSERT OR IGNORE INTO slices VALUES(?,?,0,0,0)", arrayOf<Any>(s.id,delta.day))
-            db.execSQL("UPDATE slices SET ms=ms+?, plays=plays+?, exits=exits+? WHERE session=? AND day=?", arrayOf<Any>(delta.ms,delta.plays,delta.exits,s.id,delta.day))
-            db.setTransactionSuccessful()
-        } finally { db.endTransaction() }
+        pendingListening.add(delta)
+        if(pendingFlush==null)pendingFlush=io.schedule({
+            // Use the same error handling as other database operations.
+            execute {flushListening()}
+        },10,java.util.concurrent.TimeUnit.SECONDS)
+        if(delta.plays>0 || delta.exits>0)flushListening()
         if(delta.plays>0 || System.currentTimeMillis()-lastLibraryFlush>=15000) {
             lastLibraryFlush=System.currentTimeMillis();publishLearning(allRecords())
         }
+    }
+    private fun flushListening() {
+        pendingFlush?.cancel(false);pendingFlush=null
+        val rows=pendingListening.values();if(rows.isEmpty())return
+        val db=helper.writableDatabase
+        db.beginTransaction()
+        try {
+            // A midnight batch may have multiple slices for one session. Write its latest snapshot once.
+            rows.groupBy {it.session.id}.values.forEach {slices ->
+                val s=slices.last().session
+            db.execSQL("INSERT OR REPLACE INTO sessions VALUES(?,?,?,?,?,?,?,?,?)", arrayOf<Any>(s.id,s.key,s.title,s.artist,s.started,s.updated,s.listeningMs,if(s.qualified)1 else 0,if(s.earlyExit)1 else 0))
+            }
+            rows.forEach {delta ->
+                val s=delta.session
+            db.execSQL("INSERT OR IGNORE INTO slices VALUES(?,?,0,0,0)", arrayOf<Any>(s.id,delta.day))
+            db.execSQL("UPDATE slices SET ms=ms+?, plays=plays+?, exits=exits+? WHERE session=? AND day=?", arrayOf<Any>(delta.ms,delta.plays,delta.exits,s.id,delta.day))
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        pendingListening.clear()
     }
     private fun localRecords(): List<PortableStat> = buildList {
         val db=helper.readableDatabase
@@ -112,6 +132,7 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
         }
     }
     private fun allRecords(force: Boolean=false): List<PortableStat> {
+        flushListening()
         val records=shared.sync(localRecords(),force)
         val status=shared.status;main.post {sharedStatus=status}
         return records
@@ -127,6 +148,7 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
         val options=smartOptions
         if(!ready || !collecting || error!=null || options.step(event.kind)==0.0)return
         execute {
+            flushListening()
             val db=helper.writableDatabase
             db.beginTransaction()
             try {
@@ -170,7 +192,7 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
         if (!ready || !collecting || error != null) return
         val day=ListeningStatistics.day(System.currentTimeMillis())
         execute {
-            allRecords(force=true)
+            allRecords()
             val db=helper.writableDatabase;db.beginTransaction()
             try {
                 if(shared.cleared("$origin/$counterEpoch/c/$day/$kind")) {

@@ -8,11 +8,12 @@ import java.security.MessageDigest
 data class StatisticsRoot(val id: String,val documents: WeightDocuments)
 
 /** Serialized worker-only cache. Portable sidecars are authoritative; SQLite retains pending local observations. */
-class SharedStatisticsStore(private val directory: File,private val origin: String) {
+class SharedStatisticsStore(private val directory: File,private val origin: String,
+    private val clock: () -> Long = {System.nanoTime()/1_000_000}) {
     private data class Root(val id: String,var documents: WeightDocuments?,val ledger: PortableStatistics,val own: PortableStatistics)
     private val roots=linkedMapOf<String,Root>()
     private var resolver: (String,String,String)->FileMatch = {_,_,_->FileMatch(null,"No music roots")}
-    private var lastSync=0L
+    private var lastSync: Long?=null
     var status="Choose music roots to save statistics alongside weights";private set
     private fun cache(id: String,own: Boolean): File {
         val digest=MessageDigest.getInstance("SHA-256").digest(id.toByteArray(Charsets.UTF_8)).joinToString("") {"%02x".format(it.toInt() and 255)}
@@ -22,8 +23,10 @@ class SharedStatisticsStore(private val directory: File,private val origin: Stri
     private fun persist(root: Root) {
         directory.mkdirs()
         for((own,ledger) in listOf(true to root.own,false to root.ledger)) {
-            val target=cache(root.id,own);val temporary=File(target.path+".tmp")
-            temporary.writeText(ledger.text(),Charsets.UTF_8)
+            val target=cache(root.id,own);val text=ledger.text()
+            if(target.exists() && target.readText(Charsets.UTF_8)==text)continue
+            val temporary=File(target.path+".tmp")
+            temporary.writeText(text,Charsets.UTF_8)
             Files.move(temporary.toPath(),target.toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE)
         }
     }
@@ -33,7 +36,7 @@ class SharedStatisticsStore(private val directory: File,private val origin: Stri
             val root=roots.getOrPut(next.id) {Root(next.id,next.documents,cached(next.id,false),cached(next.id,true))}
             root.documents=next.documents;root.ledger.merge(root.own)
         }
-        resolver=resolve;lastSync=0
+        resolver=resolve;lastSync=null
     }
     private fun locations(): Map<String,Pair<String,String>> = buildMap {
         roots.values.forEach {root ->root.ledger.records.values.filter {it.kind!="X" && it.session.isNotBlank()}.forEach {putIfAbsent(it.session,root.id to it.key)}}
@@ -66,8 +69,8 @@ class SharedStatisticsStore(private val directory: File,private val origin: Stri
         return combined.active().map {r ->r.copy(key=PortableStatistics.identity(requireNotNull(owner[r.id]),r.key))}+pending
     }
     fun sync(local: List<PortableStat>,force: Boolean=false): List<PortableStat> {
-        val now=System.currentTimeMillis()
-        if(force || now-lastSync>=15_000) {
+        val now=clock()
+        if(force || lastSync?.let {now-it>=120_000}!=false) {
             val ownName=PortableStatistics.filename(origin)
             val errors=mutableListOf<String>();val blocked=mutableSetOf<String>()
             roots.values.forEach {root ->root.documents?.let {documents ->try {

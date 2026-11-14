@@ -3,6 +3,12 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## 0.17.3
+
+- Batch shared statistics updates to two minutes while retaining frequent local recovery saves and explicit sync.
+- Avoid rewriting unchanged weights, preferences and published shared settings.
+- Add Syncthing setup and conflict-review guidance.
+
 ## 0.17.2
 
 - Preserve play-once progress when AIMP briefly reports a stopped state between tracks; reset the pass only when the stream ends without a next track.

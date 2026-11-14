@@ -48,7 +48,7 @@ void LibraryStatistics::configure(const std::string& origin,const std::filesyste
             roots_[path]=std::move(root);
         } else found->second.active=true;
     }
-    learning_dirty_=true;next_sync_=0;
+    learning_dirty_=true;next_sync_=0;next_publish_=0;
 }
 std::pair<std::filesystem::path,std::string> LibraryStatistics::location(const std::string& absolute) const {
     const auto file=std::filesystem::u8path(absolute).lexically_normal();
@@ -92,21 +92,25 @@ void LibraryStatistics::poll(bool force) {
             found->second.own.merge(result.own);found->second.merged.merge(result.merged);found->second.merged.merge(found->second.own);
             if(!result.error.empty())errors+=result.error+"; ";
         }
-        status=errors.empty()?"Statistics saved alongside weights. Sync IgnorantShuffle.statistics.*.tsv with the music roots.":"Statistics sync pending; cache retained: "+errors;
+        if(publishing_ || !errors.empty())status=errors.empty()?"Statistics saved alongside weights. Sync IgnorantShuffle.statistics.*.tsv with the music roots.":"Statistics sync pending; cache retained: "+errors;
         learning_dirty_=true;
     }
     if(worker_.valid() || (!force && GetTickCount64()<next_sync_))return;
     next_sync_=GetTickCount64()+10000;
     if(roots_.empty())return;
+    // Keep crash recovery local and frequent; publish to the synced folder in batches.
+    const bool publish=force || GetTickCount64()>=next_publish_;
+    publishing_=publish;
+    if(publish)next_publish_=GetTickCount64()+120000;
     std::vector<Root> snapshot;for(const auto& pair:roots_)snapshot.push_back(pair.second);
     const auto origin=origin_;const auto cache=cache_;
-    worker_=std::async(std::launch::async,[snapshot,origin,cache]() mutable {
+    worker_=std::async(std::launch::async,[snapshot,origin,cache,publish]() mutable {
         std::vector<Result> result;
         for(auto& root:snapshot) {
             std::uint64_t hash=1469598103934665603ull;for(unsigned char c:root.path.generic_u8string()){hash^=c;hash*=1099511628211ull;}
             const auto directory=cache/std::to_string(hash);Result item;item.path=root.path;item.own=root.own;item.merged=root.merged;
             try {
-                if(root.active) {
+                if(root.active && publish) {
                     item.own.merge(read_ledger(root.path/statistics_shard(origin)));
                     item.merged.merge(sync_statistics(root.path,origin,item.own));
                 }

@@ -51,9 +51,13 @@ double-count plays. Do not rename shards to another device's name or combine the
 by concatenation. Root-relative track paths match across Windows and Android;
 use the same root boundaries and relative music layout on both devices.
 
-Statistics refresh from root files while active (roughly every 10 seconds on
-Windows and 15 seconds on Android); opening Statistics refreshes totals. Windows
-also has **Reload / sync**. Pending observations survive unavailable roots in a
+Statistics exchange with root files while active roughly every two minutes.
+Windows keeps local recovery snapshots about every ten seconds; Android batches
+private database updates for up to ten seconds, flushing sooner for qualified
+plays, early exits, learning, reads and explicit sync. An abrupt process kill can
+lose the most recent unflushed observations. Unchanged files are not rewritten.
+Windows **Reload / sync**, normal shutdown and Android background/disconnect
+flushes publish pending changes immediately. Pending observations survive unavailable roots in a
 private local cache. Android migrates its existing private history when tracks
 can be linked to files; unlinked history stays pending until linked. Removing a
 root never deletes its files. Renaming/moving music changes its track identity.
@@ -74,3 +78,68 @@ Malformed/conflicting files and surviving `.bak` files are preserved and reporte
 restore the backup or resolve the file problem before retrying.
 
 The shared schema is documented in [Statistics files](statistics-files.md).
+
+## Syncthing with an always-on laptop, PC and phone
+
+Use **Send & Receive** for this combined music-and-statistics folder on all three
+devices. Connect both PC and phone to the always-on laptop and share the same
+folder with them. A direct PC/phone connection is optional. The laptop holds
+updates until the other device reconnects; PC and phone need not be online
+together. Before the phone leaves home, background IgnorantShuffle to flush its
+statistics, then let Syncthing finish. When it returns, let synchronization finish
+before editing shared weights/settings. Offline listening is supported: each
+installation has its own statistics shard.
+
+Enable **Staggered File Versioning**, for example 30 days, on the laptop as a
+recovery aid. It archives remote replacements/deletions, not edits made locally
+on the laptop. Keep an independent backup for music you cannot replace.
+
+Add these ignore patterns on **each** device (in the root folder's `.stignore`
+or Syncthing's Ignore Patterns editor). Merge them with existing patterns:
+
+```text
+// Local replacement/rollback files; keep the final TSV files synchronized.
+IgnorantShuffle.*.tsv.tmp*
+IgnorantShuffle.*.tsv.*.tmp
+IgnorantShuffle.*.tsv.transfer-*.tmp
+IgnorantShuffle.*.tsv.bak
+```
+
+These match the app's temporary/backup names on both platforms. Do not ignore
+`IgnorantShuffle.statistics.*.tsv`, weights, or shared settings. `.stignore` itself
+is not synchronized, so configure it separately on all devices. Ignoring `.bak`
+does not delete it; it remains available for local recovery.
+
+| File | Writer policy |
+| --- | --- |
+| `IgnorantShuffle.statistics.<device-id>.tsv` | Each installation writes its own shard; everyone reads all shards. |
+| `IgnorantShuffle.weights.tsv` | One shared file: finish syncing before editing on a different device. |
+| `IgnorantShuffle.settings.tsv` | Optional explicit publish: choose one publishing device, or sync/reload before switching publishers. |
+| AIMP profiles, app databases, preferences, caches and logs | Keep local, outside the synced music folder. |
+
+Do not synchronize or clone the Windows AIMP profile between the PC and laptop:
+`preferences.ini` contains the statistics device identity, and the statistics
+cache is private. Two running installations with the same identity violate the
+one-writer-per-shard rule. If you already cloned a profile, stop both AIMP copies,
+back up the profiles, remove only the `[Statistics]` `Device` entry on one machine,
+then restart it so it generates a fresh identity. Keep the old shards/history.
+
+A server hub and slower writes reduce churn, but cannot merge concurrent offline
+edits to a common weights/settings file. For fully independent offline editing,
+those formats would need per-device edit records and a conflict-resolution policy;
+the current formats do not provide that. Use one device for music tag/playlist
+edits as well if other apps modify the same audio or playlist files.
+
+For existing `sync-conflict` copies, pause playback and sync, then back up **all**
+variants before resolving anything. Do not blindly delete statistics variants or
+concatenate TSVs. Statistics use latest revisions per record ID; differing data at
+the same revision needs investigation and is preserved/reported by the app.
+Weights/settings need a deliberate choice or manual entry-by-entry merge. Resume
+sync after reconciliation. Exact filenames and variants are needed to determine
+whether a particular conflict came from a copied identity, temporary file, or
+multiple writers; write frequency alone does not establish its cause.
+
+References: [Syncthing conflict handling](https://docs.syncthing.net/users/syncing.html),
+[folder types](https://docs.syncthing.net/users/foldertypes.html),
+[ignore patterns](https://docs.syncthing.net/users/ignoring.html), and
+[file versioning](https://docs.syncthing.net/users/versioning.html).
