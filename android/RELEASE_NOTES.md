@@ -1,14 +1,17 @@
-# IgnorantShuffle Android v0.13.1
+# IgnorantShuffle Android v0.13.2
 
 ## Improvements
 
-- Batch shared statistics exchanges to roughly two minutes and avoid rewriting unchanged statistics caches and local settings.
-- Batch private listening database transactions for up to ten seconds, flushing sooner for important events, reads and explicit sync. Backgrounding and disconnecting still publish pending statistics.
-- Avoid forcing a shared-file exchange for every shuffle counter event.
-- Add Syncthing setup and conflict-review guidance for PC, server and phone.
+- Android playback buttons show immediate, static feedback while playlist loading and playback commands run in the background.
+- The corner status shows whether automatic switching is ready and explains when shuffle is disabled. Refresh connection appears only while disconnected.
+- Save shared shuffle rules and learning options automatically when settings sharing is enabled, with pending saves retained for retry after reopening.
 
-An abrupt app termination can lose up to ten seconds of unflushed listening observations. Concurrent offline edits to shared weights/settings can still conflict.
+## Fixes
 
-Android version: **0.13.1**, versionCode **17**. Bundled core: **0.2.0**.
+- Preserve the next shuffle choice and local settings when reopening the app with unchanged shared settings.
+- Refresh playlist weights when changing playlists in AIMP.
+- Apply the minimum weight to queued choices and correct below-minimum early skips while automatic shuffle and AIMP Shuffle are enabled. Play now remains a manual override.
+
+Android version: **0.13.2**, versionCode **18**. Bundled core: **0.2.0**.
 Requires Android 8.0+; retains the application ID and pinned update signing key.
 The Android companion remains a preview build.

@@ -4,6 +4,16 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.13.2 (versionCode 18)
+
+- Android playback buttons show immediate, static feedback while playlist loading and playback commands run in the background.
+- The corner status shows whether automatic switching is ready and explains when shuffle is disabled. Refresh connection appears only while disconnected.
+- Save shared shuffle rules and learning options automatically when settings sharing is enabled, with pending saves retained for retry after reopening.
+
+- Preserve the next shuffle choice and local settings when reopening the app with unchanged shared settings.
+- Refresh playlist weights when changing playlists in AIMP.
+- Apply the minimum weight to queued choices and correct below-minimum early skips while automatic shuffle and AIMP Shuffle are enabled. Play now remains a manual override.
+
 ## 0.13.1 (versionCode 17)
 
 - Batch shared statistics exchanges to two minutes and private listening database writes for up to ten seconds.

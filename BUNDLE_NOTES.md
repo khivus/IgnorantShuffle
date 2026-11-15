@@ -1,7 +1,11 @@
 ## Improvements
 
-- Update shared statistics files roughly every two minutes instead of every 10–15 seconds, while retaining frequent local recovery saves and immediate explicit sync.
-- Batch Android listening database writes and avoid rewriting unchanged weights, settings and statistics caches.
-- Add a Syncthing setup guide for an always-on server, PC and phone, including temporary-file exclusions and safe conflict review.
+- Android playback buttons show immediate, static feedback while playlist loading and playback commands run in the background.
+- The corner status shows whether automatic switching is ready and explains when shuffle is disabled. Refresh connection appears only while disconnected.
+- Save shared shuffle rules and learning options automatically when settings sharing is enabled, with pending saves retained for retry after reopening.
 
-Shared weights and settings still require syncing before editing on another device; concurrent offline edits can still conflict. An abrupt app termination can lose up to ten seconds of unflushed listening observations.
+## Fixes
+
+- Preserve the next shuffle choice and local settings when reopening the app with unchanged shared settings.
+- Refresh playlist weights when changing playlists in AIMP.
+- Apply the minimum weight to queued choices and correct below-minimum early skips while automatic shuffle and AIMP Shuffle are enabled. Play now remains a manual override.
