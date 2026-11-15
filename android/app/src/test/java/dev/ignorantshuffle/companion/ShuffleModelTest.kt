@@ -20,6 +20,40 @@ class ShuffleModelTest {
     }
     private fun model(p: FakePlanner = FakePlanner()) = ShuffleModel(p).also { it.catalog(listOf(a, b)) }
 
+    @Test fun playlistReplacementAppliesExistingMinimumWithoutResavingRules() {
+        val planner = FakePlanner(); val model = model(planner)
+        val rules = Settings(minimumWeight = 7.0)
+        model.configure(rules, mapOf(a.key to 8.0, b.key to 6.0))
+        model.confirmPlaying(b)
+        assertEquals(a.key, model.next().track?.key)
+        val low = Track(10, "low", null, "Low", "Artist")
+        val cutoff = Track(11, "cutoff", null, "Cutoff", "Artist")
+        val high = Track(12, "high", null, "High", "Artist")
+        model.catalog(listOf(low, cutoff, high))
+        model.configure(rules, mapOf(low.key to 6.0, cutoff.key to 7.0, high.key to 9.0), preservePreview = true)
+        model.confirmPlaying(high)
+        assertEquals(cutoff.key, model.next().track?.key)
+        assertArrayEquals(doubleArrayOf(0.0, 7.0, 9.0), planner.numbers, 0.0)
+        assertEquals(rules, model.settings)
+    }
+
+    @Test fun repeatedSettingsReloadKeepsPublishedChoice() {
+        val planner = FakePlanner(); val model = model(planner)
+        val rules = Settings(cooldown = 7)
+        val weights = mapOf(a.key to 8.0)
+        model.configure(rules, weights)
+        val selected = model.next(); val sequence = model.choiceSequence
+        repeat(5) {
+            model.configure(rules.copy(), weights.toMap())
+            assertEquals(selected, model.next())
+            assertEquals(sequence, model.choiceSequence)
+        }
+        assertEquals(1, planner.calls)
+        model.configure(rules.copy(cooldown = 2), weights)
+        model.next()
+        assertEquals(2, planner.calls)
+    }
+
     @Test fun sharedWeightForAddedTrackDoesNotReplacePublishedChoice() {
         val planner = FakePlanner(); val model = model(planner)
         val selected = model.next(); val sequence = model.choiceSequence

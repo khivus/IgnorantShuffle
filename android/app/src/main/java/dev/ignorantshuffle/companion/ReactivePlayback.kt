@@ -26,6 +26,10 @@ class ReactivePlayback {
     val correcting get() = correction != null
     val waiting get() = candidate != null || correcting || pauseSince != null
 
+    // Timed mode leaves eligible early skips alone, but still enforces the cutoff.
+    fun shouldObserve(fullCorrection: Boolean, eligible: Boolean?): Boolean =
+        fullCorrection || eligible == false || waiting
+
     fun timedPlaybackReady(playback: Playback, acceptedKey: String?): Boolean =
         !waiting && playback.state == 3 && playback.track != null && playback.track.key == acceptedKey
 

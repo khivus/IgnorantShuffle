@@ -1,3 +1,47 @@
+# Android playback and saving follow-up — 2026-11-15
+
+Implemented: unchanged reloads retain rolls; metadata changes refresh playlist weights;
+corner readiness indicator; immediate haptic and one-second Requested feedback for
+Previous / Next / Play now; Refresh appears only while disconnected. Saving shared
+rules or learning options automatically writes the settings file when sharing is on.
+Unpublished settings are persisted and retried after reopening. Appearance,
+notifications and playback preferences remain in the device's atomic preferences file.
+Enabling sharing publishes the current local common settings; explicit Reload shared
+imports remote values. Previously reverted values must be set again.
+
+Minimum-weight eligibility now includes app-queue choices and dispatch validation.
+Excluded queued entries remain stored and become available if eligible later.
+Timed mode corrects below-minimum early skips while automatic shuffle and AIMP
+shuffle are on, even with combined early-skip correction off. Play now remains an
+explicit manual override. Android/AIMP can briefly play a rejected fragment before
+reporting it; automatic switching cannot control AIMP when shuffle is disabled.
+
+Phone checks (not automated):
+
+- Player: tap Previous and Next; expect immediate vibration (subject to system
+  haptic settings), Requested and spinner, then playback confirmation. Try Play now
+  on an expanded playlist entry; expect the same feedback and no double dispatch.
+- Connected AIMP: Refresh is absent. Stop/disconnect AIMP: Refresh is available;
+  reconnect and confirm it disappears. Check the corner status with each shuffle
+  switch off, both on, paused playback, and no eligible tracks.
+- Enable sharing in Music folders. Set minimum 7, cooldown, finite mode, balance
+  and smart-learning options. Confirm shared save status and the values in
+  IgnorantShuffle.settings.tsv. Fully close/reopen: all applied values persist.
+- Change appearance, notification buttons and playback timing (use Apply where
+  provided). Close/reopen: device preferences persist and are not imported from
+  the shared common-settings file. Disable sharing and repeat local rule saving.
+- Revoke folder access, save a common rule, close/reopen, restore access and
+  return to the app: local edits remain and pending shared save completes.
+  Change several shared options quickly; the final values must reach the file.
+- Minimum 7: queue tracks weighted 6 and 7; Next selects the eligible entry and
+  retains the excluded one. Switch playlists and verify every automatic target
+  has weight >= 7, including after a shared weight reload and a restart.
+- With automatic shuffle and AIMP shuffle on, try early skips with combined
+  correction on and off. Below-minimum tracks are corrected; timed-only mode
+  allows eligible early skips. Manual Play now still permits a below-minimum track.
+- Verify screen-off track-end switching, pause/resume, finite-pass completion,
+  notification Next/Previous, and explicit Reload shared after a remote edit.
+
 # Drawer clarity and configurable smart weights — 2026-11-10
 
 - Drawer groups now use shaded uppercase accessibility headings and dividers;

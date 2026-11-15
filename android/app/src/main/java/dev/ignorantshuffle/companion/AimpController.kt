@@ -138,12 +138,14 @@ class AimpController(private val context: Context) {
     private fun commonSettings() = PortableSettings(settings, preferences.balanceListening, preferences.balanceStrength, preferences.smartWeights)
     fun changeSharedSettings(enabled: Boolean) {
         sharedGeneration++; sharedStore.edit().putBoolean("enabled", enabled).apply(); shareSettings = enabled
-        sharedSettingsStatus = if(enabled) "Reloading shared settings" else "Sharing is off; current settings stay on this device"
+        sharedSettingsStatus = if(enabled) "Saving current shared settings" else "Sharing is off; current settings stay on this device"
         acknowledge(sharedSettingsStatus)
-        if(enabled) reloadSharedSettings()
+        if(enabled) queueSharedSettingsSave()
     }
-    fun reloadSharedSettings() {
+    fun reloadSharedSettings() = loadSharedSettings(automaticLoad = false)
+    private fun loadSharedSettings(automaticLoad: Boolean) {
         if(!shareSettings) return
+        if (sharedStore.contains("pendingSettings")) { publishPendingSettings(); return }
         val root = folder.config.root ?: run { sharedSettingsStatus = "Choose a music folder first"; acknowledge(sharedSettingsStatus); return }
         val generation = ++sharedGeneration; val localBefore = commonSettings()
         sharedWorker.execute {
@@ -157,37 +159,69 @@ class AimpController(private val context: Context) {
                     check(!pending && storageError == null) { "Wait for playback confirmation and restore local settings access before reloading" }
                     check(commonSettings() == localBefore) { "Local settings changed while loading; reload again" }
                     val value = text?.let(PortableSettings::decode)
+                    val baselineKey = "loaded:$root"
+                    val signature = value?.encode()
+                    if (automaticLoad && signature != null && sharedStore.getString(baselineKey, null) == signature) {
+                        sharedRoot = root; sharedBefore = text
+                        sharedSettingsStatus = if (value == commonSettings()) "Shared settings are up to date" else "Local settings kept; shared settings have not changed"
+                        return@post
+                    }
+                    val changed = value != null && value != commonSettings()
                     applyingShared = true
-                    if(value != null) {
+                    if(changed) {
                         configure(value.rules)
                         check(settings == value.rules) { "Cannot apply shared rules; local settings preserved" }
                         changePreferences(preferences.copy(balanceListening = value.balance, balanceStrength = value.balanceStrength, smartWeights = value.smart))
                     }
+                    check(value == null || commonSettings() == value) { "Cannot apply shared settings completely" }
+                    sharedStore.edit().putString(baselineKey, signature).apply()
                     sharedRoot = root; sharedBefore = text
-                    sharedSettingsStatus = if(value == null) "No shared file yet. Use Publish current settings to create it." else "Shared settings loaded"
-                    acknowledge(sharedSettingsStatus)
+                    sharedSettingsStatus = if(value == null) "No shared file yet. Use Publish current settings to create it." else if(changed) "Shared settings loaded" else "Shared settings are up to date"
+                    if(changed) acknowledge(sharedSettingsStatus)
                 } catch(e: Exception) { sharedSettingsStatus = "Shared settings unchanged: ${e.message}"; acknowledge(sharedSettingsStatus) }
                 finally { applyingShared = false }
             } }.onFailure { e -> handler.post { sharedSettingsStatus = "Shared settings unavailable: ${e.message}"; acknowledge(sharedSettingsStatus) } }
         }
     }
-    fun publishSharedSettings() {
-        if(!shareSettings || applyingShared) return
-        val root = folder.config.root ?: run { acknowledge("Choose a music folder first"); return }
-        if(sharedRoot != root) { acknowledge("Reload shared settings before publishing"); return }
-        val before = sharedBefore; val value = commonSettings(); val generation = sharedGeneration
+    private var publishingSettings = false
+    private fun queueSharedSettingsSave() {
+        if (!shareSettings || applyingShared) return
+        // Persist the intent before starting I/O, so a killed process retries it.
+        sharedGeneration++
+        check(sharedStore.edit().putString("pendingSettings", commonSettings().encode()).commit()) { "Cannot queue shared settings save" }
+        publishPendingSettings()
+    }
+    fun publishSharedSettings() = guarded { queueSharedSettingsSave() }
+    private fun publishPendingSettings() {
+        if (!shareSettings || publishingSettings) return
+        val payload = sharedStore.getString("pendingSettings", null) ?: return
+        val root = folder.config.root ?: run {
+            sharedSettingsStatus = "Saved on this device; choose a music folder to finish sharing"
+            return
+        }
+        publishingSettings = true
+        sharedSettingsStatus = "Saved on this device; saving shared settings"
         sharedWorker.execute {
             runCatching {
+                val value = PortableSettings.decode(payload)
                 val docs = PortableSettings.documents(MusicFolderStore(context).documents(Uri.parse(root)))
-                val current = docs.find(PortableWeights.FILENAME)?.let(docs::read)
-                check(current == before) { "Settings changed on another device; reload before publishing" }
                 SharedWeightFile.edit(docs) { it.putAll(value.values()) }
                 requireNotNull(docs.find(PortableWeights.FILENAME)).let(docs::read)
             }.onSuccess { text -> handler.post {
-                if(generation != sharedGeneration || !shareSettings) return@post
-                if(folder.config.root == root) sharedBefore = text
-                sharedSettingsStatus = "Shared settings published"; acknowledge(sharedSettingsStatus)
-            } }.onFailure { e -> handler.post { sharedSettingsStatus = "Shared settings not saved: ${e.message}"; acknowledge(sharedSettingsStatus) } }
+                publishingSettings = false
+                sharedStore.edit().putString("loaded:$root", payload).apply()
+                if (sharedStore.getString("pendingSettings", null) == payload) {
+                    sharedStore.edit().remove("pendingSettings").commit()
+                }
+                if (folder.config.root == root) { sharedRoot = root; sharedBefore = text }
+                sharedSettingsStatus = "Settings saved on this device and in the shared file"
+                acknowledge(sharedSettingsStatus)
+                publishPendingSettings()
+            } }.onFailure { e -> handler.post {
+                publishingSettings = false
+                sharedSettingsStatus = "Saved on this device; shared save will retry: ${e.message}"
+                acknowledge(sharedSettingsStatus)
+            } }
         }
     }
     fun enqueue(track: Track, atBeginning: Boolean = false) = guarded {
@@ -241,6 +275,8 @@ class AimpController(private val context: Context) {
     }
 
     fun changePreferences(value: AppPreferences) = guarded {
+        if (value == preferences) return@guarded
+        val commonBefore = commonSettings()
         val preferencesBeforeLearning=preferences.smartWeights
         val timingChanged = value.leadMs != preferences.leadMs || value.reactivePlayback != preferences.reactivePlayback ||
             value.correctionDelayMs != preferences.correctionDelayMs
@@ -249,6 +285,7 @@ class AimpController(private val context: Context) {
         preferenceStore.save(value)
         if (!value.logging) log("Automatic logging disabled by user")
         preferences = value
+        if (commonSettings() != commonBefore) queueSharedSettingsSave()
         model.balance(value.balanceListening, learningCounts(),value.balanceStrength)
         model.smartWeights(value.smartWeights,learningScores())
         if(value.smartWeights!=preferencesBeforeLearning) statistics.configureSmartWeights(value.smartWeights)
@@ -334,7 +371,11 @@ class AimpController(private val context: Context) {
         detach("Switching AIMP session")
         val cb = object : MediaController.Callback() {
             private fun active() = native?.sessionToken == c.sessionToken
-            override fun onMetadataChanged(metadata: MediaMetadata?) { if (active()) guarded { read() } }
+            override fun onMetadataChanged(metadata: MediaMetadata?) {
+                // AIMP can publish the new playlist's metadata before (or without)
+                // a queue-change callback. Resolve its tracks and weights together.
+                if (active()) guarded { read(refreshQueue = true) }
+            }
             override fun onPlaybackStateChanged(state: PlaybackState?) {
                 if (active()) guarded { log("Playback callback state=${state?.state}, position=${state?.position}"); read() }
             }
@@ -431,11 +472,12 @@ class AimpController(private val context: Context) {
         actions = state?.actions ?: 0
         if (next.title != playback.title || next.state != playback.state || next.track?.key != playback.track?.key)
             log("Observed state=${next.state}; title=${next.title}; id=$mediaId; queueId=${current?.queueId}; position=${next.position}; actions=0x${actions.toString(16)}")
-        val reactiveReady = automatic && preferences.reactivePlayback && automaticPlaybackAllowed() &&
+        val reactiveReady = automatic && automaticPlaybackAllowed() &&
             connected && permission && storageError == null && !folder.blocked
         if (!reactiveReady) {
             reactive.reset(); handler.removeCallbacks(reactivePoll)
-        } else if (react && (!pending || reactive.correcting)) {
+        } else if (react && (!pending || reactive.correcting) &&
+            reactive.shouldObserve(preferences.reactivePlayback, current?.let(model::eligible))) {
             val target = reactive.roll?.choice?.track
             if (target != null && tracks.none { it.key == target.key }) {
                 log("REACTIVE cancelled: captured target removed from AIMP playlist")
@@ -535,8 +577,12 @@ class AimpController(private val context: Context) {
             weights = effective; model.configure(settings, weights, preservePreview)
         }
     }
+    private var lastFolderSnapshot: Triple<FolderConfig, List<LibraryFile>, Map<String, Map<String, Double>>>? = null
     private fun folderChanged() {
-        if(!folder.busy) { acknowledge(folder.error ?: folder.status); if(shareSettings && folder.config.root != sharedRoot) reloadSharedSettings() }
+        if(!folder.busy) {
+            val snapshot = Triple(folder.config, folder.files, folder.values)
+            if (folder.error != null || snapshot != lastFolderSnapshot) acknowledge(folder.error ?: folder.status)
+            lastFolderSnapshot = snapshot; if(shareSettings && folder.config.root != sharedRoot) loadSharedSettings(automaticLoad = true) }
         if (folder.blocked) {
             reactive.reset(); handler.removeCallbacks(reactivePoll)
             handler.removeCallbacks(endTimer); scheduled = null; preview = Choice(null)
@@ -555,7 +601,7 @@ class AimpController(private val context: Context) {
         log("FOLDER root=${folder.config.root}; shared=${folder.active}; matched=$matched/${tracks.size}; overrides=${folder.values.size}")
     }
     fun chooseMusicFolder(uri: Uri) = guarded { folder.select(uri) }
-    fun reloadSharedWeights() { folder.reload(); reloadSharedSettings() }
+    fun reloadSharedWeights() { folder.reload(); loadSharedSettings(automaticLoad = true) }
     fun linkFile(track: Track, path: String?) { folder.link(track, path) }
     fun weightSource(track: Track): String {
         val path = folder.match(track).path
@@ -567,6 +613,7 @@ class AimpController(private val context: Context) {
 
     fun configure(value: Settings) = guarded {
         check(storageError == null) { "Saved settings could not be read; existing data is preserved" }
+        if (value == settings) { queueSharedSettingsSave(); return@guarded }
         store.save(value)
         if (value.finite != settings.finite) {
             passCompleted = false
@@ -574,6 +621,7 @@ class AimpController(private val context: Context) {
             if (value.finite) statistics.shuffle("pass_started")
         }
         settings = value; model.configure(value, weights)
+        queueSharedSettingsSave()
         updatePreview(); scheduleTimer(); log("Settings changed: $value"); acknowledge("Shuffle rules saved")
     }
 
@@ -599,7 +647,7 @@ class AimpController(private val context: Context) {
     fun reroll() = guarded { if (!pending && preview.queueEntryId == null) { statistics.shuffle("reroll"); model.next(true); updatePreview("User reroll"); scheduleTimer(); acknowledge("Next choice rerolled") } }
     fun smartNext() = guarded { if (!pending) playChoice(model.next()) }
     fun smartPrevious() = guarded { if (!pending) model.previous()?.let { playChoice(it,userReplay=true) } }
-    fun play(track: Track) = guarded { if (!pending) playChoice(Choice(track),userReplay=track.key==playback.track?.key) }
+    fun play(track: Track) = guarded { if (!pending) playChoice(Choice(track),userReplay=track.key==playback.track?.key, manualChoice = true) }
 
     fun playNotificationRoll(action: RollAction) = guarded {
         if (!notificationActionsAvailable() || !preferences.notificationNext ||
@@ -623,7 +671,7 @@ class AimpController(private val context: Context) {
     }
 
     private fun playChoice(choice: Choice, planned: ScheduledRoll? = null, notificationAction: RollAction? = null,
-        previousAction: PreviousRollAction? = null, correction: ReactiveDecision.Correct? = null, userReplay: Boolean = false) {
+        previousAction: PreviousRollAction? = null, correction: ReactiveDecision.Correct? = null, userReplay: Boolean = false, manualChoice: Boolean = false) {
         check(storageError == null && !folder.blocked) { "Storage is loading/unavailable; playback selection disabled" }
         val target = choice.track ?: run { result = "No eligible tracks / finite pass complete"; return }
         // Manual requests refresh the queue. Timed requests already performed a
@@ -646,9 +694,14 @@ class AimpController(private val context: Context) {
             log("Timed choice cancelled: source/timing changed during revalidation"); scheduleTimer(); return
         }
         val fresh = tracks.firstOrNull { it.key == target.key } ?: error("Queue changed; choose again")
+        if (!manualChoice && !model.eligible(fresh)) {
+            updatePreview("Target is below the minimum weight"); scheduleTimer()
+            acknowledge("Song change cancelled: target is below the minimum weight")
+            return
+        }
         val c = native ?: error("No AIMP session")
         check(granted()) { "Notification access was revoked" }
-        if (correction != null) check(automatic && preferences.reactivePlayback && automaticPlaybackAllowed() &&
+        if (correction != null) check(automatic && automaticPlaybackAllowed() &&
             playback.track?.key == correction.rejected && playback.state == PlaybackState.STATE_PLAYING) {
             "Reactive correction cancelled: playback or mode changed"
         }
@@ -741,14 +794,14 @@ class AimpController(private val context: Context) {
             automaticStatus = if (aimpShuffle == AimpShuffleMode.OFF) "Waiting: turn Shuffle on in AIMP" else "Waiting for AIMP to report its shuffle mode"
             return
         }
-        if (preferences.reactivePlayback) {
+        run {
             if (playback.state == PlaybackState.STATE_PLAYING && playback.track != null) {
                 // Settings/reroll can run while an unexpected fragment is settling.
                 // Keep the last accepted source, not that unaccepted fragment.
                 model.currentKey?.let { reactive.arm(it, preview, model.choiceSequence) }
             }
             if (!reactive.timedPlaybackReady(playback, model.currentKey)) {
-                automaticStatus = "Combined: waiting for playback / early-skip correction"
+                automaticStatus = "Waiting for playback / minimum-weight or early-skip correction"
                 return
             }
         }
@@ -771,7 +824,7 @@ class AimpController(private val context: Context) {
         // Keep the bounded command-confirmation window awake through that state.
         val ready = automatic && automaticPlaybackAllowed() && connected && permission && storageError == null && !folder.blocked
         cpu.update((preferences.debugPlayback && audit.active && connected && permission) ||
-            if (preferences.reactivePlayback) ready && (pending || reactive.waiting || playback.state == PlaybackState.STATE_PLAYING)
+            if (preferences.reactivePlayback || reactive.waiting) ready && (pending || reactive.waiting || playback.state == PlaybackState.STATE_PLAYING)
             else CpuProtection.needed(ready, pending, timing(), SystemClock.elapsedRealtime(), preferences.leadMs))
     }
 

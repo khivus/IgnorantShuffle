@@ -11,6 +11,21 @@ class ReactivePlaybackTest {
     private fun playing(track: Track) = Playback(state = 3, track = track, title = track.title)
     private fun armed(choice: Choice = Choice(b)) = ReactivePlayback().apply { arm(a.key, choice, 7) }
 
+    @Test fun timedModeCorrectsExcludedSkipsAndFinishesCorrectionWithoutCombinedMode() {
+        val p = armed()
+        assertFalse(p.shouldObserve(fullCorrection = false, eligible = true))
+        assertFalse(p.shouldObserve(fullCorrection = false, eligible = null))
+        assertTrue(p.shouldObserve(fullCorrection = false, eligible = false))
+        val correction = p.observe(playing(c), 1000, 25)
+        assertEquals(ReactiveDecision.Wait, correction)
+        assertTrue(p.shouldObserve(fullCorrection = false, eligible = true))
+        assertTrue(p.observe(playing(c), 1025, 25) is ReactiveDecision.Correct)
+        assertTrue(p.shouldObserve(fullCorrection = false, eligible = true))
+        assertEquals(ReactiveDecision.Accept(), p.observe(playing(b), 1030, 25))
+        assertFalse(p.shouldObserve(fullCorrection = false, eligible = true))
+        assertTrue(p.shouldObserve(fullCorrection = true, eligible = true))
+    }
+
     @Test fun zeroDelayCorrectsOnFirstIdentifiedPlayingObservation() {
         val p = armed()
         assertEquals(ReactiveDecision.Wait, p.observe(playing(c).copy(state = 2), 1000, 0))

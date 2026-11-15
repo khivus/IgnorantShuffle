@@ -107,6 +107,7 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
     fun configure(settings: Settings, weights: Map<String, Double>, preservePreview: Boolean = false) {
         settings.validate()
         require(weights.values.all { it.isFinite() && it >= 0 }) { "Weights must be finite and nonnegative" }
+        if (settings == this.settings && weights == this.weights) return
         val changedMode = settings.finite != this.settings.finite
         val keep = preservePreview && settings == this.settings && preview?.track?.let { t ->
             (this.weights[t.key] ?: this.settings.defaultWeight) == (weights[t.key] ?: settings.defaultWeight)
@@ -164,7 +165,7 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
     fun next(reroll: Boolean = false): Choice {
         val old = preview
         if (!reroll && old != null) return old.copy(track = old.track?.let { t -> tracks.firstOrNull { it.key == t.key } })
-        queue.firstNotNullOfOrNull { entry -> tracks.firstOrNull { it.key == entry.key && it.selectable }?.let {
+        queue.firstNotNullOfOrNull { entry -> tracks.firstOrNull { it.key == entry.key && it.selectable && eligible(it) }?.let {
             Choice(it, remaining = tracks.filter(::eligible).count { t -> t.key !in played }, queueEntryId = entry.id)
         } }?.let { preview = it; choiceSequence++; return it }
         if (!reroll && cursor >= 0 && cursor < timeline.lastIndex) {

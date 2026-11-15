@@ -76,6 +76,7 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
     exportLog: () -> Unit, exportWeights: () -> Unit, importWeights: () -> Unit, requestNotifications: () -> Unit,
     chooseMusicFolder: () -> Unit, batteryExempt: Boolean, batterySettings: () -> Unit, updates: AppUpdates,
     exportStatistics: (String) -> Unit, installUpdate: () -> Unit, openUpdateRelease: () -> Unit) {
+    val switching = m.switchingStatus()
     var page by rememberSaveable { mutableStateOf("Player") }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -113,10 +114,10 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
                     if(updates.release != null) Text("Update available", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     Row(Modifier.semantics(mergeDescendants = true) {
-                        contentDescription = if (m.connected) "AIMP connected" else "AIMP disconnected"
+                        contentDescription = switching.title + ". " + switching.detail
                     }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(Modifier.size(8.dp).background(if(m.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape))
-                        Text(if(m.connected) "Connected" else "Disconnected", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        Box(Modifier.size(8.dp).background(if(switching.ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, CircleShape))
+                        Text(switching.title, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                     }
                 }
             })
@@ -160,6 +161,24 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
 }
 
 @Composable
+private fun PlaybackActionButton(label: String, onClick: () -> Unit, enabled: Boolean, modifier: Modifier = Modifier) {
+    var pressed by remember { mutableStateOf(false) }
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    LaunchedEffect(pressed) { if (pressed) { kotlinx.coroutines.delay(1000); pressed = false } }
+    ActionButton(onClick = {
+        pressed = true
+        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+        onClick()
+    }, enabled = enabled && !pressed, modifier = modifier) {
+        if (pressed) {
+            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(if (pressed) "Requested" else label)
+    }
+}
+
+@Composable
 private fun Section(title: String? = null, accent: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = if (accent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)) {
@@ -176,6 +195,23 @@ private fun Intro(title: String, subtitle: String) {
         Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+private data class SwitchingStatus(val title: String, val detail: String, val ready: Boolean = false)
+
+private fun AimpController.switchingStatus(): SwitchingStatus = when {
+    !permission -> SwitchingStatus("Won’t switch songs", "Notification access is missing. Grant access to connect to AIMP.")
+    !connected -> SwitchingStatus("Disconnected", "Won’t change songs automatically. Start music in AIMP to connect.")
+    !automatic && aimpShuffle == AimpShuffleMode.OFF -> SwitchingStatus("Won’t switch songs", "Automatic shuffle and AIMP shuffle are off. Enable both for automatic song changes.")
+    !automatic -> SwitchingStatus("Won’t switch songs", "Automatic shuffle is off. Enable it in Player for automatic song changes.")
+    aimpShuffle == AimpShuffleMode.OFF -> SwitchingStatus("Won’t switch songs", "AIMP shuffle is off. Turn Shuffle on in AIMP for automatic song changes.")
+    aimpShuffle != AimpShuffleMode.ON -> SwitchingStatus("Waiting for AIMP", "Won’t change songs automatically until AIMP reports that Shuffle is on.")
+    storageError != null || folder.blocked -> SwitchingStatus("Won’t switch songs", "Settings or music-folder weights are loading or unavailable. Restore access to resume automatic song changes.")
+    pending -> SwitchingStatus("Switching song", "Automatic shuffle and AIMP shuffle are on. Waiting for AIMP to confirm playback.", true)
+    playback.state != 3 -> SwitchingStatus("Waiting for playback", "Automatic shuffle and AIMP shuffle are on. Start playback in AIMP to resume automatic song changes.")
+    playback.track == null -> SwitchingStatus("Waiting for track", "Won’t change songs automatically until the playing track is available in AIMP’s playlist.")
+    preview.track == null -> SwitchingStatus("No next song", "No eligible next song or the finite pass is complete. Automatic shuffle cannot select another song.")
+    else -> SwitchingStatus("Auto shuffle ready", "Automatic shuffle and AIMP shuffle are on. Songs will change automatically.", true)
 }
 
 private fun AimpController.ready() = connected && !pending && storageError == null && !folder.blocked
@@ -220,8 +256,8 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                 if (choice.cooldownFallback) Text("Short playlist: cooldown fallback is active.", style = MaterialTheme.typography.bodySmall)
                 if (m.settings.finite) Text("${choice.remaining} remaining in this pass", style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ActionButton(onClick = m::smartPrevious, enabled = ready && m.canPrevious, modifier = Modifier.weight(1f)) { Text("Previous") }
-                    ActionButton(onClick = m::smartNext, enabled = ready && choice.track != null, modifier = Modifier.weight(1f)) { Text("Play") }
+                    PlaybackActionButton(label = "Previous", onClick = m::smartPrevious, enabled = ready && m.canPrevious, modifier = Modifier.weight(1f))
+                    PlaybackActionButton(label = "Next", onClick = m::smartNext, enabled = ready && choice.track != null, modifier = Modifier.weight(1f))
                 }
                 TextButton(onClick = m::reroll, enabled = ready && choice.track != null && choice.queueEntryId == null) { Text("Reroll next choice") }
             }
@@ -235,7 +271,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                 Text(m.automaticStatus, style = MaterialTheme.typography.bodySmall)
                 Text(if (m.preferences.reactivePlayback)
                     "AIMP Next and headset skips are corrected too. To keep a specific track, select it again within 5 seconds after correction. CPU protection uses more battery."
-                    else "CPU protection supports screen-off timing and uses more battery. It releases on pause, disable or disconnect. Headset Next keeps AIMP's own order.",
+                    else "CPU protection supports screen-off timing and uses more battery. It releases on pause, disable or disconnect. Early skips keep AIMP's order for eligible songs; songs below the minimum are corrected.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -245,7 +281,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
             if (m.folder.blocked) Text(m.folder.error ?: m.folder.status, color = MaterialTheme.colorScheme.error)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ActionButton(onClick = openAimp, modifier = Modifier.weight(1f)) { Text("Open AIMP") }
-                ActionButton(onClick = m::refresh, enabled = !m.pending, modifier = Modifier.weight(1f)) { Text("Refresh connection") }
+                if (!m.connected) ActionButton(onClick = m::refresh, enabled = !m.pending, modifier = Modifier.weight(1f)) { Text("Refresh connection") }
             }
         }
     }
@@ -273,7 +309,7 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
                         Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilledTonalButton(onClick = { edit(track) }, modifier = Modifier.weight(1f), enabled = !m.pending && m.storageError == null && !m.folder.blocked) { Text("Weight ${m.weight(track)}") }
-                            ActionButton(onClick = { m.play(track) }, modifier = Modifier.weight(1f), enabled = m.ready() && track.selectable) { Text("Play now") }
+                            PlaybackActionButton(label = "Play now", onClick = { m.play(track) }, modifier = Modifier.weight(1f), enabled = m.ready() && track.selectable)
                         }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(onClick = { m.enqueue(track, atBeginning = true) }, enabled = track.selectable && !m.pending) { Text("Add to beginning") }
@@ -325,7 +361,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
         }) }
         if (group == "Music folders") item {
             Section("Shared settings") {
-                Toggle("Share settings between devices", "Off by default. Sync the settings file with your music. Rules and learning options are shared; appearance, permissions and playback controls stay local.", m.shareSettings, onChange = m::changeSharedSettings)
+                Toggle("Share settings between devices", "Off by default. Sync the settings file with your music. Rules and learning options are saved to the shared file automatically. Appearance, permissions and playback controls are saved on this device.", m.shareSettings, onChange = m::changeSharedSettings)
                 Text(m.sharedSettingsStatus, style = MaterialTheme.typography.bodySmall)
                 Row {
                     TextButton(onClick = m::reloadSharedSettings, enabled = m.shareSettings) { Text("Reload shared") }
@@ -505,7 +541,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
         if (group == "Shuffle rules") item {
             Section("How it behaves") {
                 Text("Preview and reroll do not consume a track. Only observed playback advances history and cooldown.")
-                Text("Weights below ${m.settings.minimumWeight} are excluded from weighted choices; you can still use Play now on any exposed track.")
+                Text("Weights below ${m.settings.minimumWeight} are excluded from weighted choices; queued choices also respect this minimum. Play now can manually play any exposed track.")
                 Text(if (m.preferences.reactivePlayback)
                     "When the pass completes or no eligible tracks remain, Pause is requested at the estimated end, or after an early AIMP skip. Rejected fragments do not count toward history or the pass."
                     else "Weighted shuffle requests Pause at the estimated end when the pass completes or no eligible tracks remain.")

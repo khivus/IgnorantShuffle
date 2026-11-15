@@ -9,12 +9,31 @@ class AppQueueTest {
     private val a=Track(1,"a",null,"A","Artist")
     private val b=Track(2,"b",null,"B","Artist")
     private fun model()=ShuffleModel(Planner { tracks,weights,_,_,_,_ -> Choice(tracks.firstOrNull { weights[tracks.indexOf(it)]>0 }) }).apply { catalog(listOf(a,b)) }
-    @Test fun queuePrecedesWeightsAndFinitePassButPreviewDoesNotConsumeIt() {
-        val m=model();m.configure(Settings(finite=true),mapOf(b.key to 0.0));val entry=QueueEntry.from(b)
+    @Test fun eligibleQueuePrecedesFinitePassButPreviewDoesNotConsumeIt() {
+        val m=model();m.configure(Settings(finite=true),mapOf(b.key to 7.0));val entry=QueueEntry.from(b)
         m.setQueue(listOf(entry));repeat(5) {assertEquals(entry.id,m.next().queueEntryId)}
         assertEquals(1,m.queue.size);assertTrue(m.played.isEmpty())
         val choice=m.next();m.requested(choice);m.confirmPlaying(b)
         assertTrue(m.queue.isEmpty());assertEquals(setOf(b.key),m.played)
+    }
+    @Test fun queueRespectsMinimumAndRetainsExcludedRequestsUntilEligible() {
+        val m=model()
+        val low=QueueEntry.from(a); val cutoff=QueueEntry.from(b)
+        m.configure(Settings(minimumWeight=7.0),mapOf(a.key to 6.0,b.key to 7.0))
+        m.setQueue(listOf(low,cutoff))
+        assertEquals(cutoff.id,m.next().queueEntryId)
+        m.requested(m.next());m.confirmPlaying(b)
+        assertEquals(listOf(low),m.queue)
+        assertNotEquals(a,m.next().track)
+        m.configure(Settings(minimumWeight=6.0),mapOf(a.key to 6.0,b.key to 7.0))
+        assertEquals(low.id,m.next().queueEntryId)
+    }
+    @Test fun raisingMinimumInvalidatesPreviouslyQueuedChoice() {
+        val m=model();m.setQueue(listOf(QueueEntry.from(a)))
+        assertEquals(a,m.next().track)
+        m.configure(Settings(minimumWeight=7.0),mapOf(a.key to 6.0,b.key to 7.0))
+        assertEquals(b,m.next().track)
+        assertNull(m.next().queueEntryId)
     }
     @Test fun failedOrWrongPlaybackDoesNotConsumeQueue() {
         val m=model();m.setQueue(listOf(QueueEntry.from(b)));m.requested(m.next());m.cancelRequest();m.confirmPlaying(a)
