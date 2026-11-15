@@ -48,6 +48,8 @@ private data class Pending(val label: String, val target: String?, val before: P
 
 class AimpController(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
+    private val playbackWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val journalWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val manager = context.getSystemService(MediaSessionManager::class.java)
     private val audio = context.getSystemService(AudioManager::class.java)
     private val component = ComponentName(context, SessionAccessService::class.java)
@@ -77,7 +79,10 @@ class AimpController(private val context: Context) {
     private var native: MediaController? = null
     private var callback: MediaController.Callback? = null
     private var listening = false
-    private var operation: Pending? = null
+    @Volatile private var operation: Pending? = null
+    @Volatile private var sessionGeneration = 0L
+    private var preparationSequence = 0L
+    private var observationVersion = 0L
     private var actions = 0L
     private var scheduled: ScheduledRoll? = null
     private var publishedSequence = -1L
@@ -270,8 +275,11 @@ class AimpController(private val context: Context) {
         val line = "${ZonedDateTime.now()} elapsed=${SystemClock.elapsedRealtime()} uptime=${SystemClock.uptimeMillis()} " +
             "run=$runId screen=${power.isInteractive} idle=${power.isDeviceIdleMode} $text"
         events = (events + line).takeLast(200)
-        journal.append(line)
-        logError = journal.failure
+        journalWorker.execute {
+            journal.append(line)
+            val failure = journal.failure
+            handler.post { logError = failure }
+        }
     }
 
     fun changePreferences(value: AppPreferences) = guarded {
@@ -367,20 +375,20 @@ class AimpController(private val context: Context) {
         val matches = list.filter { it.packageName == "com.aimp.player" }
         val c = matches.firstOrNull { it.sessionToken == native?.sessionToken } ?: matches.firstOrNull()
         if (c == null) { detach("No active AIMP session. Start music in AIMP."); return }
-        if (c.sessionToken == native?.sessionToken) { read(refreshQueue = true); return }
+        if (c.sessionToken == native?.sessionToken) { readAsync(); return }
         detach("Switching AIMP session")
         val cb = object : MediaController.Callback() {
             private fun active() = native?.sessionToken == c.sessionToken
             override fun onMetadataChanged(metadata: MediaMetadata?) {
                 // AIMP can publish the new playlist's metadata before (or without)
                 // a queue-change callback. Resolve its tracks and weights together.
-                if (active()) guarded { read(refreshQueue = true) }
+                if (active()) readAsync()
             }
             override fun onPlaybackStateChanged(state: PlaybackState?) {
                 if (active()) guarded { log("Playback callback state=${state?.state}, position=${state?.position}"); read() }
             }
             override fun onAudioInfoChanged(info: MediaController.PlaybackInfo) { if(active())guarded { observeVolume(info) } }
-            override fun onQueueChanged(queue: MutableList<MediaSession.QueueItem>?) { if (active()) guarded { read(refreshQueue = true) } }
+            override fun onQueueChanged(queue: MutableList<MediaSession.QueueItem>?) { if (active()) readAsync() }
             override fun onSessionDestroyed() { if (active()) { detach("AIMP session destroyed"); refresh() } }
         }
         c.registerCallback(cb, handler)
@@ -399,10 +407,11 @@ class AimpController(private val context: Context) {
         log(status)
         val aimpVersion = runCatching { context.packageManager.getPackageInfo("com.aimp.player", 0).versionName }.getOrNull()
         log("AIMP version=$aimpVersion; powerSave=${power.isPowerSaveMode}; batteryExempt=${power.isIgnoringBatteryOptimizations(context.packageName)}")
-        read(refreshQueue = true)
+        readAsync()
     }
 
     private fun detach(reason: String) {
+        sessionGeneration++; preparationSequence++; observationVersion++
         statistics.flushShared()
         handler.removeCallbacks(statisticsPoll); statistics.engine.disconnect(); passCompleted = false; passStarted = false
         audit.cancel(); handler.removeCallbacks(auditPoll)
@@ -433,14 +442,43 @@ class AimpController(private val context: Context) {
 
     private fun uri(value: String?): String? = value?.takeIf { it.isNotBlank() && !Uri.parse(it).scheme.isNullOrBlank() }
 
-    private fun read(rearm: Boolean = true, refreshQueue: Boolean = false, react: Boolean = true) {
+    private data class SessionSnapshot(val mode: AimpShuffleMode, val state: PlaybackState?,
+        val metadata: MediaMetadata?, val queue: List<Track>, val audioInfo: MediaController.PlaybackInfo?)
+
+    private fun snapshot(c: MediaController, compatibility: MediaControllerCompat?): SessionSnapshot {
+        val queue = c.queue?.map {
+            val d = it.description
+            Track(it.queueId, d.mediaId?.takeIf(String::isNotBlank), uri(d.mediaUri?.toString()),
+                d.title?.toString().orEmpty(), d.subtitle?.toString().orEmpty())
+        }.orEmpty()
+        return SessionSnapshot(AimpShuffleMode.fromSession(runCatching { compatibility?.shuffleMode ?: -1 }.getOrDefault(-1)),
+            c.playbackState, c.metadata, queue, c.playbackInfo)
+    }
+
+    private fun readAsync() {
         val c = native ?: return
-        val mode = AimpShuffleMode.fromSession(runCatching { compat?.shuffleMode ?: -1 }.getOrDefault(-1))
+        val compatibility = compat
+        val session = sessionGeneration
+        val observation = ++observationVersion
+        playbackWorker.execute {
+            val captured = runCatching { snapshot(c, compatibility) }
+            handler.post {
+                if (session == sessionGeneration && observation == observationVersion && native?.sessionToken == c.sessionToken)
+                    guarded { read(snapshot = captured.getOrThrow()) }
+            }
+        }
+    }
+
+    private fun read(rearm: Boolean = true, refreshQueue: Boolean = false, react: Boolean = true,
+        snapshot: SessionSnapshot? = null) {
+        val c = native ?: return
+        observationVersion++
+        val mode = snapshot?.mode ?: AimpShuffleMode.fromSession(runCatching { compat?.shuffleMode ?: -1 }.getOrDefault(-1))
         if (aimpShuffle != mode) log("AIMP shuffle mode: $aimpShuffle -> $mode")
         aimpShuffle = mode
-        val state = c.playbackState
-        val metadata = c.metadata
-        val queue = if (refreshQueue || tracks.isEmpty()) c.queue?.map {
+        val state = if (snapshot != null) snapshot.state else c.playbackState
+        val metadata = if (snapshot != null) snapshot.metadata else c.metadata
+        val queue = snapshot?.queue ?: if (refreshQueue || tracks.isEmpty()) c.queue?.map {
             val d = it.description
             Track(it.queueId, d.mediaId?.takeIf(String::isNotBlank), uri(d.mediaUri?.toString()),
                 d.title?.toString().orEmpty(), d.subtitle?.toString().orEmpty())
@@ -535,7 +573,7 @@ class AimpController(private val context: Context) {
             statistics.engine.observe(next.copy(track = observed?.copy(statisticsIdentity=folder.statisticsKey(observed))), SystemClock.elapsedRealtime(), System.currentTimeMillis(), restartedObservation,
                 userReplay = operation?.userReplay==true, automaticTransition = operation?.automaticSelection==true)
         else statistics.engine.reject()
-        observeVolume(c.playbackInfo)
+        observeVolume(if (snapshot != null) snapshot.audioInfo else c.playbackInfo)
         handler.removeCallbacks(statisticsPoll)
         if (next.state == PlaybackState.STATE_PLAYING) handler.postDelayed(statisticsPoll, 1000)
         var commandConfirmed = false
@@ -671,14 +709,46 @@ class AimpController(private val context: Context) {
     }
 
     private fun playChoice(choice: Choice, planned: ScheduledRoll? = null, notificationAction: RollAction? = null,
-        previousAction: PreviousRollAction? = null, correction: ReactiveDecision.Correct? = null, userReplay: Boolean = false, manualChoice: Boolean = false) {
+        previousAction: PreviousRollAction? = null, correction: ReactiveDecision.Correct? = null, userReplay: Boolean = false, manualChoice: Boolean = false, refreshSource: Boolean = true) {
         check(storageError == null && !folder.blocked) { "Storage is loading/unavailable; playback selection disabled" }
         val target = choice.track ?: run { result = "No eligible tracks / finite pass complete"; return }
         // Manual requests refresh the queue. Timed requests already performed a
         // lightweight source read; do not refetch/hash the whole queue twice here.
-        if (planned == null && correction == null) {
+        if (refreshSource && planned == null && correction == null) {
+            if (pending) return
+            val c = native ?: error("No AIMP session")
+            val compatibility = compat
+            val session = sessionGeneration
+            val request = ++preparationSequence
+            pending = true
+            val preparationTimeout = Runnable {
+                if (request == preparationSequence && pending && operation == null) {
+                    preparationSequence++
+                    pending = false
+                    result = "AIMP playlist read timed out; no command sent"
+                    acknowledge(result)
+                    scheduleTimer()
+                }
+            }
+            handler.postDelayed(preparationTimeout, 8000)
+            result = "Preparing: ${target.title}"
             reactive.reset(); handler.removeCallbacks(reactivePoll)
-            read(refreshQueue = true, react = false)
+            handler.removeCallbacks(endTimer); scheduled = null
+            playbackWorker.execute {
+                val captured = runCatching { snapshot(c, compatibility) }
+                handler.post {
+                    // A disconnected session must not dispatch into its replacement.
+                    handler.removeCallbacks(preparationTimeout)
+                    if (session != sessionGeneration || request != preparationSequence || native?.sessionToken != c.sessionToken) return@post
+                    pending = false
+                    guarded {
+                        read(react = false, snapshot = captured.getOrThrow())
+                        playChoice(choice, planned, notificationAction, previousAction, correction,
+                            userReplay, manualChoice, refreshSource = false)
+                    }
+                }
+            }
+            return
         }
         if (pending) return
         if (notificationAction != null && (!notificationActionsAvailable() || !preferences.notificationNext || !notificationAction.matches(notificationToken, rollSequence, preview))) {
@@ -713,11 +783,21 @@ class AimpController(private val context: Context) {
         if (preferences.debugPlayback) armAudit(playback, fresh, sequence)
         begin("Play ${fresh.title}", fresh.key, reactiveCorrection = correction != null, fallback = choice.cooldownFallback,
             userReplay=userReplay,automaticSelection=planned!=null || correction!=null)
-        when {
-            fresh.mediaId != null && actions and PlaybackState.ACTION_PLAY_FROM_MEDIA_ID != 0L -> transport.playFromMediaId(fresh.mediaId, null)
-            fresh.queueId >= 0 && actions and PlaybackState.ACTION_SKIP_TO_QUEUE_ITEM != 0L -> transport.skipToQueueItem(fresh.queueId)
-            fresh.uri != null && actions and PlaybackState.ACTION_PLAY_FROM_URI != 0L -> transport.playFromUri(Uri.parse(fresh.uri), null)
-            else -> error("AIMP advertises no supported selection command for this track")
+        val supported = actions
+        val command = operation
+        val session = sessionGeneration
+        playbackWorker.execute {
+            if (operation !== command || sessionGeneration != session) return@execute
+            runCatching {
+                when {
+                    fresh.mediaId != null && supported and PlaybackState.ACTION_PLAY_FROM_MEDIA_ID != 0L -> transport.playFromMediaId(fresh.mediaId, null)
+                    fresh.queueId >= 0 && supported and PlaybackState.ACTION_SKIP_TO_QUEUE_ITEM != 0L -> transport.skipToQueueItem(fresh.queueId)
+                    fresh.uri != null && supported and PlaybackState.ACTION_PLAY_FROM_URI != 0L -> transport.playFromUri(Uri.parse(fresh.uri), null)
+                    else -> error("AIMP advertises no supported selection command for this track")
+                }
+            }.onFailure { error -> handler.post {
+                if (operation === command) finish("EXCEPTION: ${error.message}")
+            } }
         }
     }
 

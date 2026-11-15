@@ -9,7 +9,13 @@ data class Track(val queueId: Long, val mediaId: String?, val uri: String?, val 
     val key: String = statisticsIdentity ?: run {
         val text = listOf(mediaId ?: uri ?: "unidentified", title, artist).joinToString("\u0000")
         "android:v1:" + MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it.toInt() and 255) }
+            .let { digest ->
+                val hex = "0123456789abcdef"
+                buildString(digest.size * 2) { digest.forEach { byte ->
+                    val n = byte.toInt() and 255
+                    append(hex[n ushr 4]); append(hex[n and 15])
+                } }
+            }
     }
     val selectable get() = mediaId != null || uri != null || queueId >= 0
 }

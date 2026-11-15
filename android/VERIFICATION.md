@@ -1,3 +1,22 @@
+# Static playback feedback and background requests — 2026-11-15
+
+- Playback buttons draw static Requested feedback before dispatch; no spinner or
+  animated feedback banner. Removed the artificial one-second button cooldown.
+- Manual playback queue reads, track construction/hashing and transport commands
+  run on a dedicated worker. Metadata/queue callback snapshots are read there too;
+  controller/model/UI updates remain on the main thread. Stale session snapshots
+  and cancelled commands are discarded; preparation has an eight-second timeout.
+- Diagnostic journal appends run on a separate serial worker. Track hashes retain
+  the same persisted keys while avoiding per-byte formatted-string allocation.
+
+Phone checks remaining: use a large playlist and tap Next, Previous and Play now;
+Requested should appear first, with no spinner/slide animation. Scroll the playlist
+while AIMP responds; the UI should remain responsive. Tap repeatedly: only one
+request should dispatch. Disconnect/reconnect AIMP during a request: old work must
+not switch the new session. Recheck minimum weight 7, queue consumption, history,
+notification actions, automatic screen-off switching and diagnostic log export.
+Actual AIMP response latency and OEM behavior require phone verification.
+
 # Android playback and saving follow-up — 2026-11-15
 
 Implemented: unchanged reloads retain rolls; metadata changes refresh playlist weights;

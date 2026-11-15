@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -161,19 +162,24 @@ internal fun ShuffleScreen(m: AimpController, settings: () -> Unit, openAimp: ()
 }
 
 @Composable
-private fun PlaybackActionButton(label: String, onClick: () -> Unit, enabled: Boolean, modifier: Modifier = Modifier) {
+private fun PlaybackActionButton(label: String, onClick: () -> Unit, enabled: Boolean, busy: Boolean, modifier: Modifier = Modifier) {
     var pressed by remember { mutableStateOf(false) }
+    val currentBusy by rememberUpdatedState(busy)
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
-    LaunchedEffect(pressed) { if (pressed) { kotlinx.coroutines.delay(1000); pressed = false } }
+    LaunchedEffect(pressed) {
+        if (pressed) {
+            // Let Compose draw the acknowledgement before starting the request.
+            withFrameNanos { }
+            withFrameNanos { }
+            onClick()
+            snapshotFlow { currentBusy }.first { !it }
+            pressed = false
+        }
+    }
     ActionButton(onClick = {
         pressed = true
         haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-        onClick()
     }, enabled = enabled && !pressed, modifier = modifier) {
-        if (pressed) {
-            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            Spacer(Modifier.width(6.dp))
-        }
         Text(if (pressed) "Requested" else label)
     }
 }
@@ -256,8 +262,8 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                 if (choice.cooldownFallback) Text("Short playlist: cooldown fallback is active.", style = MaterialTheme.typography.bodySmall)
                 if (m.settings.finite) Text("${choice.remaining} remaining in this pass", style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PlaybackActionButton(label = "Previous", onClick = m::smartPrevious, enabled = ready && m.canPrevious, modifier = Modifier.weight(1f))
-                    PlaybackActionButton(label = "Next", onClick = m::smartNext, enabled = ready && choice.track != null, modifier = Modifier.weight(1f))
+                    PlaybackActionButton(busy = m.pending, label = "Previous", onClick = m::smartPrevious, enabled = ready && m.canPrevious, modifier = Modifier.weight(1f))
+                    PlaybackActionButton(busy = m.pending, label = "Next", onClick = m::smartNext, enabled = ready && choice.track != null, modifier = Modifier.weight(1f))
                 }
                 TextButton(onClick = m::reroll, enabled = ready && choice.track != null && choice.queueEntryId == null) { Text("Reroll next choice") }
             }
@@ -309,7 +315,7 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
                         Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilledTonalButton(onClick = { edit(track) }, modifier = Modifier.weight(1f), enabled = !m.pending && m.storageError == null && !m.folder.blocked) { Text("Weight ${m.weight(track)}") }
-                            PlaybackActionButton(label = "Play now", onClick = { m.play(track) }, modifier = Modifier.weight(1f), enabled = m.ready() && track.selectable)
+                            PlaybackActionButton(busy = m.pending, label = "Play now", onClick = { m.play(track) }, modifier = Modifier.weight(1f), enabled = m.ready() && track.selectable)
                         }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(onClick = { m.enqueue(track, atBeginning = true) }, enabled = track.selectable && !m.pending) { Text("Add to beginning") }
@@ -827,7 +833,7 @@ private fun ActionFeedback(m: AimpController) {
     LaunchedEffect(m.feedbackSequence) {
         if (m.feedbackSequence > 0) { visible = true; kotlinx.coroutines.delay(3200); visible = false }
     }
-    androidx.compose.animation.AnimatedVisibility(visible) {
+    if (visible) {
         Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth().semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(m.feedback, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)

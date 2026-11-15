@@ -20,6 +20,16 @@ class ShuffleModelTest {
     }
     private fun model(p: FakePlanner = FakePlanner()) = ShuffleModel(p).also { it.catalog(listOf(a, b)) }
 
+    @Test fun fastTrackIdentityPreservesExistingPersistedKeys() {
+        for (id in listOf("a", "", "Музыка 🎵")) {
+            val track = Track(7, id, null, "Song 🎵", "Артист")
+            val original = listOf(id, track.title, track.artist).joinToString("\u0000")
+            val hex = java.security.MessageDigest.getInstance("SHA-256").digest(original.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it.toInt() and 255) }
+            assertEquals("android:v1:$hex", track.key)
+        }
+    }
+
     @Test fun playlistReplacementAppliesExistingMinimumWithoutResavingRules() {
         val planner = FakePlanner(); val model = model(planner)
         val rules = Settings(minimumWeight = 7.0)
