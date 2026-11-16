@@ -588,9 +588,9 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 const auto key = track_key(current.get());
                                 const auto actual = effective_weight(key);
                 const auto editing = effective_weight(key);
-                weight << L"Current weight: " << std::setprecision(8) << actual.weight;
+                weight << L"Current weight: " << weight_summary(key);
                 weight << (actual.file.empty() ? L" (default)" : L" (music root)");
-                weight << L" | Smart " << std::showpos << std::fixed << std::setprecision(2) << smart_score(key)*100 << std::noshowpos << L"%";
+
                 if (editing.weight <= 10 && editing.weight == std::floor(editing.weight)) state.selected_weight = static_cast<int>(editing.weight);
                 if (actual.weight < minimum_weight_) weight << L" (excluded)";
                 else if (actual.weight > 10) weight << L" (custom)";
@@ -1186,6 +1186,24 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         text << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
         return text.str();
     }
+    static std::wstring display_weight(double value) {
+        std::wostringstream out;out.imbue(std::locale::classic());out<<std::fixed<<std::setprecision(4)<<(std::abs(value)<.00005?0:value);
+        auto text=out.str();while(!text.empty() && text.back()==L'0')text.pop_back();if(!text.empty() && text.back()==L'.')text.pop_back();return text;
+    }
+    std::wstring weight_summary(const std::string& key) {
+        const auto base=effective_weight(key).weight;
+        const auto points=(statistics_.options.smart || statistics_.options.persist)?base*smart_score(key):0;
+        return display_weight(base)+(points<0?L" - ":L" + ")+display_weight(std::abs(points))+L" = "+display_weight(base+points);
+    }
+    void save_adjustment_points(const std::vector<std::string>& keys,double points) {
+        std::map<std::string,double> values;
+        for(const auto& key:keys) {
+            const auto base=effective_weight(key).weight;
+            if(!std::isfinite(points) || std::abs(points)>base*statistics_.options.limit+1e-9 || (base==0 && points!=0))throw std::runtime_error("Adjustment exceeds this track's smart limit in weight points.");
+            values[key]=base==0?1:1+std::clamp(points/base,-statistics_.options.limit,statistics_.options.limit);
+        }
+        adjustment_storage_.set_values(values);statistics_.options.persist=true;save_preferences();changed();refresh_cooldown_preview();
+    }
     double smart_score(const std::string& key) {
         if(statistics_.options.persist) {
             ignorant::Weights defaults;defaults.set_default(1);
@@ -1250,9 +1268,9 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         std::wostringstream status;
         status << L"Saved weight " << std::setprecision(8) << value << L" to " << tracks.size() << L" selected entries in their music roots";
         if(GetFocus()!=GetDlgItem(window,IDC_ADJUSTMENT)) {
-            const auto score=smart_score(tracks.front());bool same=true;
-            for(const auto& key:tracks)if(smart_score(key)!=score)same=false;
-            SetDlgItemTextW(window,IDC_ADJUSTMENT,same?weight_text(score*100).c_str():L"");
+            const auto score=smart_score(tracks.front())*effective_weight(tracks.front()).weight;bool same=true;
+            for(const auto& key:tracks)if(smart_score(key)*effective_weight(key).weight!=score)same=false;
+            SetDlgItemTextW(window,IDC_ADJUSTMENT,same?display_weight(score).c_str():L"");
         }
         SetDlgItemTextW(window, IDC_STATUS, status.str().c_str());
         std::ostringstream details;
@@ -1298,7 +1316,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             rows[i].source = value.file.empty() ? L"Default" : L"Music root";
             rows[i].weight = value.weight;
             rows[i].below_minimum = value.weight < minimum_weight_;
-            rows[i].editing_weight = smart_score(tracks[i])*100;
+            rows[i].editing_weight = smart_score(tracks[i])*value.weight;
+            rows[i].weight_detail = weight_summary(tracks[i]);
         }
         track_table_.sort(rows);
         tracks.clear();
@@ -1318,7 +1337,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         editor_playlist_ = playlist;
         visible_tracks_ = std::move(tracks);
         track_table_.replace(std::move(rows), selected, remap(caret), remap(anchor), std::max(0, remap(top)),
-            true, L"Smart adjustment (%)");
+            true, L"Smart adjustment (points)");
         editor_selection_pending_ = false;
         selection(window);
     }
@@ -1351,9 +1370,9 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             SetDlgItemTextW(window, IDC_WEIGHT, custom.str().c_str());
         }
         if(GetFocus()!=GetDlgItem(window,IDC_ADJUSTMENT)) {
-            const auto score=smart_score(tracks.front());bool same=true;
-            for(const auto& key:tracks)if(smart_score(key)!=score)same=false;
-            SetDlgItemTextW(window,IDC_ADJUSTMENT,same?weight_text(score*100).c_str():L"");
+            const auto score=smart_score(tracks.front())*effective_weight(tracks.front()).weight;bool same=true;
+            for(const auto& key:tracks)if(smart_score(key)*effective_weight(key).weight!=score)same=false;
+            SetDlgItemTextW(window,IDC_ADJUSTMENT,same?display_weight(score).c_str():L"");
         }
         SetDlgItemTextW(window, IDC_STATUS, status.str().c_str());
         EnableWindow(GetDlgItem(window, IDC_RESET_WEIGHT), can_reset);
@@ -1520,9 +1539,9 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 double percent=0;
                 if(id==IDC_APPLY_ADJUSTMENT) {
                     std::wistringstream in(control_text(window,IDC_ADJUSTMENT));in.imbue(std::locale::classic());
-                    if(!(in>>percent) || !(in>>std::ws).eof())throw std::runtime_error("Enter a signed percentage, for example -2 or 5.");
+                    if(!(in>>percent) || !(in>>std::ws).eof())throw std::runtime_error("Enter signed weight points, for example -0.2 or 0.4.");
                 }
-                save_adjustment(keys,percent);refresh(window);update_monitor();
+                save_adjustment_points(keys,percent);refresh(window);update_monitor();
             }
         }
         if (id == IDC_RESET_WEIGHT) {

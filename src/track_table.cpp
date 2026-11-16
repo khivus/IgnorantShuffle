@@ -65,7 +65,7 @@ void TrackTable::sort(std::vector<TrackTableRow>& rows) const {
 }
 void TrackTable::fit_columns() {
     RECT client{}; GetClientRect(window_, &client);
-    const auto weight = units(window_, 61), source = units(window_, 66), folder = units(window_, 106);
+    const auto weight = units(window_, 115), source = units(window_, 66), folder = units(window_, 106);
     const auto editing = edit_visible_ ? std::max(units(window_, 70), ListView_GetStringWidth(window_, edit_caption_.c_str()) + 18) : 0;
     const auto title = std::max(units(window_, 100), static_cast<int>(client.right) - weight - source - folder - editing - 2);
     const int widths[]{weight, title, source, editing, folder};
@@ -98,7 +98,7 @@ void TrackTable::replace(std::vector<TrackTableRow> rows, const std::vector<int>
     ListView_SetColumn(window_, 3, &edit);
     for (std::size_t i = 0; i < rows_.size(); ++i) {
         const auto& row = rows_[i];
-        auto weight = number(row.weight);
+        auto weight = row.weight_detail.empty()?number(row.weight):row.weight_detail;
         if (row.excluded()) weight += L"  Excluded";
         LVITEMW item{}; item.mask = LVIF_TEXT; item.iItem = static_cast<int>(i); item.pszText = weight.data();
         const auto index = ListView_InsertItem(window_, &item);

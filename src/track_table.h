@@ -8,6 +8,7 @@ struct TrackTableRow {
     std::wstring title, path, source;
     double weight = 5, editing_weight = 5;
     bool below_minimum = false;
+    std::wstring weight_detail;
     bool excluded() const { return weight == 0 || below_minimum; }
 };
 

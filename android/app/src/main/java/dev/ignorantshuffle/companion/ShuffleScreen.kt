@@ -246,8 +246,8 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     ActionButton(onClick = { m.basic(true) }, enabled = ready && m.supportsBasic(true) && m.playback.state != 3) { Text("Play") }
                     ActionButton(onClick = { m.basic(false) }, enabled = ready && m.supportsBasic(false) && m.playback.state != 2) { Text("Pause") }
-                    m.playback.track?.let { track -> TextButton(onClick = { edit(track) }, enabled = !m.pending) { Text("Weight ${m.weight(track)}") } }
                 }
+                m.playback.track?.let { track -> TextButton(onClick = { edit(track) }, enabled = !m.pending) { Text("Weight ${m.weightSummary(track)}") } }
             }
         }
         item {
@@ -255,7 +255,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
                 val choice = m.preview
                 Text(choice.track?.title ?: "No eligible next track", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 choice.track?.artist?.takeIf(String::isNotBlank)?.let { Text(it) }
-                choice.track?.let { Text("Weight ${m.weight(it)}", fontWeight = FontWeight.SemiBold) }
+                choice.track?.let { Text("Weight ${m.weightSummary(it)}", fontWeight = FontWeight.SemiBold) }
                 Text(if (choice.queueEntryId != null) "Next in app queue" else if (choice.historyIndex != null) "Forward in listening history" else
                     "${String.format(Locale.ROOT, "%.1f", choice.probability * 100)}% at roll · ${choice.eligible} eligible · ${choice.blocked} cooling",
                     style = MaterialTheme.typography.bodySmall)
@@ -314,14 +314,14 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
                         Text((m.appQueue.mapIndexedNotNull { i, entry -> if (entry.key == track.key) "[${i + 1}]" else null }.joinToString(" ").let { if (it.isBlank()) "" else "$it " }) + track.title.ifBlank { "Untitled track" }, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(onClick = { edit(track) }, modifier = Modifier.weight(1f), enabled = !m.pending && m.storageError == null && !m.folder.blocked) { Text("Weight ${m.weight(track)}") }
+                            FilledTonalButton(onClick = { edit(track) }, modifier = Modifier.weight(1f), enabled = !m.pending && m.storageError == null && !m.folder.blocked) { Text("Weight ${m.weightSummary(track)}") }
                             PlaybackActionButton(busy = m.pending, label = "Play now", onClick = { m.play(track) }, modifier = Modifier.weight(1f), enabled = m.ready() && track.selectable)
                         }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(onClick = { m.enqueue(track, atBeginning = true) }, enabled = track.selectable && !m.pending) { Text("Add to beginning") }
                             TextButton(onClick = { m.enqueue(track) }, enabled = track.selectable && !m.pending) { Text("Add to end") }
                         }
-                        Text("Smart adjustment: ${String.format(Locale.ROOT,"%+.2f%%",m.smartScore(track)*100)}${if(m.preferences.smartWeights.persist) " · saved" else " · statistics"}",style=MaterialTheme.typography.bodySmall)
+                        Text("Smart adjustment: ${WeightPresentation.number(m.smartPoints(track))} points${if(m.preferences.smartWeights.persist) " · saved" else " · statistics"}",style=MaterialTheme.typography.bodySmall)
                         if (expanded == track.key) {
                         if(m.preferences.balanceListening || m.preferences.smartWeights.enabled || m.preferences.smartWeights.persist)
                             Text("Selection weight for future rolls: ${String.format(Locale.ROOT,"%.2f",m.selectionWeight(track))} (saved weight ${m.weight(track)})",style=MaterialTheme.typography.bodySmall)
@@ -726,7 +726,7 @@ private fun Toggle(title: String, detail: String, checked: Boolean, enabled: Boo
 @Composable
 private fun WeightDialog(m: AimpController, track: Track, close: () -> Unit) {
     var text by remember(track.key) { mutableStateOf(m.weight(track).toString()) }
-    var adjustment by remember(track.key) { mutableStateOf(String.format(Locale.ROOT,"%.2f",m.smartScore(track)*100)) }
+    var adjustment by remember(track.key) { mutableStateOf(WeightPresentation.number(m.smartPoints(track))) }
     var error by remember(track.key) { mutableStateOf<String?>(null) }
     val selected=text.toDoubleOrNull()
     val colors=MaterialTheme.colorScheme
@@ -766,12 +766,12 @@ private fun WeightDialog(m: AimpController, track: Track, close: () -> Unit) {
                     keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
                     supportingText={Text(error?:"Higher weights play more often. Minimum for shuffle: ${m.settings.minimumWeight}. Fractions and values above 10 are supported.")})
                 OutlinedTextField(adjustment,{adjustment=it;error=null},modifier=Modifier.fillMaxWidth(),
-                    label={Text("Smart adjustment (%)")},singleLine=true,
-                    supportingText={Text("Signed percentage, up to ±${m.preferences.smartWeights.limit*100}%. Base weight stays unchanged.")})
+                    label={Text("Smart adjustment (weight points)")},singleLine=true,
+                    supportingText={Text("Signed weight points, up to ±${WeightPresentation.number(m.weight(track)*m.preferences.smartWeights.limit)}. Example: base 7 plus 0.4 gives 7.4 before listening balance.")})
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick={
                         val v=adjustment.toDoubleOrNull()
-                        if(v==null || !v.isFinite() || kotlin.math.abs(v)>m.preferences.smartWeights.limit*100+1e-9) error="Enter a percentage within the smart limit"
+                        if(v==null || !v.isFinite() || kotlin.math.abs(v)>m.weight(track)*m.preferences.smartWeights.limit+1e-9 || (m.weight(track)==0.0 && v!=0.0)) error="Enter weight points within this track’s smart limit"
                         else m.setSmartAdjustment(track,adjustment)
                     }) {Text("Save adjustment")}
                     TextButton(onClick={adjustment="0";m.setSmartAdjustment(track,"0")}) {Text("Reset smart to 0")}

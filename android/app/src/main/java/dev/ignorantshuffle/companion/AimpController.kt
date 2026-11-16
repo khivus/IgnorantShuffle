@@ -118,12 +118,14 @@ class AimpController(private val context: Context) {
     private fun learningCounts()=tracks.associate {it.key to (statisticsCounts[folder.statisticsKey(it)]?:statisticsCounts[it.key]?:0L)}
     fun smartScore(track: Track): Double = (if(preferences.smartWeights.persist) folder.adjustment(track) ?: statistics.smartScores[folder.statisticsKey(track)] ?: statistics.smartScores[track.key] ?: 0.0
         else statistics.smartScores[folder.statisticsKey(track)] ?: statistics.smartScores[track.key] ?: 0.0).coerceIn(-preferences.smartWeights.limit,preferences.smartWeights.limit)
+    fun smartPoints(track: Track) = weight(track)*smartScore(track)
+    fun weightSummary(track: Track) = WeightPresentation.summary(weight(track),if(preferences.smartWeights.enabled || preferences.smartWeights.persist) smartScore(track) else 0.0)
     private fun learningScores()=tracks.associate {it.key to smartScore(it)}
     fun setSmartAdjustment(track: Track, text: String) = guarded {
-        val percent=text.toDoubleOrNull() ?: error("Enter a signed percentage")
-        check(percent.isFinite() && kotlin.math.abs(percent)<=preferences.smartWeights.limit*100+1e-9) { "Adjustment exceeds the configured maximum" }
+        val points=text.toDoubleOrNull() ?: error("Enter a signed weight adjustment")
+        val score=WeightPresentation.scoreFromPoints(weight(track),points,preferences.smartWeights.limit)
         if(!preferences.smartWeights.persist)changePreferences(preferences.copy(smartWeights=preferences.smartWeights.copy(persist=true)))
-        folder.editAdjustment(track,percent/100,smartScore(track),limit=preferences.smartWeights.limit)
+        folder.editAdjustment(track,score,smartScore(track),limit=preferences.smartWeights.limit)
         acknowledge("Smart adjustment saved")
     }
     private var passCompleted = false
@@ -135,7 +137,8 @@ class AimpController(private val context: Context) {
         if(preferences.smartWeights.persist && track!=null && folder.match(track).path!=null)
             folder.editAdjustment(track,null,before,step,preferences.smartWeights.limit)
         val title = tracks.find { folder.statisticsKey(it) == key || it.key == key }?.title ?: key.substringAfterLast('/')
-        acknowledge("Smart weights: $reason · $title: " + String.format(java.util.Locale.ROOT, "%+.2f%% to %+.2f%% (%+.2f percentage points)", before*100, after*100, (after-before)*100))
+        if(track!=null) acknowledge("Smart weights: $reason · $title: " + WeightPresentation.summary(weight(track),after) +
+            " (change " + WeightPresentation.number(weight(track)*(after-before)) + " points)")
     }, onSmartScores = { scores ->
         model.smartWeights(preferences.smartWeights,tracks.associate {it.key to (if(preferences.smartWeights.persist) folder.adjustment(it) ?: scores[folder.statisticsKey(it)] ?: scores[it.key] ?: 0.0 else scores[folder.statisticsKey(it)] ?: scores[it.key] ?: 0.0)})
         if(connected && !pending) { updatePreview("Smart listening feedback");scheduleTimer() }
