@@ -20,7 +20,7 @@ struct SharedSettings {
         validate();Weights v;
         for(const auto& p:std::map<std::string,double>{{"version",1},{"default",default_weight},{"minimum",minimum},{"cooldown",static_cast<double>(cooldown)},
             {"finite",finite?1.:0.},{"balance",learning.balance?1.:0.},{"balanceStrength",learning.balance_strength},{"smart",learning.smart?1.:0.},
-            {"strength",learning.strength},{"limit",learning.limit},{"skips",learning.skips?1.:0.},{"completions",learning.completions?1.:0.},{"replays",learning.replays?1.:0.},{"volume",learning.volume?1.:0.}})v.set(p.first,p.second);
+            {"persist",learning.persist?1.:0.},{"strength",learning.strength},{"limit",learning.limit},{"skips",learning.skips?1.:0.},{"completions",learning.completions?1.:0.},{"replays",learning.replays?1.:0.},{"volume",learning.volume?1.:0.}})v.set(p.first,p.second);
         return v;
     }
     static SharedSettings decode(const Weights& v) {
@@ -29,7 +29,7 @@ struct SharedSettings {
         if(n("version")!=1)throw std::invalid_argument("Unsupported shared settings version");
         const double cooldown=n("cooldown");if(cooldown<0 || cooldown>10000 || std::floor(cooldown)!=cooldown)throw std::invalid_argument("Invalid shared cooldown");
         SharedSettings s;s.default_weight=n("default");s.minimum=n("minimum");s.cooldown=static_cast<int>(cooldown);s.finite=b("finite");
-        auto& o=s.learning;o.balance=b("balance");o.balance_strength=n("balanceStrength");o.smart=b("smart");o.strength=n("strength");o.limit=n("limit");
+        auto& o=s.learning;o.persist=v.entries().count("persist")?b("persist"):false;o.balance=b("balance");o.balance_strength=n("balanceStrength");o.smart=b("smart");o.strength=n("strength");o.limit=n("limit");
         o.skips=b("skips");o.completions=b("completions");o.replays=b("replays");o.volume=b("volume");s.validate();return s;
     }
 };

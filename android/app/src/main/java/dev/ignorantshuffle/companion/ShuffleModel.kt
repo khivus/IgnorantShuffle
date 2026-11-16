@@ -99,9 +99,9 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
     fun learningFactor(track: Track): Double = (if(balanced) ListeningBalance.factor(track.key,playCounts,balanceMean).pow(balanceStrength) else 1.0) * smart.factor(smartScores[track.key]?:0.0)
     fun selectionWeight(track: Track): Double = when {
         nativeLearning -> ShuffleNative.learningWeight(weight(track),settings.minimumWeight,playCounts[track.key]?:0L,balanceMean,
-            balanced,balanceStrength,smart.enabled,smartScores[track.key]?:0.0,smart.limit)
+            balanced,balanceStrength,smart.enabled || smart.persist,smartScores[track.key]?:0.0,smart.limit)
         !eligible(track) -> 0.0
-        !balanced && !smart.enabled -> weight(track)
+        !balanced && !smart.enabled && !smart.persist -> weight(track)
         else -> (weight(track) * learningFactor(track)).coerceAtMost(Double.MAX_VALUE / 4)
     }
 

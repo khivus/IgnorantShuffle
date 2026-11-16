@@ -12,10 +12,10 @@ class SmartWeightsTest {
         val engine=ListeningStatistics(feedback={ signals.add(it) },emit={}).apply { collecting(true) }
         var elapsed=1000L
         fun sample(track: Track,position: Long,duration: Long=100_000,state: Int=3,restart: Boolean=false,
-            replay: Boolean=false,automatic: Boolean=false,step: Long=1000) {
+            replay: Boolean=false,automatic: Boolean=false,manual: Boolean=false,step: Long=1000) {
             elapsed+=step
             engine.observe(Playback(state,track.title,track.artist,position,duration,1f,elapsed,track),elapsed,elapsed,
-                restart,replay,automatic)
+                restart,replay,automatic,manual)
         }
         fun volume(level: Int,maximum: Int=15) = engine.observeVolume(Playback(3,a.title,a.artist,0,100_000,1f,elapsed,a),ListeningVolume(1,2,maximum,level),elapsed)
         fun count(kind: SmartSignal)=signals.count {it.kind==kind}
@@ -47,7 +47,7 @@ class SmartWeightsTest {
     @Test fun configurationRoundTripsAndLegacyInstallsStayOptedOut() {
         val legacy=PreferenceJson.decode("{}")
         assertFalse(legacy.smartWeights.enabled);assertEquals(1.0,legacy.balanceStrength,0.0)
-        val p=AppPreferences(balanceListening=true,balanceStrength=0.5,smartWeights=SmartWeightOptions(true,0.5,0.05,false,true,false,true))
+        val p=AppPreferences(balanceListening=true,balanceStrength=0.5,smartWeights=SmartWeightOptions(true,0.5,0.05,false,true,false,true,persist=true))
         assertEquals(p,PreferenceJson.decode(PreferenceJson.encode(p)))
         for(value in listOf(-1.0,0.0,Double.NaN,Double.POSITIVE_INFINITY,2.1)) {
             assertThrows(IllegalArgumentException::class.java) { PreferenceJson.encode(p.copy(smartWeights=p.smartWeights.copy(strength=value))) }
@@ -67,6 +67,13 @@ class SmartWeightsTest {
         m.configure(Settings(),mapOf(a.key to 0.0,b.key to 0.5))
         assertEquals(0.0,m.selectionWeight(a),0.0);assertEquals(0.0,m.selectionWeight(b),0.0)
     }
+    @Test fun savedAdjustmentAppliesWhenLearningIsOffAndStillRespectsExclusions() {
+        val m=ShuffleModel(Planner { _,_,_,_,_,_ -> Choice(null) });m.catalog(listOf(a,b))
+        m.smartWeights(SmartWeightOptions(enabled=false,persist=true),mapOf(a.key to -0.1))
+        assertEquals(4.5,m.selectionWeight(a),0.000001)
+        m.configure(Settings(),mapOf(a.key to 0.0))
+        assertEquals(0.0,m.selectionWeight(a),0.0)
+    }
     @Test fun balanceStrengthSoftensBothBoostsAndPenalties() {
         val m=ShuffleModel(Planner { _,_,_,_,_,_ -> Choice(null) });m.catalog(listOf(a,b))
         m.balance(true,mapOf(a.key to 10L),1.0);val full=m.selectionWeight(a);val fullBoost=m.selectionWeight(b)
@@ -75,14 +82,30 @@ class SmartWeightsTest {
         assertTrue(m.selectionWeight(b)<fullBoost);assertTrue(m.selectionWeight(b)>5.0)
     }
     @Test fun earlyAcceptedSkipPenalizesOnceButPauseStopNoiseAndDisconnectDoNot() {
-        val l=Listening();l.sample(a,0);l.sample(a,1000);l.sample(a,2000);l.sample(b,0)
+        val l=Listening();l.sample(a,0);l.sample(a,1000);l.sample(a,2000);l.sample(b,0,manual=true)
         repeat(4) {l.sample(b,0,step=0)}
         assertEquals(1,l.count(SmartSignal.EARLY_SKIP));assertEquals(a.key,l.signals.first().key)
         val stop=Listening();stop.sample(a,0);stop.sample(a,1000);stop.sample(a,2000);stop.sample(a,2000,state=1)
         assertTrue(stop.signals.isEmpty())
         val pause=Listening();pause.sample(a,0);pause.sample(a,1000);pause.sample(a,2000);pause.sample(a,2000,state=2)
         pause.sample(b,0,step=10_000);assertTrue(pause.signals.isEmpty())
-        val short=Listening();short.sample(a,0);short.sample(a,1000);short.sample(b,0);assertTrue(short.signals.isEmpty())
+        val instant=Listening();instant.sample(a,0);instant.sample(b,0,manual=true,step=50)
+        assertEquals(1,instant.count(SmartSignal.EARLY_SKIP))
+        val unknown=Listening();unknown.sample(a,0);unknown.sample(a,2000);unknown.sample(b,0)
+        assertTrue(unknown.signals.isEmpty())
+    }
+    @Test fun previousFallbackAutomaticAndRepeatedBrowsingCannotStackPenalties() {
+        val previous=Listening();previous.sample(a,0);previous.sample(b,0,replay=true,manual=true)
+        previous.sample(a,0,manual=true);assertEquals(0,previous.count(SmartSignal.EARLY_SKIP))
+        val automatic=Listening();automatic.sample(a,0);automatic.sample(b,0,manual=true,automatic=true)
+        assertTrue(automatic.signals.isEmpty())
+        val browsing=Listening();browsing.sample(a,0);browsing.sample(b,0,manual=true)
+        repeat(5) { browsing.sample(a,0,replay=true,manual=true);browsing.sample(b,0,manual=true) }
+        assertEquals(1,browsing.count(SmartSignal.EARLY_SKIP))
+        val qualified=Listening();qualified.sample(a,0);qualified.sample(b,0,manual=true)
+        qualified.sample(a,0);for(i in 1..30)qualified.sample(a,i*1000L)
+        qualified.sample(b,0,manual=true);qualified.sample(a,0);qualified.sample(b,0,manual=true)
+        assertEquals(2,qualified.count(SmartSignal.EARLY_SKIP))
     }
     @Test fun completedPlayNeedsActualListeningAndEndingNotASeekOrLongGap() {
         val l=Listening();for(i in 0..99)l.sample(a,i*1000L)

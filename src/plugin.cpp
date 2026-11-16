@@ -239,9 +239,17 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         settings_window_.feedback(L"Shared settings published. Sync the file with your music.");
     }
     ignorant::LibraryStatistics statistics_;
+    ignorant::WeightStorage adjustment_storage_;
+    double learning_score_before_=0;
+    std::wstring learning_notice_;
+    std::vector<std::string> learning_keys_;
+    std::map<std::string,double> learning_before_;
+
     StatisticsWindow statistics_window_;
     std::string statistics_origin_="windows-"+ignorant::statistics_guid();
     bool selected_replay_=false, selected_automatic_=false;
+    std::uint64_t manual_switch_until_=0;
+    bool manual_backward_=false;
     std::shared_ptr<FinitePass> counted_pass_;
     bool counted_pass_end_=false;
 
@@ -300,7 +308,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         auto save=[&](const wchar_t* section,const wchar_t* key,const std::wstring& value) {success=(write_changed(section,key,value.c_str(),preferences_file_.c_str())!=FALSE)&&success;};
         const auto& o=statistics_.options;
         save(L"Statistics",L"Device",from_utf8(statistics_origin_));save(L"Statistics",L"Collecting",statistics_.collecting?L"1":L"0");
-        for(const auto& option:std::vector<std::pair<const wchar_t*,bool>>{{L"Balance",o.balance},{L"Smart",o.smart},{L"Skips",o.skips},{L"Completions",o.completions},{L"Replays",o.replays},{L"Volume",o.volume}})save(L"Learning",option.first,option.second?L"1":L"0");
+        for(const auto& option:std::vector<std::pair<const wchar_t*,bool>>{{L"Persist",o.persist},{L"Balance",o.balance},{L"Smart",o.smart},{L"Skips",o.skips},{L"Completions",o.completions},{L"Replays",o.replays},{L"Volume",o.volume}})save(L"Learning",option.first,option.second?L"1":L"0");
         save(L"Learning",L"BalanceStrength",weight_text(o.balance_strength));save(L"Learning",L"Strength",weight_text(o.strength));save(L"Learning",L"Limit",weight_text(o.limit));
         std::wstring roots;
         for (const auto& root : music_folders_) { if (!roots.empty()) roots += L"|"; roots += root.wstring(); }
@@ -325,7 +333,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         statistics_.collecting=GetPrivateProfileIntW(L"Statistics",L"Collecting",1,preferences_file_.c_str())!=0;
         auto& learning=statistics_.options;
         auto flag=[&](const wchar_t* key,bool fallback){return GetPrivateProfileIntW(L"Learning",key,fallback?1:0,preferences_file_.c_str())!=0;};
-        learning.balance=flag(L"Balance",false);learning.smart=flag(L"Smart",false);learning.skips=flag(L"Skips",true);learning.completions=flag(L"Completions",true);learning.replays=flag(L"Replays",true);learning.volume=flag(L"Volume",true);
+        learning.persist=flag(L"Persist",false);learning.balance=flag(L"Balance",false);learning.smart=flag(L"Smart",false);learning.skips=flag(L"Skips",true);learning.completions=flag(L"Completions",true);learning.replays=flag(L"Replays",true);learning.volume=flag(L"Volume",true);
         auto number=[&](const wchar_t* key,const wchar_t* fallback){wchar_t value[128]{};GetPrivateProfileStringW(L"Learning",key,fallback,value,128,preferences_file_.c_str());return parse_custom_weight(value);};
         try {learning.balance_strength=number(L"BalanceStrength",L"1");learning.strength=number(L"Strength",L"1");learning.limit=number(L"Limit",L"0.15");learning.validate();}
         catch(const std::exception& e){learning.balance_strength=1;learning.strength=1;learning.limit=.15;log_.write("preferences.learning.error",e.what());}
@@ -389,10 +397,10 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     void set_storage(const std::vector<std::filesystem::path>& roots) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         ignorant::WeightStorage next;
-        try { next.configure(roots); }
+        try { next.configure(roots); adjustment_storage_.configure(roots,"IgnorantShuffle.adjustments.tsv"); }
         catch (const std::exception& error) { storage_error_ = from_utf8(error.what()); request_monitor_update(); throw; }
         storage_ = std::move(next); music_folders_ = storage_.roots(); storage_error_.clear();
-        statistics_.configure(statistics_origin_,profile_dir_/L"statistics-cache",music_folders_);statistics_.poll(true);
+        statistics_.configure(statistics_origin_,profile_dir_/L"statistics-cache",music_folders_);statistics_.poll(true);seed_adjustments();
         save_preferences(); changed(); refresh_cooldown_preview(); update_monitor();
         log_.write("storage.configure", "music_roots=" + std::to_string(roots.size()));
     }
@@ -582,6 +590,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 const auto editing = effective_weight(key);
                 weight << L"Current weight: " << std::setprecision(8) << actual.weight;
                 weight << (actual.file.empty() ? L" (default)" : L" (music root)");
+                weight << L" | Smart " << std::showpos << std::fixed << std::setprecision(2) << smart_score(key)*100 << std::noshowpos << L"%";
                 if (editing.weight <= 10 && editing.weight == std::floor(editing.weight)) state.selected_weight = static_cast<int>(editing.weight);
                 if (actual.weight < minimum_weight_) weight << L" (excluded)";
                 else if (actual.weight > 10) weight << L" (custom)";
@@ -647,6 +656,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (!shutting_down_ && monitor_.handle()) {
             auto state = monitor_state();
+            if (!learning_notice_.empty()) state.decision += L"\r\n" + learning_notice_;
             const auto update = updater_.state();
             state.update_status = update.release ? L"Update available: Windows v" + from_utf8(update.release->version) : L"";
             const auto summary = "playing=" + context_id(playing_) + " current=\"" + utf8(state.current_track) +
@@ -815,7 +825,9 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         statistics_.poll();if(!player_)return;
         ignorant::ListeningSample sample;sample.elapsed=static_cast<std::int64_t>(GetTickCount64());sample.wall=ignorant::statistics_wall();sample.day=ignorant::statistics_day();
         const auto seconds=static_cast<std::time_t>(sample.wall/1000);std::tm day{};localtime_s(&day,&seconds);day.tm_hour=day.tm_min=day.tm_sec=0;day.tm_isdst=-1;sample.day_start_wall=static_cast<std::int64_t>(std::mktime(&day))*1000;
-        const int state=player_->GetState();sample.playing=state==AIMP_PLAYER_STATE_PLAYING;sample.stopped=state==AIMP_PLAYER_STATE_STOPPED;
+        const int state=player_->GetState();
+        if(state==AIMP_PLAYER_STATE_STOPPED && !restarted && GetTickCount64()<=manual_switch_until_)return;
+        sample.playing=state==AIMP_PLAYER_STATE_PLAYING;sample.stopped=state==AIMP_PLAYER_STATE_STOPPED;
         auto current=current_track();std::string key=current?track_key(current.get()):"";
         double position=0,duration=0;float volume=0;
         if(!sample.stopped && (FAILED(player_->GetPosition(&position)) || !std::isfinite(position) || position<0 || position>1e9)){statistics_.pause(!statistics_.collecting);return;}
@@ -826,7 +838,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         sample.speed=static_cast<double>(speed)*tempo;
         Ref<IAIMPFileInfo> info;if(SUCCEEDED(player_->GetInfo(info.put())) && info){sample.title=utf8(wide(string_property(info.get(),AIMP_FILEINFO_PROPID_TITLE).get()));sample.artist=utf8(wide(string_property(info.get(),AIMP_FILEINFO_PROPID_ARTIST).get()));}
         if(sample.title.empty())sample.title=std::filesystem::u8path(key).stem().u8string();
-        sample.restarted=restarted;sample.replay=selected_replay_;sample.automatic=selected_automatic_;statistics_.observe(sample,key);
+        sample.manual_switch=restarted && !manual_backward_ && GetTickCount64()<=manual_switch_until_;
+        sample.restarted=restarted;sample.replay=selected_replay_ || (restarted && manual_backward_);sample.automatic=selected_automatic_ && !sample.manual_switch;statistics_.observe(sample,key);
     }
     StatisticsWindowData statistics_data() {
         std::lock_guard<std::recursive_mutex> lock(mutex_);statistics_.poll();StatisticsWindowData data;
@@ -839,7 +852,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         statistics_window_.on_feedback=[this](const std::wstring& message){settings_window_.feedback(message);};
         statistics_window_.on_log_folder=[this]{if(!log_file_.empty() && reinterpret_cast<INT_PTR>(ShellExecuteW(statistics_window_.handle(),L"open",log_file_.parent_path().c_str(),nullptr,nullptr,SW_SHOWNORMAL))<=32)throw std::runtime_error("Could not open log folder");};
         statistics_window_.on_data=[this]{return statistics_data();};
-        statistics_window_.on_settings=[this](const ignorant::LearningOptions& options,bool collecting){std::lock_guard<std::recursive_mutex> lock(mutex_);statistics_.options=options;statistics_.options_changed();statistics_.pause(!collecting);save_preferences();changed();refresh_cooldown_preview();update_monitor();};
+        statistics_window_.on_settings=[this](const ignorant::LearningOptions& options,bool collecting){std::lock_guard<std::recursive_mutex> lock(mutex_);statistics_.options=options;statistics_.options_changed();seed_adjustments();statistics_.pause(!collecting);save_preferences();changed();refresh_cooldown_preview();update_monitor();};
         statistics_window_.on_clear=[this]{std::lock_guard<std::recursive_mutex> lock(mutex_);statistics_.clear();changed();};
         statistics_window_.on_sync=[this]{std::lock_guard<std::recursive_mutex> lock(mutex_);statistics_.poll(true);};
         statistics_window_.on_export=[this](bool csv){
@@ -1173,9 +1186,31 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         text << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
         return text.str();
     }
+    double smart_score(const std::string& key) {
+        if(statistics_.options.persist) {
+            ignorant::Weights defaults;defaults.set_default(1);
+            const auto saved=adjustment_storage_.resolve(defaults,key);
+            if(!saved.file.empty())return std::clamp(saved.weight-1,-statistics_.options.limit,statistics_.options.limit);
+        }
+        return statistics_.score(key);
+    }
+    void seed_adjustments() {
+        if(!statistics_.options.persist)return;
+        ignorant::Weights neutral;neutral.set_default(1);std::map<std::string,double> initial;
+        for(const auto& r:statistics_.records()) {
+            if(r.kind=="F" && adjustment_storage_.target(r.key) && adjustment_storage_.resolve(neutral,r.key).file.empty())
+                initial[r.key]=1+statistics_.score(r.key);
+        }
+        adjustment_storage_.set_values(initial,true);
+    }
+    void save_adjustment(const std::vector<std::string>& keys,double percent) {
+        if(!std::isfinite(percent) || std::abs(percent)>statistics_.options.limit*100+1e-9)throw std::runtime_error("Smart adjustment exceeds the configured maximum percent.");
+        adjustment_storage_.set_many(keys,1+percent/100);
+        statistics_.options.persist=true;save_preferences();changed();refresh_cooldown_preview();
+    }
     double learned_weight(const std::string& key,double mean) {
         const auto& o=statistics_.options;
-        return ignorant::learning_weight(effective_weight(key).weight,minimum_weight_,statistics_.plays(key),mean,o.balance,o.balance_strength,o.smart,statistics_.score(key),o.limit);
+        return ignorant::learning_weight(effective_weight(key).weight,minimum_weight_,statistics_.plays(key),mean,o.balance,o.balance_strength,o.smart || o.persist,smart_score(key),o.limit);
     }
     double selection_weight(double weight) const { return weight >= minimum_weight_ ? weight : 0.0; }
     static double parse_minimum_weight(const std::wstring& text) {
@@ -1214,6 +1249,11 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         changed(); refresh_cooldown_preview(); update_monitor(); refresh(window);
         std::wostringstream status;
         status << L"Saved weight " << std::setprecision(8) << value << L" to " << tracks.size() << L" selected entries in their music roots";
+        if(GetFocus()!=GetDlgItem(window,IDC_ADJUSTMENT)) {
+            const auto score=smart_score(tracks.front());bool same=true;
+            for(const auto& key:tracks)if(smart_score(key)!=score)same=false;
+            SetDlgItemTextW(window,IDC_ADJUSTMENT,same?weight_text(score*100).c_str():L"");
+        }
         SetDlgItemTextW(window, IDC_STATUS, status.str().c_str());
         std::ostringstream details;
         details << std::setprecision(17) << "count=" << tracks.size() << " weight=" << value << " storage=music-roots";
@@ -1258,7 +1298,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             rows[i].source = value.file.empty() ? L"Default" : L"Music root";
             rows[i].weight = value.weight;
             rows[i].below_minimum = value.weight < minimum_weight_;
-            rows[i].editing_weight = effective_weight(tracks[i]).weight;
+            rows[i].editing_weight = smart_score(tracks[i])*100;
         }
         track_table_.sort(rows);
         tracks.clear();
@@ -1278,7 +1318,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         editor_playlist_ = playlist;
         visible_tracks_ = std::move(tracks);
         track_table_.replace(std::move(rows), selected, remap(caret), remap(anchor), std::max(0, remap(top)),
-            false, L"");
+            true, L"Smart adjustment (%)");
         editor_selection_pending_ = false;
         selection(window);
     }
@@ -1289,6 +1329,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         EnableWindow(GetDlgItem(window, IDC_APPLY_WEIGHT), !tracks.empty());
         EnableWindow(GetDlgItem(window, IDC_SELECT_ALL), !visible_tracks_.empty());
         EnableWindow(GetDlgItem(window, IDC_RESET_WEIGHT), FALSE);
+        for(int id:{IDC_ADJUSTMENT,IDC_APPLY_ADJUSTMENT,IDC_RESET_ADJUSTMENT})EnableWindow(GetDlgItem(window,id),!tracks.empty());
         if (tracks.empty()) {
             SetDlgItemTextW(window, IDC_STATUS, L"No tracks selected. Use Ctrl/Shift-click or Select all, then click a weight."); return;
         }
@@ -1308,6 +1349,11 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             std::wostringstream custom;
             if (!mixed) custom << std::setprecision(std::numeric_limits<double>::max_digits10) << weight;
             SetDlgItemTextW(window, IDC_WEIGHT, custom.str().c_str());
+        }
+        if(GetFocus()!=GetDlgItem(window,IDC_ADJUSTMENT)) {
+            const auto score=smart_score(tracks.front());bool same=true;
+            for(const auto& key:tracks)if(smart_score(key)!=score)same=false;
+            SetDlgItemTextW(window,IDC_ADJUSTMENT,same?weight_text(score*100).c_str():L"");
         }
         SetDlgItemTextW(window, IDC_STATUS, status.str().c_str());
         EnableWindow(GetDlgItem(window, IDC_RESET_WEIGHT), can_reset);
@@ -1468,6 +1514,17 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (id == IDC_SELECT_ALL) {
             track_table_.select_all(); selection(window);
         }
+        if(id==IDC_APPLY_ADJUSTMENT || id==IDC_RESET_ADJUSTMENT) {
+            const auto keys=selected_tracks(window);
+            if(!keys.empty()) {
+                double percent=0;
+                if(id==IDC_APPLY_ADJUSTMENT) {
+                    std::wistringstream in(control_text(window,IDC_ADJUSTMENT));in.imbue(std::locale::classic());
+                    if(!(in>>percent) || !(in>>std::ws).eof())throw std::runtime_error("Enter a signed percentage, for example -2 or 5.");
+                }
+                save_adjustment(keys,percent);refresh(window);update_monitor();
+            }
+        }
         if (id == IDC_RESET_WEIGHT) {
             const auto tracks = selected_tracks(window);
             if (!tracks.empty()) {
@@ -1540,7 +1597,45 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     }
 public:
     explicit Plugin(ignorant::UpdateTransport transport = {}, ignorant::UpdateLauncher launcher = {})
-        : updater_(ignorant::build_version, std::move(transport)), update_launcher_(std::move(launcher)) {}
+        : updater_(ignorant::build_version, std::move(transport)), update_launcher_(std::move(launcher)) {
+        statistics_.on_learning_change=[this](const ignorant::StatRecord& r,const std::string& absolute,bool before) {
+            // Ledger paths use forward slashes; retain the playlist's exact key for defaults and mean calculation.
+            std::string key=absolute;
+            auto source_playlist=playlist_for(nullptr);
+            if(source_playlist)for(int i=0;i<source_playlist->GetItemCount();++i) {
+                Ref<IAIMPPlaylistItem> item;
+                if(SUCCEEDED(source_playlist->GetItem(i,IID_IAIMPPlaylistItem,item.out())) && item) {
+                    const auto candidate=track_key(item.get());
+                    if(statistics_.identity(candidate)==statistics_.identity(absolute)){key=candidate;break;}
+                }
+            }
+            if(before) {
+                learning_score_before_=smart_score(key);
+                learning_keys_.clear();learning_before_.clear();
+                auto playlist=playlist_for(nullptr);
+                if(playlist)for(int i=0;i<playlist->GetItemCount();++i) {
+                    Ref<IAIMPPlaylistItem> item;
+                    if(SUCCEEDED(playlist->GetItem(i,IID_IAIMPPlaylistItem,item.out())) && item)learning_keys_.push_back(track_key(item.get()));
+                }
+                if(std::find(learning_keys_.begin(),learning_keys_.end(),key)==learning_keys_.end())learning_keys_.push_back(key);
+                const auto mean=statistics_.mean(learning_keys_);
+                for(const auto& k:learning_keys_)learning_before_[k]=learned_weight(k,mean);
+            } else {
+                if(r.kind=="F" && statistics_.options.persist) {
+                    try {adjustment_storage_.set_many({key},1+std::clamp(learning_score_before_+r.value,-statistics_.options.limit,statistics_.options.limit));}
+                    catch(const std::exception& e){storage_error_=from_utf8(e.what());log_.write("learning.save.error",e.what());}
+                }
+                const auto mean=statistics_.mean(learning_keys_);
+                const auto old=learning_before_[key],now=learned_weight(key,mean);
+                std::size_t changed=0;
+                for(const auto& k:learning_before_)if(std::abs(learned_weight(k.first,mean)-k.second)>1e-9)++changed;
+                std::wostringstream text;
+                text<<(r.kind=="F"?L"Smart weights: ":L"Listening balance: ")<<from_utf8(r.kind=="F"?r.label:"qualified listen")<<L" - "<<from_utf8(r.title.empty()?key:r.title)
+                    <<L": weight "<<std::fixed<<std::setprecision(4)<<old<<L" to "<<now<<L" ("<<std::showpos<<(now-old)<<std::noshowpos<<L"); "<<changed<<L" track(s) changed";
+                learning_notice_=text.str();log_.write("learning.change",utf8(learning_notice_));
+            }
+        };
+    }
     HRESULT WINAPI QueryInterface(REFIID iid, void** object) override {
         if (!object) return E_POINTER;
         *object = nullptr;
@@ -1587,9 +1682,9 @@ public:
             log_.write("plugin.start", "version=" + std::string(ignorant::build_version) + " core=" + ignorant::core_version + " arch=" + std::string(sizeof(void*) == 8 ? "x64" : "x86") + " pid=" + std::to_string(GetCurrentProcessId()));
             preferences_file_ = profile_dir_ / L"preferences.ini";
             load_preferences();
-            try { storage_.configure(music_folders_); }
+            try { storage_.configure(music_folders_); adjustment_storage_.configure(music_folders_,"IgnorantShuffle.adjustments.tsv"); }
             catch (const std::exception& error) { storage_error_ = from_utf8(error.what()); log_.write("storage.error", error.what()); }
-            statistics_.configure(statistics_origin_,profile_dir_/L"statistics-cache",music_folders_);statistics_.poll(true);
+            statistics_.configure(statistics_origin_,profile_dir_/L"statistics-cache",music_folders_);statistics_.poll(true);seed_adjustments();
             try{reload_shared_settings();}catch(const std::exception& e){preferences_error_=from_utf8(e.what());log_.write("settings.shared.error",e.what());}
             save_preferences();
             // Loading the plugin during playback must also cool down the track
@@ -1653,6 +1748,9 @@ public:
                 message == AIMP_MSG_EVENT_LOADED || message == AIMP_MSG_EVENT_TERMINATING ||
                 (message == AIMP_MSG_EVENT_PROPERTY_VALUE && parameter == AIMP_MSG_PROPERTY_SHUFFLE))
                 log_.write("aimp.event", "message=" + std::to_string(message) + " parameter=" + std::to_string(parameter) + " playing=" + context_id(playing_));
+            if(message==AIMP_MSG_CMD_NEXT || message==AIMP_MSG_CMD_PREV || message==AIMP_MSG_CMD_PLAY) {
+                manual_switch_until_=GetTickCount64()+5000;manual_backward_=message==AIMP_MSG_CMD_PREV;
+            }
             if (message == AIMP_MSG_EVENT_TERMINATING) { shutting_down_ = true; statistics_.finish();settings_window_.destroy();statistics_window_.destroy();monitor_.destroy(); return; }
             if (message == AIMP_MSG_EVENT_LOADED) { open_monitor(); return; }
             if (message == AIMP_MSG_EVENT_STREAM_START) {
@@ -1671,7 +1769,7 @@ public:
                 awaiting_stream_start_ = false;
                 statistics_tick(true);
                 if(audible_ && audible_->incoming_fallback)statistics_.counter("cooldown_fallback",track_key(started.get()));
-                selected_replay_=selected_automatic_=false;
+                selected_replay_=selected_automatic_=false;manual_switch_until_=0;manual_backward_=false;
                 log_.write("playback.commit", "context=" + context_id(audible_));
                 flush_queue_refresh();
             }

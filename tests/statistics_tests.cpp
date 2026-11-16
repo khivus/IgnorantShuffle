@@ -36,6 +36,20 @@ int main() {try {
     check(summarize(observed.active()).milliseconds==30000 && summarize(observed.active()).plays==1,"Observed qualification and duplicate callbacks");
     s.position=90000;s.elapsed+=1000;s.wall+=1000;observer.observe(s,options,true);
     for(const auto& r:observations)check(r.kind!="F" || r.label!="COMPLETED","Seek cannot earn completion");
+    std::vector<StatRecord> skips;ListeningObserver skipping([&](const auto& r){if(r.kind=="F")skips.push_back(r);});
+    ListeningSample instant;instant.key="a.flac";instant.session="a1";instant.title="A";instant.day="2026-11-16";instant.playing=true;instant.duration=100000;instant.position=0;instant.elapsed=1000;instant.wall=100000;
+    skipping.observe(instant,options,true);
+    instant.key="b.flac";instant.session="b1";instant.elapsed+=50;instant.wall+=50;instant.manual_switch=true;
+    skipping.observe(instant,options,true);check(skips.size()==1 && skips[0].value==-.02,"Immediate confirmed manual forward skip earns one penalty");
+    for(int i=0;i<4;++i) {
+        instant.key="a.flac";instant.session="back"+std::to_string(i);instant.replay=true;instant.elapsed+=50;instant.wall+=50;skipping.observe(instant,options,true);
+        instant.key="b.flac";instant.session="forward"+std::to_string(i);instant.replay=false;instant.elapsed+=50;instant.wall+=50;skipping.observe(instant,options,true);
+    }
+    check(skips.size()==1,"Previous navigation and repeated browsing cannot stack skip penalties");
+    instant.key="c.flac";instant.session="automatic";instant.automatic=true;instant.elapsed+=50;instant.wall+=50;skipping.observe(instant,options,true);
+    check(skips.size()==1,"Automatic/fallback transitions never earn skip penalties");
+    instant.key="d.flac";instant.session="unknown";instant.automatic=false;instant.manual_switch=false;instant.elapsed+=50;instant.wall+=50;skipping.observe(instant,options,true);
+    check(skips.size()==1,"Unattributed transitions are not assumed manual");
     // Midnight, pauses, disconnects, early stops, and repeat sessions preserve observed totals.
     StatisticsLedger boundary;ListeningObserver midnight([&](const auto& r){boundary.put(r);});
     ListeningSample m;m.key="song.flac";m.session="midnight";m.day="2026-11-09";m.elapsed=1000;m.wall=100000;m.position=0;m.duration=100000;m.playing=true;

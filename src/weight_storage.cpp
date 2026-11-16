@@ -58,8 +58,8 @@ void replace_copy(const std::filesystem::path& source, const std::filesystem::pa
     } catch (...) { std::error_code ignored; std::filesystem::remove(temporary, ignored); throw; }
 }
 }
-void WeightStorage::configure(const std::vector<std::filesystem::path>& roots) {
-    WeightStorage next;
+void WeightStorage::configure(const std::vector<std::filesystem::path>& roots,const std::string& filename) {
+    WeightStorage next;next.filename_=filename;
     for (const auto& root : roots) {
         if (!root.is_absolute() || !std::filesystem::is_directory(root))
             throw std::runtime_error("Choose existing absolute music-root folders.");
@@ -68,7 +68,7 @@ void WeightStorage::configure(const std::vector<std::filesystem::path>& roots) {
             if (within(normalized, other) || within(other, normalized))
                 throw std::runtime_error("Music roots must be separate folders, without overlapping trees.");
         next.roots_.push_back(normalized);
-        next.file(normalized / "IgnorantShuffle.weights.tsv");
+        next.file(normalized / next.filename_);
     }
     *this = std::move(next);
 }
@@ -90,7 +90,7 @@ std::optional<std::filesystem::path> WeightStorage::target(const std::string& tr
     if (uri(track)) return {};
     const auto path = std::filesystem::u8path(track);
     for (const auto& root : roots_) if (const auto relative = within(path, root); relative && !relative->empty())
-        return root / "IgnorantShuffle.weights.tsv";
+        return root / filename_;
     return {};
 }
 WeightValue WeightStorage::resolve(const Weights& defaults, const std::string& track) {
@@ -102,19 +102,26 @@ WeightValue WeightStorage::resolve(const Weights& defaults, const std::string& t
     return {defaults.get(track), {}};
 }
 void WeightStorage::set_many(const std::vector<std::string>& tracks, double weight) {
-    if (!std::isfinite(weight) || weight < 0) throw std::runtime_error("Weight must be finite and nonnegative.");
-    std::map<std::filesystem::path, std::vector<std::string>> grouped;
-    for (const auto& track : tracks) {
+    std::map<std::string,double> values;for(const auto& track:tracks)values[track]=weight;
+    set_values(values);
+}
+void WeightStorage::set_values(const std::map<std::string,double>& values,bool only_missing) {
+    std::map<std::filesystem::path, std::map<std::string,double>> grouped;
+    for (const auto& [track,weight] : values) {
+        if (!std::isfinite(weight) || weight < 0) throw std::runtime_error("Weight must be finite and nonnegative.");
         const auto path = target(track);
         if (!path) throw std::runtime_error("Add this track's music root in Weight storage before saving a weight: " + track);
-        grouped[*path].push_back(track);
+        grouped[*path][track]=weight;
     }
     // Validate every destination before writing any of them.
     std::map<std::filesystem::path, Weights> updates;
     for (const auto& [path, entries] : grouped) {
         auto next = read_current(path);
         const auto before=next.entries();
-        for (const auto& track : entries) next.set(key_for(path, track), weight);
+        for (const auto& [track,weight] : entries) {
+            const auto key=key_for(path,track);
+            if(!only_missing || !next.entries().count(key))next.set(key,weight);
+        }
         if(next.entries()!=before)updates.emplace(path, std::move(next));
         else files_[path]=std::move(next);
     }
@@ -142,7 +149,7 @@ void WeightStorage::clear_many(const std::vector<std::string>& tracks) {
 }
 void WeightStorage::transfer(const std::filesystem::path& root, const std::filesystem::path& external, bool exporting) {
     if (std::find(roots_.begin(), roots_.end(), root) == roots_.end()) throw std::runtime_error("Select a configured music root.");
-    const auto canonical = root / "IgnorantShuffle.weights.tsv";
+    const auto canonical = root / filename_;
     if (exporting) {
         auto checked = read_current(canonical);
         if (!std::filesystem::exists(canonical)) checked.save(canonical);

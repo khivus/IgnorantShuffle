@@ -13,7 +13,7 @@ import org.json.JSONObject
 import java.util.concurrent.Executors
 
 /** Private pending/cache database; portable per-device ledgers live alongside music-root weights. */
-class StatisticsRepository(context: Context, private val onSmartScores: (Map<String,Double>) -> Unit = {},
+class StatisticsRepository(context: Context, private val onLearningNotice: (String,String,Double,Double,Double) -> Unit = { _,_,_,_,_ -> }, private val onSmartScores: (Map<String,Double>) -> Unit = {},
     private val onCounts: (Map<String, Long>) -> Unit) : AutoCloseable {
     private val originPreferences=context.getSharedPreferences("statistics-device",Context.MODE_PRIVATE)
     private val origin=originPreferences.getString("origin",null)?:java.util.UUID.randomUUID().toString().also {
@@ -67,9 +67,9 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
     private var counterEpoch=""
     @Volatile private var smartOptions=SmartWeightOptions()
     var smartScores by mutableStateOf(emptyMap<String,Double>()); private set
-    val engine = ListeningStatistics(feedback=::learn, emit=::record)
+    val engine = ListeningStatistics(feedback=::learn, emit=::record).apply { skipLearning=false }
     fun configureSmartWeights(options: SmartWeightOptions) {
-        options.validate();smartOptions=options;engine.volumeRouteChanged()
+        options.validate();smartOptions=options;engine.skipLearning=options.enabled && options.skips;engine.volumeRouteChanged()
         if(ready)execute {publishLearning(allRecords())}
     }
 
@@ -149,15 +149,20 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
         if(!ready || !collecting || error!=null || options.step(event.kind)==0.0)return
         execute {
             flushListening()
+            val beforeScore=scores()[event.key] ?: 0.0
+            var learned=false
+            var requestedStep=0.0
             val db=helper.writableDatabase
             db.beginTransaction()
             try {
                 val duplicate=db.rawQuery("SELECT 1 FROM smart_feedback WHERE session=? AND kind=?",arrayOf(event.session,event.kind.name)).use { it.moveToFirst() }
                 if(!duplicate) {
+                    learned=true
                     val old=db.rawQuery("SELECT score FROM smart_weights WHERE track=?",arrayOf(event.key)).use { if(it.moveToFirst())it.getDouble(0) else 0.0 }
                     val gain=db.rawQuery("SELECT COALESCE(SUM(MAX(requested,0)),0) FROM smart_feedback WHERE session=?",arrayOf(event.session)).use { it.moveToFirst();it.getDouble(0) }
                     val delta=options.adjustment(old,event.kind,gain)
                     val requested=options.step(event.kind).let {if(it>0)minOf(it,(0.015-gain).coerceAtLeast(0.0)) else it}
+                    requestedStep=requested
                     val wall=event.wall.takeIf {it>0}?:System.currentTimeMillis()
                     db.execSQL("INSERT INTO smart_feedback VALUES(?,?,?,?,?,?)",arrayOf<Any>(event.session,event.kind.name,delta,requested,wall,event.day.ifBlank {ListeningStatistics.day(wall)}))
                     db.execSQL("INSERT OR REPLACE INTO smart_weights VALUES(?,?)",arrayOf<Any>(event.key,old+delta))
@@ -165,7 +170,7 @@ class StatisticsRepository(context: Context, private val onSmartScores: (Map<Str
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
             val scores=scores()
-            main.post { smartScores=scores;onSmartScores(scores) }
+            main.post { smartScores=scores;onSmartScores(scores); if(learned) onLearningNotice(event.key,event.kind.name.lowercase().replace('_',' '),beforeScore,scores[event.key] ?: 0.0,requestedStep) }
         }
     }
     fun pause(paused: Boolean) {

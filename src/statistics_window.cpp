@@ -9,7 +9,7 @@
 
 namespace {
 enum {RANGE=2101,SEARCH,TABS,LIST,SUMMARY,CHART,COLLECT,SYNC,CSV,JSON,CLEAR,
-    BALANCE,BALANCE_STRENGTH,SMART,STRENGTH,LIMIT,SKIPS,FULL,REPLAYS,VOLUME,APPLY,HELP,LOG_FOLDER};
+    BALANCE,BALANCE_STRENGTH,SMART,STRENGTH,LIMIT,SKIPS,FULL,REPLAYS,VOLUME,APPLY,HELP,LOG_FOLDER,PERSIST};
 std::wstring wide(const std::string& text) {
     if(text.empty())return {};
     const auto count=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,text.data(),static_cast<int>(text.size()),nullptr,0);
@@ -62,8 +62,9 @@ void StatisticsWindow::create_controls() {
     add(LIMIT,L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_TABSTOP);combo(window_,LIMIT,{L"Maximum +/-5%",L"Maximum +/-15%",L"Maximum +/-25%"});
     add(SKIPS,L"BUTTON",L"Early skips: -2%",BS_AUTOCHECKBOX|WS_TABSTOP);add(FULL,L"BUTTON",L"Full listens: +0.5%",BS_AUTOCHECKBOX|WS_TABSTOP);
     add(REPLAYS,L"BUTTON",L"Qualified replays: +1%",BS_AUTOCHECKBOX|WS_TABSTOP);add(VOLUME,L"BUTTON",L"Volume increases: +0.25%",BS_AUTOCHECKBOX|WS_TABSTOP);
+    add(PERSIST,L"BUTTON",L"Automatically save editable smart adjustments beside weights",BS_AUTOCHECKBOX|WS_TABSTOP);
     add(APPLY,L"BUTTON",L"Apply learning settings",BS_PUSHBUTTON|WS_TABSTOP);
-    add(HELP,L"STATIC",L"Learning is opt-in. Base weights, minimum exclusions, cooldown and AIMP's native queue remain authoritative.\r\n\r\nBalance favors less-played songs using qualified plays across synced libraries. Smart learning uses small preference changes, with a shared maximum gain of +1.5% per listening session.\r\n\r\nA play qualifies after 30 seconds or half the duration. Pauses, seeks, gaps and previews do not add listening time. Full listens need observed progress and the ending; replays must qualify. Volume is a weak signal and can be disabled.\r\n\r\nPause collection to freeze local learning. Clearing statistics also clears learned feedback, with synchronized clear markers. New feedback affects future rolls; saved song weights are unchanged.",SS_LEFT|SS_NOPREFIX);
+    add(HELP,L"STATIC",L"Learning is opt-in. Base weights, minimum exclusions, cooldown and AIMP's native queue remain authoritative.\r\n\r\nBalance favors less-played songs using qualified plays across synced libraries. Smart learning uses small preference changes, with a shared maximum gain of +1.5% per listening session.\r\n\r\nA play qualifies after 30 seconds or half the duration. Pauses, seeks, gaps and previews do not add listening time. Full listens need observed progress and the ending; replays must qualify. Volume is a weak signal and can be disabled.\r\n\r\nPause collection to freeze local learning. Clearing statistics clears historical feedback; saved adjustments remain until you edit or reset them. New feedback affects future rolls; Base weights stay unchanged. Saved smart adjustments can be edited or reset beside the usual weight. Early skips require a manual forward switch; Previous and automatic transitions are ignored.",SS_LEFT|SS_NOPREFIX);
     SetTimer(window_,1,2000,nullptr);
 }
 void StatisticsWindow::layout() {
@@ -84,6 +85,7 @@ void StatisticsWindow::layout() {
     ShowWindow(GetDlgItem(window_,CHART),overview?SW_SHOW:SW_HIDE);
     ShowWindow(GetDlgItem(window_,LIST),learning?SW_HIDE:SW_SHOW);
     for(int id=BALANCE;id<=HELP;++id)ShowWindow(GetDlgItem(window_,id),learning?SW_SHOW:SW_HIDE);
+    ShowWindow(GetDlgItem(window_,PERSIST),learning?SW_SHOW:SW_HIDE);
     if(learning) {
         const int right=m+units(330),field=std::max(units(150),w-m-right);
         place(BALANCE,m,top,units(310),line);place(BALANCE_STRENGTH,right,top,field,units(160));
@@ -91,8 +93,9 @@ void StatisticsWindow::layout() {
         place(STRENGTH,m,top+units(80),units(260),units(160));place(LIMIT,right,top+units(80),field,units(160));
         place(SKIPS,m,top+units(122),units(310),line);place(FULL,right,top+units(122),field,line);
         place(REPLAYS,m,top+units(158),units(310),line);place(VOLUME,right,top+units(158),field,line);
-        place(APPLY,m,top+units(202),units(250),line);
-        place(HELP,m,top+units(246),w-2*m,h-top-units(258));
+        place(PERSIST,m,top+units(196),w-2*m,line);
+        place(APPLY,m,top+units(234),units(250),line);
+        place(HELP,m,top+units(278),w-2*m,h-top-units(290));
     } else {
         place(SUMMARY,m,top,w-2*m,overview?units(90):units(45));
         const int chart_top=top+units(92),chart_height=units(145);
@@ -104,7 +107,7 @@ void StatisticsWindow::layout() {
 void StatisticsWindow::learning_controls() {
     if(!on_data)return;data_=on_data();const auto& o=data_.options;
     displayed_options_=o;
-    for(const auto pair:std::vector<std::pair<int,bool>>{{BALANCE,o.balance},{SMART,o.smart},{SKIPS,o.skips},{FULL,o.completions},{REPLAYS,o.replays},{VOLUME,o.volume},{COLLECT,data_.collecting}})CheckDlgButton(window_,pair.first,pair.second?BST_CHECKED:BST_UNCHECKED);
+    for(const auto pair:std::vector<std::pair<int,bool>>{{PERSIST,o.persist},{BALANCE,o.balance},{SMART,o.smart},{SKIPS,o.skips},{FULL,o.completions},{REPLAYS,o.replays},{VOLUME,o.volume},{COLLECT,data_.collecting}})CheckDlgButton(window_,pair.first,pair.second?BST_CHECKED:BST_UNCHECKED);
     const auto select_value=[&](int id,double value,const std::vector<double>& presets){
         if(SendDlgItemMessageW(window_,id,CB_GETCOUNT,0,0)>3)SendDlgItemMessageW(window_,id,CB_DELETESTRING,3,0);
         const auto found=std::find(presets.begin(),presets.end(),value);
@@ -122,7 +125,7 @@ void StatisticsWindow::learning_controls() {
 void StatisticsWindow::apply_learning() {
     auto o=data_.options;
     auto checked=[&](int id){return IsDlgButtonChecked(window_,id)==BST_CHECKED;};
-    o.balance=checked(BALANCE);o.smart=checked(SMART);o.skips=checked(SKIPS);o.completions=checked(FULL);o.replays=checked(REPLAYS);o.volume=checked(VOLUME);
+    o.persist=checked(PERSIST);o.balance=checked(BALANCE);o.smart=checked(SMART);o.skips=checked(SKIPS);o.completions=checked(FULL);o.replays=checked(REPLAYS);o.volume=checked(VOLUME);
     const double balance[]{.25,.5,1,displayed_options_.balance_strength},strength[]{.5,1,2,displayed_options_.strength},limits[]{.05,.15,.25,displayed_options_.limit};
     const auto index=[&](int id){return std::clamp(static_cast<int>(SendDlgItemMessageW(window_,id,CB_GETCURSEL,0,0)),0,3);};
     o.balance_strength=balance[index(BALANCE_STRENGTH)];o.strength=strength[index(STRENGTH)];o.limit=limits[index(LIMIT)];o.validate();

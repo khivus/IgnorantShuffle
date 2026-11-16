@@ -77,6 +77,19 @@ class PortableWeightsTest {
         fun initial(text: String) { write(create(PortableWeights.FILENAME), text) }
         fun canonical() = find(PortableWeights.FILENAME)?.let(::read)
     }
+    @Test fun smartAdjustmentFileIsIndependentEditableAndExplicitlyResettable() {
+        val docs=Documents();docs.initial("5\tSong.flac\n")
+        val saved=SavedAdjustments.documents(docs)
+        SharedWeightFile.edit(saved) { it["Song.flac"]=0.98 }
+        assertEquals(0.98,SharedWeightFile.read(saved)["Song.flac"]!!,0.0)
+        assertEquals(5.0,SharedWeightFile.read(docs)["Song.flac"]!!,0.0)
+        SharedWeightFile.edit(saved) { it["Song.flac"]=1.0 }
+        val reset=SharedWeightFile.read(saved)["Song.flac"]!!-1
+        assertEquals(0.0,reset,0.0)
+        assertEquals(-0.02,SavedAdjustments.updated(reset,-0.02,0.15),0.0)
+        assertEquals(-0.15,SavedAdjustments.updated(-0.14,-0.02,0.15),0.0)
+        assertEquals("5\tSong.flac\n",docs.canonical())
+    }
     @Test fun editRereadsFileAndPreservesOtherDevicesValuesIncludingZero() {
         val docs = Documents(); docs.initial("0\tExcluded.mp3\n7\tOther.mp3\n")
         val result = SharedWeightFile.edit(docs) { it["New.mp3"] = 2.5 }

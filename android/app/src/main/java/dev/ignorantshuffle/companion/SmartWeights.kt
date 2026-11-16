@@ -3,7 +3,7 @@ package dev.ignorantshuffle.companion
 /** Small local preferences learned from observed listening, separate from saved base weights. */
 data class SmartWeightOptions(val enabled: Boolean = false, val strength: Double = 1.0,
     val limit: Double = 0.15, val skips: Boolean = true, val completions: Boolean = true,
-    val replays: Boolean = true, val volume: Boolean = true) {
+    val replays: Boolean = true, val volume: Boolean = true, val persist: Boolean = false) {
     fun validate() {
         require(strength.isFinite() && strength in 0.25..2.0) { "Smart strength must be 0.25–2" }
         require(limit.isFinite() && limit in 0.05..0.25) { "Smart adjustment limit must be 5–25%" }
@@ -21,7 +21,7 @@ data class SmartWeightOptions(val enabled: Boolean = false, val strength: Double
         val old=score.coerceIn(-limit,limit)
         return (old+bounded).coerceIn(-limit,limit)-score
     }
-    fun factor(score: Double) = if(enabled) 1.0+score.coerceIn(-limit,limit) else 1.0
+    fun factor(score: Double) = if(enabled || persist) 1.0+score.coerceIn(-limit,limit) else 1.0
 }
 enum class SmartSignal { EARLY_SKIP, COMPLETED, REPLAYED, VOLUME_UP }
 data class SmartFeedback(val session: String, val key: String, val kind: SmartSignal,val wall: Long=0,val day: String="")

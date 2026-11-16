@@ -528,7 +528,7 @@ struct PluginChecks {
         check(editor && (GetWindowLongPtrW(table, GWL_STYLE) & LVS_TYPEMASK) == LVS_REPORT && !(GetWindowLongPtrW(table, GWL_STYLE) & LVS_SINGLESEL), "Track table supports Ctrl/Shift multi-selection.");
         auto cell = [&](int row, int column) { wchar_t text[1024]{}; ListView_GetItemText(table, row, column, text, 1024); return std::wstring(text); };
         check(cell(0, 0) == L"1" && cell(0, 1) == L"bulk-first.flac" && cell(0, 2) == L"Music root", "Numeric weight, track name and source occupy distinct readable columns.");
-        check(ListView_GetColumnWidth(table, 3) == 0, "The redundant edit-value column is hidden in profile-only mode.");
+        check(ListView_GetColumnWidth(table, 3) > 0 && cell(0,3)==L"0", "Smart adjustment is visible alongside the base weight.");
         check(!GetDlgItem(editor, IDC_IMPORT) && !GetDlgItem(editor, IDC_EXPORT), "Import/export no longer occupy track-view controls.");
         check(!IsWindowEnabled(GetDlgItem(editor, IDC_APPLY_WEIGHT)), "Applying a weight requires a selection.");
         auto select = [&](std::initializer_list<int> rows) {
@@ -1772,10 +1772,17 @@ struct PluginChecks {
         const auto committed=plugin.playing_?plugin.playing_->next.lock():nullptr;
         ignorant::ListeningSample sample;sample.day=ignorant::statistics_day();sample.key="first.flac";sample.title="First";sample.playing=true;sample.duration=10000;
         for(int i=0;i<=10;++i){sample.elapsed=1000+i*1000;sample.wall=100000+i*1000;sample.position=i*1000;plugin.statistics_.observe(sample,track_key(&first));}
+        check(!plugin.learning_notice_.empty() && plugin.learning_notice_.find(L"weight ")!=std::wstring::npos && plugin.learning_notice_.find(L" to ")!=std::wstring::npos,"Observed learning reports weight amounts in the main panel");
         plugin.statistics_.counter("reroll",track_key(&first));plugin.statistics_.finish();
         check(ignorant::summarize(plugin.statistics_.records()).plays==1,"Windows observed half-duration qualification");
         const std::vector<std::string> keys{track_key(&first),track_key(&second)};const auto mean=plugin.statistics_.mean(keys);
+        check(plugin.learning_keys_.size()==keys.size(),"Ledger path separators do not duplicate the source in adjustment summaries");
         check(plugin.learned_weight(keys[0],mean)<plugin.learned_weight(keys[1],mean),"Synced play totals favor less-played tracks");
+        const auto saved_base=plugin.effective_weight(keys[0]).weight;
+        plugin.save_adjustment({keys[0]},-10);
+        check(std::abs(plugin.smart_score(keys[0])+.1)<1e-9 && plugin.effective_weight(keys[0]).weight==saved_base,"Editable saved smart adjustment does not alter base weight");
+        plugin.save_adjustment({keys[0]},0);
+        check(std::abs(plugin.smart_score(keys[0]))<1e-9,"Reset overrides historical feedback without clearing listening statistics");
         plugin.weights_.set(keys[0],0);check(plugin.learned_weight(keys[0],mean)==0,"Learning preserves minimum exclusions");plugin.weights_.set(keys[0],5);
         module=GetModuleHandleW(nullptr);plugin.open_monitor();SendMessageW(plugin.monitor_.handle(),WM_COMMAND,MAKEWPARAM(IDC_STATISTICS,BN_CLICKED),0);
         const auto window=plugin.statistics_window_.handle();check(IsWindow(window)!=FALSE,"Native Statistics opens from monitor");

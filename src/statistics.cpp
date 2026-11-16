@@ -171,7 +171,11 @@ void ListeningObserver::finish(const ListeningSample& s,bool early,const Learnin
     if(have_session_ && early && !qualified_ && heard_>0 && (last_.duration<=0 || credit_position_<last_.duration-1500)) {
         auto& r=slices_[s.day];if(r.id.empty()) {r.id=start_.session+"/l/"+s.day;r.kind="L";r.key=start_.key;r.title=start_.title;r.artist=start_.artist;r.session=start_.session;r.day=s.day;r.started=start_.wall;}
         r.updated=s.wall;r.exits=1;emit_(r);
-        if(penalty && o.skips && heard_>=2000 && last_credit_>=0 && s.elapsed-last_credit_>=0 && s.elapsed-last_credit_<=2000)signal("EARLY_SKIP",s,-.02,o);
+    }
+    if(have_session_ && penalty && o.smart && o.skips && !qualified_ && !navigation_session_ &&
+        have_last_ && last_.playing && !penalized_tracks_.count(start_.key) &&
+        (last_.duration<=0 || last_.position<last_.duration-1500)) {
+        penalized_tracks_.insert(start_.key);signal("EARLY_SKIP",s,-.02,o);
     }
 }
 void ListeningObserver::observe(const ListeningSample& s,const LearningOptions& o,bool collecting) {
@@ -180,9 +184,9 @@ void ListeningObserver::observe(const ListeningSample& s,const LearningOptions& 
     if(s.key.empty() || s.stopped) {finish(s,s.stopped,o,false);reset();return;}
     const bool repeat=have_session_ && s.key==start_.key && completed_ && have_last_ && last_.duration>0 && last_.position>=last_.duration-1500 && s.position<=1000 && s.position>=0;
     if(!have_session_ || start_.key!=s.key || start_.session!=s.session || s.restarted || repeat) {
-        finish(s,!repeat,o,start_.key!=s.key);reset();
+        finish(s,!repeat,o,start_.key!=s.key && s.manual_switch && !s.replay && !s.automatic);reset();
         if(!s.playing)return;
-        have_session_=true;start_=s;pending_replay_=s.replay || (repeat && !s.automatic);
+        have_session_=true;start_=s;navigation_session_=s.replay;pending_replay_=s.replay || (repeat && !s.automatic);
     }
     if(!s.playing || s.position<0 || !std::isfinite(s.speed) || s.speed<=0) {gap();return;}
     if(!have_last_) {last_=s;have_last_=true;return;}
@@ -195,6 +199,7 @@ void ListeningObserver::observe(const ListeningSample& s,const LearningOptions& 
     const auto credit=std::min(dt,static_cast<std::int64_t>(dp/s.speed));heard_+=credit;media_+=credit*s.speed;last_credit_=s.elapsed;credit_position_=s.position;
     const auto threshold=s.duration>0?std::min<std::int64_t>(30000,std::max<std::int64_t>(1,s.duration/2)):30000;
     const bool qualifies=!qualified_ && heard_>=threshold;qualified_=qualified_ || qualifies;
+    if(qualifies)penalized_tracks_.erase(start_.key);
     auto add_slice=[&](const std::string& day,std::int64_t ms,bool play) {
         auto& r=slices_[day];if(r.id.empty()) {r.id=start_.session+"/l/"+day;r.kind="L";r.key=start_.key;r.title=start_.title;r.artist=start_.artist;r.session=start_.session;r.day=day;r.started=start_.wall;}
         r.updated=s.wall;r.milliseconds+=ms;if(play)r.plays=1;emit_(r);

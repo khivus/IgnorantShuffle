@@ -112,18 +112,45 @@ class AimpController(private val context: Context) {
     var storageError by mutableStateOf<String?>(null); private set
     var events by mutableStateOf(emptyList<String>()); private set
     var appQueue by mutableStateOf(emptyList<QueueEntry>()); private set
+    private var countsInitialized = false
     private var statisticsCounts: Map<String, Long> = emptyMap()
     private var statisticsConfiguration: Pair<FolderConfig,List<LibraryFile>>?=null
     private fun learningCounts()=tracks.associate {it.key to (statisticsCounts[folder.statisticsKey(it)]?:statisticsCounts[it.key]?:0L)}
-    private fun learningScores()=tracks.associate {it.key to (statistics.smartScores[folder.statisticsKey(it)]?:statistics.smartScores[it.key]?:0.0)}
+    fun smartScore(track: Track): Double = (if(preferences.smartWeights.persist) folder.adjustment(track) ?: statistics.smartScores[folder.statisticsKey(track)] ?: statistics.smartScores[track.key] ?: 0.0
+        else statistics.smartScores[folder.statisticsKey(track)] ?: statistics.smartScores[track.key] ?: 0.0).coerceIn(-preferences.smartWeights.limit,preferences.smartWeights.limit)
+    private fun learningScores()=tracks.associate {it.key to smartScore(it)}
+    fun setSmartAdjustment(track: Track, text: String) = guarded {
+        val percent=text.toDoubleOrNull() ?: error("Enter a signed percentage")
+        check(percent.isFinite() && kotlin.math.abs(percent)<=preferences.smartWeights.limit*100+1e-9) { "Adjustment exceeds the configured maximum" }
+        if(!preferences.smartWeights.persist)changePreferences(preferences.copy(smartWeights=preferences.smartWeights.copy(persist=true)))
+        folder.editAdjustment(track,percent/100,smartScore(track),limit=preferences.smartWeights.limit)
+        acknowledge("Smart adjustment saved")
+    }
     private var passCompleted = false
     private var passStarted = false
-    val statistics = StatisticsRepository(context, onSmartScores = { scores ->
-        model.smartWeights(preferences.smartWeights,tracks.associate {it.key to (scores[folder.statisticsKey(it)]?:scores[it.key]?:0.0)})
+    val statistics = StatisticsRepository(context, onLearningNotice = { key, reason, old, new, step ->
+        val track=tracks.find { folder.statisticsKey(it)==key || it.key==key }
+        val before=if(preferences.smartWeights.persist && track!=null) folder.adjustment(track) ?: old else old
+        val after=if(preferences.smartWeights.persist) SavedAdjustments.updated(before,step,preferences.smartWeights.limit) else new
+        if(preferences.smartWeights.persist && track!=null && folder.match(track).path!=null)
+            folder.editAdjustment(track,null,before,step,preferences.smartWeights.limit)
+        val title = tracks.find { folder.statisticsKey(it) == key || it.key == key }?.title ?: key.substringAfterLast('/')
+        acknowledge("Smart weights: $reason · $title: " + String.format(java.util.Locale.ROOT, "%+.2f%% to %+.2f%% (%+.2f percentage points)", before*100, after*100, (after-before)*100))
+    }, onSmartScores = { scores ->
+        model.smartWeights(preferences.smartWeights,tracks.associate {it.key to (if(preferences.smartWeights.persist) folder.adjustment(it) ?: scores[folder.statisticsKey(it)] ?: scores[it.key] ?: 0.0 else scores[folder.statisticsKey(it)] ?: scores[it.key] ?: 0.0)})
         if(connected && !pending) { updatePreview("Smart listening feedback");scheduleTimer() }
     }) { counts ->
+        val before = tracks.associate { it.key to model.selectionWeight(it) }
+        val changed = tracks.filter { (counts[folder.statisticsKey(it)] ?: counts[it.key] ?: 0L) > (statisticsCounts[folder.statisticsKey(it)] ?: statisticsCounts[it.key] ?: 0L) }
+        val hadCounts = countsInitialized
+        countsInitialized = true
         statisticsCounts = counts
         model.balance(preferences.balanceListening, learningCounts(), preferences.balanceStrength)
+        if (hadCounts && preferences.balanceListening) changed.forEach { track ->
+            val old = before[track.key] ?: 0.0
+            val new = model.selectionWeight(track)
+            if (kotlin.math.abs(new-old)>1e-9) acknowledge("Listening balance: qualified listen · ${track.title}: " + String.format(java.util.Locale.ROOT,"weight %.4f to %.4f (%+.4f)",old,new,new-old))
+        }
         if (connected && !pending) { updatePreview("Listening totals changed"); scheduleTimer() }
     }
     private val queueStore = context.getSharedPreferences("app-queue", Context.MODE_PRIVATE)
@@ -296,6 +323,7 @@ class AimpController(private val context: Context) {
         if (commonSettings() != commonBefore) queueSharedSettingsSave()
         model.balance(value.balanceListening, learningCounts(),value.balanceStrength)
         model.smartWeights(value.smartWeights,learningScores())
+        if(value.smartWeights.persist && !preferencesBeforeLearning.persist && statistics.ready)folder.seedAdjustments(tracks.associateWith { smartScore(it) })
         if(value.smartWeights!=preferencesBeforeLearning) statistics.configureSmartWeights(value.smartWeights)
         if (connected && !pending) { updatePreview("Preferences changed"); scheduleTimer() }
         if (debugChanged) {
@@ -571,7 +599,8 @@ class AimpController(private val context: Context) {
         val observed = current ?: title.takeIf { it.isNotBlank() }?.let { Track(-1, mediaId, mediaUri, it, next.artist) }
         if (operation?.correctivePause != true && (operation?.target == null || operation?.target == observed?.key))
             statistics.engine.observe(next.copy(track = observed?.copy(statisticsIdentity=folder.statisticsKey(observed))), SystemClock.elapsedRealtime(), System.currentTimeMillis(), restartedObservation,
-                userReplay = operation?.userReplay==true, automaticTransition = operation?.automaticSelection==true)
+                userReplay = operation?.userReplay==true, automaticTransition = operation?.automaticSelection==true || operation?.fallback==true,
+                manualSwitch = operation?.let { it.target==observed?.key && !it.automaticSelection && !it.userReplay && !it.fallback && !it.reactiveCorrection }==true)
         else statistics.engine.reject()
         observeVolume(if (snapshot != null) snapshot.audioInfo else c.playbackInfo)
         handler.removeCallbacks(statisticsPoll)
@@ -627,6 +656,7 @@ class AimpController(private val context: Context) {
             if (folder.error != null) disableAutomatic("Music-root weights unavailable; restore access and reload")
             refreshNotifications(); return
         }
+        if(preferences.smartWeights.persist && statistics.ready)folder.seedAdjustments(tracks.associateWith { smartScore(it) })
         val configuration=folder.config to folder.files
         if(statisticsConfiguration!=configuration) {
             statisticsConfiguration=configuration
@@ -833,7 +863,7 @@ class AimpController(private val context: Context) {
     }
     private fun finish(message: String) {
         handler.removeCallbacks(timeout); operation = null; pending = false; model.cancelRequest()
-        result = message; acknowledge(message); log("RESULT $message")
+        result = message; if (!message.startsWith("OBSERVED:") || preferences.debugPlayback) acknowledge(message); log("RESULT $message")
         if (!message.startsWith("OBSERVED:")) disableAutomatic("Timed mode stopped after unconfirmed command")
         refreshNotifications()
     }

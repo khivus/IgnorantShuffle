@@ -55,6 +55,16 @@ int main() {
         check(saved.get("Other.flac") == 9, "Edits preserve synchronized values that arrived after caching.");
         storage.clear_many({first});
         check(storage.resolve(defaults, first).weight == 2.5, "Use default removes the root entry.");
+        WeightStorage adjustments;adjustments.configure({root,other},"IgnorantShuffle.adjustments.tsv");
+        Weights neutral;neutral.set_default(1);
+        const auto base_file=contents(root/"IgnorantShuffle.weights.tsv");
+        adjustments.set_many({first},.98);
+        check(adjustments.resolve(neutral,first).weight==.98,"Signed smart adjustment persists as a separate factor");
+        adjustments.configure({root,other},"IgnorantShuffle.adjustments.tsv");
+        check(adjustments.resolve(neutral,first).weight==.98,"Smart adjustment survives reload");
+        adjustments.set_many({first},1);
+        check(adjustments.resolve(neutral,first).weight==1 && !adjustments.resolve(neutral,first).file.empty(),"Explicit reset retains neutral override");
+        check(contents(root/"IgnorantShuffle.weights.tsv")==base_file,"Editing/resetting smart adjustment leaves base file intact");
         const auto imported = fixture / "import.tsv", exported = fixture / "export.tsv";
         const std::string exact = "\xef\xbb\xbf# comment\r\n2.5000\tArtist/Song.flac\r\n";
         write(imported, exact); storage.transfer(root, imported, false); storage.transfer(root, exported, true);

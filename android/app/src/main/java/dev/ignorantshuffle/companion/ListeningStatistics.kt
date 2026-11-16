@@ -23,10 +23,13 @@ class ListeningStatistics(private val feedback: (SmartFeedback) -> Unit = {},
     private var lastCreditPosition=0.0
     private var completed=false
     private var completionPossible=true
+    private var navigationSession=false
+    private val penalizedTracks=mutableSetOf<String>()
     private var pendingReplay=false
     private var pendingVolume=false
     private var rewardedVolume=false
     private val volume=VolumeEvidence()
+    var skipLearning = true
     var collecting = false; private set
 
     fun collecting(enabled: Boolean) { collecting = enabled; last = null; if(!enabled)completionPossible=false;volumeRouteChanged() }
@@ -57,7 +60,7 @@ class ListeningStatistics(private val feedback: (SmartFeedback) -> Unit = {},
     }
 
     fun observe(p: Playback, elapsed: Long, wall: Long, restarted: Boolean = false,
-        userReplay: Boolean = false, automaticTransition: Boolean = false) {
+        userReplay: Boolean = false, automaticTransition: Boolean = false, manualSwitch: Boolean = false) {
         if (!collecting) {
             if (session?.key != p.track?.key) reset()
             last = null; return
@@ -72,14 +75,17 @@ class ListeningStatistics(private val feedback: (SmartFeedback) -> Unit = {},
         if (session?.key != track.key || restarted || naturalRepeat) {
             val previous=session
             val completedPrevious=completed
-            if(previous!=null && previous.key!=track.key && !previous.qualified && previous.listeningMs>=2000 &&
-                lastCreditAt>=0 && elapsed-lastCreditAt in 0..2000 && (duration<=0 || lastCreditPosition<duration-1500)) {
+            if(previous!=null && previous.key!=track.key && !previous.qualified && skipLearning && manualSwitch && !userReplay && !automaticTransition && !navigationSession &&
+                old?.p?.state==3 && previous.key !in penalizedTracks && (duration<=0 || old.position<duration-1500)) {
+                emit(ListeningDelta(previous.copy(updated=wall),day(wall)))
+                penalizedTracks.add(previous.key)
                 feedback(SmartFeedback(previous.id,previous.key,SmartSignal.EARLY_SKIP,wall,day(wall)))
             }
             close(wall, early = !naturalRepeat)
             resetSignals()
             if (p.state != 3) return
             session = ListeningSession(UUID.randomUUID().toString(), track.key, track.title, track.artist, wall, wall)
+            navigationSession=userReplay
             pendingReplay=userReplay || (naturalRepeat && completedPrevious && !automaticTransition)
         }
         duration = p.duration
@@ -107,6 +113,7 @@ class ListeningStatistics(private val feedback: (SmartFeedback) -> Unit = {},
         val total = active.listeningMs + credit
         val threshold = if (duration > 0) minOf(30_000, (duration / 2).coerceAtLeast(1)) else 30_000
         val qualifies = !active.qualified && total >= threshold
+        if(qualifies) penalizedTracks.remove(active.key)
         val updated = active.copy(updated = wall, listeningMs = total, qualified = active.qualified || qualifies)
         session = updated
         observedMedia+=credit*p.speed.toDouble();lastCreditAt=elapsed;lastCreditPosition=sample.position

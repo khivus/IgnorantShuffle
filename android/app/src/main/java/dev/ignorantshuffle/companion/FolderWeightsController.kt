@@ -19,6 +19,7 @@ class FolderWeightsController(context: Context, private val event: (String) -> U
     var config by mutableStateOf(FolderConfig()); private set
     var files by mutableStateOf(emptyList<LibraryFile>()); private set
     var values by mutableStateOf(emptyMap<String, Map<String, Double>>()); private set
+    var adjustments by mutableStateOf(emptyMap<String, Map<String, Double>>()); private set
     var busy by mutableStateOf(true); private set
     var error by mutableStateOf<String?>(null); private set
     var status by mutableStateOf("Loading music folders"); private set
@@ -54,7 +55,40 @@ class FolderWeightsController(context: Context, private val event: (String) -> U
             match.path?.let { this@FolderWeightsController.values[match.root]?.get(it) }?.let { put(track.key, it) }
         }
     }
-    private fun complete(snapshot: Snapshot) { handler.post {
+    fun adjustment(track: Track): Double? = match(track).let { m -> m.path?.let { adjustments[m.root]?.get(it)?.minus(1.0) } }
+    fun seedAdjustments(scores: Map<Track,Double>) {
+        val candidates=scores.mapNotNull { (track,score) ->
+            val m=match(track);m.path?.let { Triple(m.root,it,score) }
+        }.filter { (root,path,_) -> adjustments[root]?.containsKey(path)!=true }
+        if(candidates.isEmpty())return
+        worker.execute {
+            try {
+                for((root,rows) in candidates.groupBy { it.first }) {
+                    val updated=SharedWeightFile.edit(SavedAdjustments.documents(store.documents(Uri.parse(root)))) { values ->
+                        rows.forEach { (_,path,score) -> if(!values.containsKey(path))values[path]=1+score }
+                    }
+                    handler.post { adjustments=adjustments+(root to updated);changed() }
+                }
+            } catch(e: Exception) { failed("Save current smart adjustments",e) }
+        }
+    }
+    fun editAdjustment(track: Track, value: Double?, fallback: Double, delta: Double = 0.0, limit: Double) {
+        val match=match(track);val path=match.path ?: error("Link this track to a music file first")
+        worker.execute {
+            try {
+                val docs=SavedAdjustments.documents(store.documents(Uri.parse(match.root)))
+                val updated=SharedWeightFile.edit(docs) { entries ->
+                    val old=entries[path]?.minus(1.0) ?: fallback
+                    entries[path]=1.0+(value ?: SavedAdjustments.updated(old,delta,limit)).coerceIn(-limit,limit)
+                }
+                handler.post { adjustments=adjustments+(match.root to updated);changed() }
+            } catch(e: Exception) { failed("Save smart adjustment",e) }
+        }
+    }
+    private fun complete(snapshot: Snapshot) {
+        val learned=snapshot.config.roots.associate { root -> root.uri to SharedWeightFile.read(SavedAdjustments.documents(store.documents(Uri.parse(root.uri)))) }
+        handler.post {
+        adjustments=learned
         config = snapshot.config; files = snapshot.files; values = snapshot.values
         matcher = LibraryMatcher(files); busy = false; error = null
         status = "${snapshot.note}; ${files.size} files; ${values.values.sumOf { it.size }} saved weights"

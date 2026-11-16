@@ -28,6 +28,7 @@ class LibraryStatistics {
     void learning();
     std::filesystem::path cache_root(const std::filesystem::path& root) const;
 public:
+    std::function<void(const StatRecord&,const std::string&,bool)> on_learning_change;
     LearningOptions options;
     bool collecting=true;
     std::string status="Add music roots to save statistics alongside weights";

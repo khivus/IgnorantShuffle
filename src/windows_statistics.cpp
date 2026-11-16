@@ -68,8 +68,13 @@ void LibraryStatistics::record(const StatRecord& r) {
     const auto where=sessions_.find(r.session);if(where==sessions_.end())return;
     auto& root=roots_.at(where->second);
     const auto before=root.own.records().find(r.id);
+    const bool notify=(r.kind=="F" && before==root.own.records().end() && options.smart) ||
+        (r.plays>0 && (before==root.own.records().end() || before->second.plays==0) && options.balance);
+    const auto absolute=(where->second/std::filesystem::u8path(r.key)).generic_u8string();
+    if(notify && on_learning_change)on_learning_change(r,absolute,true);
     if(r.kind=="F" || (r.plays>0 && (before==root.own.records().end() || before->second.plays==0)))learning_dirty_=true;
     root.own.put(r);root.merged.merge(root.own.records().at(r.id));
+    if(notify && on_learning_change)on_learning_change(r,absolute,false);
 }
 void LibraryStatistics::observe(ListeningSample s,const std::string& absolute) {
     const auto found=location(absolute);

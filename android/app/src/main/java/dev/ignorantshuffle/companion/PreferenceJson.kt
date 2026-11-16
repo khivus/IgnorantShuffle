@@ -23,7 +23,7 @@ object PreferenceJson {
             }, json.optBoolean("notificationNext", true), json.optBoolean("notificationPrevious", true), json.optBoolean("balanceListening", false),
             json.optDouble("balanceStrength",1.0).also { require(it.isFinite() && it in 0.25..1.0) { "Invalid balance strength" } },
             SmartWeightOptions(smart.optBoolean("enabled",false),smart.optDouble("strength",1.0),smart.optDouble("limit",0.15),
-                smart.optBoolean("skips",true),smart.optBoolean("completions",true),smart.optBoolean("replays",true),smart.optBoolean("volume",true)).also { it.validate() })
+                smart.optBoolean("skips",true),smart.optBoolean("completions",true),smart.optBoolean("replays",true),smart.optBoolean("volume",true),smart.optBoolean("persist",false)).also { it.validate() })
     }
 
     fun encode(value: AppPreferences): String {
@@ -37,7 +37,7 @@ object PreferenceJson {
             .put("debugPlayback", value.debugPlayback)
             .put("balanceListening", value.balanceListening)
             .put("balanceStrength", value.balanceStrength)
-            .put("smartWeights",JSONObject().put("enabled",learning.enabled).put("strength",learning.strength).put("limit",learning.limit)
+            .put("smartWeights",JSONObject().put("enabled",learning.enabled).put("persist",learning.persist).put("strength",learning.strength).put("limit",learning.limit)
                 .put("skips",learning.skips).put("completions",learning.completions).put("replays",learning.replays).put("volume",learning.volume))
             .put("reactivePlayback", value.reactivePlayback)
             .put("correctionDelayMs", value.correctionDelayMs)

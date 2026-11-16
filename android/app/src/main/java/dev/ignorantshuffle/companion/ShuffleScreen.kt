@@ -321,12 +321,9 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
                             TextButton(onClick = { m.enqueue(track, atBeginning = true) }, enabled = track.selectable && !m.pending) { Text("Add to beginning") }
                             TextButton(onClick = { m.enqueue(track) }, enabled = track.selectable && !m.pending) { Text("Add to end") }
                         }
+                        Text("Smart adjustment: ${String.format(Locale.ROOT,"%+.2f%%",m.smartScore(track)*100)}${if(m.preferences.smartWeights.persist) " · saved" else " · statistics"}",style=MaterialTheme.typography.bodySmall)
                         if (expanded == track.key) {
-                        if(m.preferences.smartWeights.enabled) {
-                            val score=m.statistics.smartScores[m.statisticsKey(track)]?:m.statistics.smartScores[track.key]?:0.0
-                            Text("Smart adjustment: ${String.format(Locale.ROOT,"%+.2f%%",(m.preferences.smartWeights.factor(score)-1.0)*100)}",style=MaterialTheme.typography.bodySmall)
-                        }
-                        if(m.preferences.balanceListening || m.preferences.smartWeights.enabled)
+                        if(m.preferences.balanceListening || m.preferences.smartWeights.enabled || m.preferences.smartWeights.persist)
                             Text("Selection weight for future rolls: ${String.format(Locale.ROOT,"%.2f",m.selectionWeight(track))} (saved weight ${m.weight(track)})",style=MaterialTheme.typography.bodySmall)
                         Text(m.weightSource(track), style = MaterialTheme.typography.labelSmall)
                         if (m.weight(track) < m.settings.minimumWeight)
@@ -499,6 +496,7 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
             val update: (SmartWeightOptions) -> Unit = { if(!m.pending)m.changePreferences(m.preferences.copy(smartWeights=it)) }
             Section("Smart weights") {
                 Toggle("Learn from listening", "Gently lower tracks skipped early and favor full listens, replays and volume increases. Saved weights stay unchanged.",smart.enabled,enabled=!m.pending) { update(smart.copy(enabled=it)) }
+                Toggle("Save editable smart adjustments", "Automatically save new adjustments beside base weights. Edit or reset each track in its weight dialog.",smart.persist,enabled=!m.pending) { update(smart.copy(persist=it)) }
                 if(smart.enabled) {
                     Text("Learning strength",style=MaterialTheme.typography.titleSmall)
                     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -511,11 +509,11 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
                         listOf(0.05,0.15,0.25).forEach { limit -> StateChip(smart.limit==limit,{update(smart.copy(limit=limit))},label={Text("±${(limit*100).toInt()}%")}) }
                     }
                     Text("At normal strength: early skip −2%, full listen +0.5%, replay +1%, volume up +0.25%. Total gains are capped at +1.5% per listening session.",style=MaterialTheme.typography.bodySmall)
-                    Toggle("Early skips", "Leave after at least 2 seconds, before 30 seconds or half the track",smart.skips,enabled=!m.pending) { update(smart.copy(skips=it)) }
+                    Toggle("Early skips", "Immediate manual forward switch before 30 seconds or half the track. Previous, automatic playback and fallback are ignored.",smart.skips,enabled=!m.pending) { update(smart.copy(skips=it)) }
                     Toggle("Full listens", "Reach the ending after hearing at least 90% of the track",smart.completions,enabled=!m.pending) { update(smart.copy(completions=it)) }
                     Toggle("Replays", "An observed repeat or app Previous/replay must qualify before gaining weight",smart.replays,enabled=!m.pending) { update(smart.copy(replays=it)) }
                     Toggle("Volume increases", "One small gain per qualified session; initial readings and detected device changes are ignored",smart.volume,enabled=!m.pending) { update(smart.copy(volume=it)) }
-                    Text("Can work with listening balance. Zero and below-minimum saved weights stay excluded. Pause Statistics to freeze learning; clear statistics to reset learned adjustments. New feedback affects future rolls.",style=MaterialTheme.typography.bodySmall)
+                    Text("Can work with listening balance. Zero and below-minimum saved weights stay excluded. Pause Statistics to freeze learning; clear statistics to reset historical feedback. Saved smart adjustments survive clearing statistics; reset them in the weight dialog. New feedback affects future rolls.",style=MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -728,6 +726,7 @@ private fun Toggle(title: String, detail: String, checked: Boolean, enabled: Boo
 @Composable
 private fun WeightDialog(m: AimpController, track: Track, close: () -> Unit) {
     var text by remember(track.key) { mutableStateOf(m.weight(track).toString()) }
+    var adjustment by remember(track.key) { mutableStateOf(String.format(Locale.ROOT,"%.2f",m.smartScore(track)*100)) }
     var error by remember(track.key) { mutableStateOf<String?>(null) }
     val selected=text.toDoubleOrNull()
     val colors=MaterialTheme.colorScheme
@@ -766,6 +765,17 @@ private fun WeightDialog(m: AimpController, track: Track, close: () -> Unit) {
                     label={Text("Custom weight")},singleLine=true,isError=error!=null,shape=RoundedCornerShape(14.dp),
                     keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
                     supportingText={Text(error?:"Higher weights play more often. Minimum for shuffle: ${m.settings.minimumWeight}. Fractions and values above 10 are supported.")})
+                OutlinedTextField(adjustment,{adjustment=it;error=null},modifier=Modifier.fillMaxWidth(),
+                    label={Text("Smart adjustment (%)")},singleLine=true,
+                    supportingText={Text("Signed percentage, up to ±${m.preferences.smartWeights.limit*100}%. Base weight stays unchanged.")})
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick={
+                        val v=adjustment.toDoubleOrNull()
+                        if(v==null || !v.isFinite() || kotlin.math.abs(v)>m.preferences.smartWeights.limit*100+1e-9) error="Enter a percentage within the smart limit"
+                        else m.setSmartAdjustment(track,adjustment)
+                    }) {Text("Save adjustment")}
+                    TextButton(onClick={adjustment="0";m.setSmartAdjustment(track,"0")}) {Text("Reset smart to 0")}
+                }
                 TextButton(onClick={
                     m.setWeight(track,"",inherit=true)
                     if(m.folder.busy || !m.weights.containsKey(track.key))close() else error=m.result

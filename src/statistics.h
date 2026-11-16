@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -43,14 +44,14 @@ std::string statistics_csv(const std::vector<StatRecord>& records);
 std::string statistics_json(const std::vector<StatRecord>& records);
 
 struct LearningOptions {
-    bool balance = false, smart = false, skips = true, completions = true, replays = true, volume = true;
+    bool persist = false, balance = false, smart = false, skips = true, completions = true, replays = true, volume = true;
     double balance_strength = 1, strength = 1, limit = .15;
     void validate() const;
 };
 struct ListeningSample {
     std::string key, title, artist, session, day;
     std::int64_t elapsed = 0, wall = 0, position = -1, duration = -1, day_start_wall = 0;
-    bool playing = false, stopped = false, restarted = false, replay = false, automatic = false;
+    bool playing = false, stopped = false, restarted = false, replay = false, automatic = false, manual_switch = false;
     int volume = -1, volume_max = 100;
     double speed = 1;
 };
@@ -65,6 +66,8 @@ class ListeningObserver {
     int previous_volume_ = -1, volume_max_ = -1;
     double media_ = 0;
     double session_gain_ = 0;
+    bool navigation_session_=false;
+    std::set<std::string> penalized_tracks_;
     void signal(const std::string& kind, const ListeningSample& sample, double amount, const LearningOptions& options);
     void finish(const ListeningSample& sample, bool early, const LearningOptions& options, bool penalty = true);
 public:
