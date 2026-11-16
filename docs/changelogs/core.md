@@ -3,6 +3,11 @@
 Version history for the portable C++ selection rules. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## 0.3.0
+
+- Require explicit manual forward-transition attribution for immediate early-skip feedback.
+- Exclude replay/Previous and automatic or unknown transitions, and block repeat browsing penalties until requalification.
+
 ## 0.2.0
 
 - Add shared learning-weight calculation, portable statistics ledger/merge/clear rules, CSV/JSON encoding, and a playback-observation reducer.

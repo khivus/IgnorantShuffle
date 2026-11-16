@@ -1,11 +1,15 @@
-# IgnorantShuffle Windows v0.17.3
+# IgnorantShuffle Windows v0.18.0
+
+## Added
+
+- Save smart adjustments alongside base weights, with per-track editing and reset to zero.
+- Show smart and listening-balance feedback in the main panel.
 
 ## Improvements
 
-- Batch shared statistics updates to roughly two minutes while keeping local recovery snapshots about every ten seconds. Reload / sync and normal shutdown still publish pending observations.
-- Preserve modification times when weights and preferences have not changed, and skip unchanged shared settings publications.
-- Document Syncthing folder setup, temporary-file exclusions and safe weight-conflict review.
+- Display base weight plus smart adjustment in weight points, with at most two decimal places.
+- Learn from immediate manual forward skips, while ignoring Previous, automatic transitions and repeated browsing penalties.
 
-Shared weight/settings files do not merge concurrent offline edits. An abrupt termination can lose the most recent unflushed listening observations.
+Saved adjustments remain when learning is disabled or statistics are cleared. Include adjustment files in music-folder sync.
 
-Windows version: **0.17.3**. Bundled core: **0.2.0**. Includes x64 and x86.
+Windows version: **0.18.0**. Bundled core: **0.3.0**. Includes x64 and x86.

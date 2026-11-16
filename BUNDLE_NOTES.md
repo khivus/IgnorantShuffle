@@ -1,11 +1,16 @@
+## Added
+
+- Save smart adjustments separately from base weights, with a per-track editor and reset to zero on Windows and Android.
+- See which smart or listening-balance rule triggered and how much the weight changed in Android popups and the PC main panel.
+
 ## Improvements
 
-- Android playback buttons show immediate, static feedback while playlist loading and playback commands run in the background.
-- The corner status shows whether automatic switching is ready and explains when shuffle is disabled. Refresh connection appears only while disconnected.
-- Save shared shuffle rules and learning options automatically when settings sharing is enabled, with pending saves retained for retry after reopening.
+- Show smart adjustments directly beside weights in weight points, such as `7 + 0.4`, with at most two decimal places.
+- Apply early-skip feedback immediately for identified manual forward switches. On Android, this applies to companion and notification controls.
 
 ## Fixes
 
-- Preserve the next shuffle choice and local settings when reopening the app with unchanged shared settings.
-- Refresh playlist weights when changing playlists in AIMP.
-- Apply the minimum weight to queued choices and correct below-minimum early skips while automatic shuffle and AIMP Shuffle are enabled. Play now remains a manual override.
+- Prevent Previous, automatic transitions, Android fallback and repeated back-and-forth browsing from stacking skip penalties.
+- Show Android's successful playback confirmations only when playback debug mode is enabled.
+
+The Android companion remains a preview build.

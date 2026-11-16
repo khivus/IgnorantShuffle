@@ -5,10 +5,10 @@ belongs to its component; it does not need to match either of the others.
 
 | Component | Single version source | Current development version | Release tag |
 | --- | --- | --- | --- |
-| Combined release | [release.properties](../versions/release.properties) | 0.22.3 | `v0.22.3` |
-| Windows AIMP plugin | [windows.properties](../versions/windows.properties) | 0.17.3 | Included in the same stable bundle |
-| Android companion | [android.properties](../versions/android.properties) | 0.13.2, code 18 | Included in the same stable bundle |
-| Shared C++ selection core | [core.properties](../versions/core.properties) | 0.2.0 | Included in the same stable bundle |
+| Combined release | [release.properties](../versions/release.properties) | 0.23.0 | `v0.23.0` |
+| Windows AIMP plugin | [windows.properties](../versions/windows.properties) | 0.18.0 | Included in the same stable bundle |
+| Android companion | [android.properties](../versions/android.properties) | 0.14.0, code 19 | Included in the same stable bundle |
+| Shared C++ selection core | [core.properties](../versions/core.properties) | 0.3.0 | Included in the same stable bundle |
 
 These are source/build versions, not a statement that a release has been published.
 The core's first explicit version is 0.1.0. Earlier Windows `vX.Y.Z` releases keep

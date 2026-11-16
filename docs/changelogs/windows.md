@@ -3,6 +3,12 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## 0.18.0
+
+- Add saved, editable smart adjustments with per-track reset and smart/balance feedback in the main panel.
+- Show base weight plus smart points directly beside usual weights, with at most two decimal places.
+- Apply immediate identified manual-skip feedback while protecting Previous, automatic transitions and repeated browsing.
+
 ## 0.17.3
 
 - Batch shared statistics updates to two minutes while retaining frequent local recovery saves and explicit sync.

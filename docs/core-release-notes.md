@@ -1,8 +1,7 @@
-# IgnorantShuffle Core v0.2.0
+# IgnorantShuffle Core v0.3.0
 
-- Share listening-balance and smart-weight calculations between Windows and Android while preserving saved base weights and exclusions.
-- Merge per-device statistics without counting repeated file copies twice, and share clear markers across devices.
-- Count observed playback, rejecting pauses, seek jumps, duplicate callbacks and unobserved gaps. Qualify a play after 30 seconds or half its duration.
+- Apply early-skip feedback immediately when the caller identifies a manual forward transition.
+- Ignore Previous/replay navigation and automatic or unattributed transitions for skip penalties.
+- Prevent repeat browsing penalties until the track earns another qualified listen.
 
-The core is bundled in Windows **0.15.0** and Android **0.10.0**; it has no separate
-runtime download. See [core history](changelogs/core.md) and [statistics files](statistics-files.md).
+The core is bundled in Windows **0.18.0** and Android **0.14.0**; it has no separate runtime download.

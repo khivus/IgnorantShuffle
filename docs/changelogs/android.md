@@ -4,6 +4,13 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.14.0 (versionCode 19)
+
+- Add saved, editable smart adjustments with per-track reset and smart/balance feedback popups.
+- Show base weight plus smart points on Now Playing, Next Roll and playlist weight buttons, with at most two decimal places.
+- Apply immediate companion-controlled manual-skip feedback while excluding Previous, automatic changes, fallback/corrections and repeated browsing penalties.
+- Restrict successful playback-confirmation popups to playback debug mode.
+
 ## 0.13.2 (versionCode 18)
 
 - Android playback buttons show immediate, static feedback while playlist loading and playback commands run in the background.
