@@ -1,12 +1,16 @@
 #include "track_table.h"
 #include <algorithm>
+#include <cmath>
+#include <locale>
 #include <filesystem>
 #include <iomanip>
 #include <sstream>
 
 namespace {
 std::wstring number(double value) {
-    std::wostringstream text; text << std::setprecision(8) << value; return text.str();
+    if(std::abs(value)<1e12)value=std::trunc(value*100+std::copysign(1e-9,value))/100;
+    std::wostringstream text;text.imbue(std::locale::classic());text<<std::fixed<<std::setprecision(2)<<(std::abs(value)<.01?0:value);
+    auto result=text.str();while(!result.empty() && result.back()==L'0')result.pop_back();if(!result.empty() && result.back()==L'.')result.pop_back();return result;
 }
 int units(HWND list, int value) {
     RECT rectangle{0, 0, value, 0}; MapDialogRect(GetParent(list), &rectangle); return rectangle.right;

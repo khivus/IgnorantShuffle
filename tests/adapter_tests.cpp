@@ -527,7 +527,7 @@ struct PluginChecks {
         const auto table = GetDlgItem(editor, IDC_TRACKS);
         check(editor && (GetWindowLongPtrW(table, GWL_STYLE) & LVS_TYPEMASK) == LVS_REPORT && !(GetWindowLongPtrW(table, GWL_STYLE) & LVS_SINGLESEL), "Track table supports Ctrl/Shift multi-selection.");
         auto cell = [&](int row, int column) { wchar_t text[1024]{}; ListView_GetItemText(table, row, column, text, 1024); return std::wstring(text); };
-        check(cell(0, 0) == L"1 + 0 = 1" && cell(0, 1) == L"bulk-first.flac" && cell(0, 2) == L"Music root", "Numeric weight, track name and source occupy distinct readable columns.");
+        check(cell(0, 0) == L"1 + 0" && cell(0, 1) == L"bulk-first.flac" && cell(0, 2) == L"Music root", "Numeric weight, track name and source occupy distinct readable columns.");
         check(ListView_GetColumnWidth(table, 3) > 0 && cell(0,3)==L"0", "Smart adjustment is visible alongside the base weight.");
         check(!GetDlgItem(editor, IDC_IMPORT) && !GetDlgItem(editor, IDC_EXPORT), "Import/export no longer occupy track-view controls.");
         check(!IsWindowEnabled(GetDlgItem(editor, IDC_APPLY_WEIGHT)), "Applying a weight requires a selection.");
@@ -561,7 +561,7 @@ struct PluginChecks {
         ignorant::Weights saved; saved.load(fixture / L"IgnorantShuffle.weights.tsv");
         check(saved.get("bulk-first.flac") == 25.5 && saved.get("bulk-third.flac") == 25.5 && saved.get("bulk-second.flac") == 2,
             "Custom fractional weights above ten are saved for every selected row.");
-        check(cell(0, 0) == L"25.5 + 0 = 25.5" && cell(2, 0) == L"25.5 + 0 = 25.5" && cell(1, 0) == L"2 + 0 = 2", "Fractional and imported weights update directly in their table cells.");
+        check(cell(0, 0) == L"25.5 + 0" && cell(2, 0) == L"25.5 + 0" && cell(1, 0) == L"2 + 0", "Fractional and imported weights update directly in their table cells.");
         SetFocus(GetDlgItem(editor, IDC_WEIGHT)); SetDlgItemTextW(editor, IDC_WEIGHT, L"2.5");
         SendMessageW(editor, WM_COMMAND, IDOK, 0);
         check(IsWindow(editor) && plugin.effective_weight(track_key(&first)).weight == 2.5 && plugin.effective_weight(track_key(&third)).weight == 2.5,
@@ -1781,8 +1781,9 @@ struct PluginChecks {
         const auto saved_base=plugin.effective_weight(keys[0]).weight;
         plugin.save_adjustment({keys[0]},-10);
         check(std::abs(plugin.smart_score(keys[0])+.1)<1e-9 && plugin.effective_weight(keys[0]).weight==saved_base,"Editable saved smart adjustment does not alter base weight");
+        check(Plugin::display_weight(.0199)==L"0.01" && Plugin::display_weight(-.0199)==L"-0.01","Weight display hides digits beyond two decimals without rounding up");
         plugin.save_adjustment_points({keys[0]},.4);
-        check(plugin.weight_summary(keys[0]).find(L"+ 0.4 =")!=std::wstring::npos,"Main weight display shows the smart adjustment in weight points");
+        check(plugin.weight_summary(keys[0]).find(L"+ 0.4")!=std::wstring::npos,"Main weight display shows the smart adjustment in weight points");
         plugin.save_adjustment({keys[0]},0);
         check(std::abs(plugin.smart_score(keys[0]))<1e-9,"Reset overrides historical feedback without clearing listening statistics");
         plugin.weights_.set(keys[0],0);check(plugin.learned_weight(keys[0],mean)==0,"Learning preserves minimum exclusions");plugin.weights_.set(keys[0],5);

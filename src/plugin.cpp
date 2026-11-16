@@ -1187,13 +1187,14 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         return text.str();
     }
     static std::wstring display_weight(double value) {
-        std::wostringstream out;out.imbue(std::locale::classic());out<<std::fixed<<std::setprecision(4)<<(std::abs(value)<.00005?0:value);
+        if(std::abs(value)<1e12)value=std::trunc(value*100+std::copysign(1e-9,value))/100;
+        std::wostringstream out;out.imbue(std::locale::classic());out<<std::fixed<<std::setprecision(2)<<(std::abs(value)<.01?0:value);
         auto text=out.str();while(!text.empty() && text.back()==L'0')text.pop_back();if(!text.empty() && text.back()==L'.')text.pop_back();return text;
     }
     std::wstring weight_summary(const std::string& key) {
         const auto base=effective_weight(key).weight;
         const auto points=(statistics_.options.smart || statistics_.options.persist)?base*smart_score(key):0;
-        return display_weight(base)+(points<0?L" - ":L" + ")+display_weight(std::abs(points))+L" = "+display_weight(base+points);
+        return display_weight(base)+(points<0?L" - ":L" + ")+display_weight(std::abs(points));
     }
     void save_adjustment_points(const std::vector<std::string>& keys,double points) {
         std::map<std::string,double> values;
@@ -1650,7 +1651,7 @@ public:
                 for(const auto& k:learning_before_)if(std::abs(learned_weight(k.first,mean)-k.second)>1e-9)++changed;
                 std::wostringstream text;
                 text<<(r.kind=="F"?L"Smart weights: ":L"Listening balance: ")<<from_utf8(r.kind=="F"?r.label:"qualified listen")<<L" - "<<from_utf8(r.title.empty()?key:r.title)
-                    <<L": weight "<<std::fixed<<std::setprecision(4)<<old<<L" to "<<now<<L" ("<<std::showpos<<(now-old)<<std::noshowpos<<L"); "<<changed<<L" track(s) changed";
+                    <<L": weight "<<display_weight(old)<<L" to "<<display_weight(now)<<L" ("<<(now>=old?L"+":L"")<<display_weight(now-old)<<L"); "<<changed<<L" track(s) changed";
                 learning_notice_=text.str();log_.write("learning.change",utf8(learning_notice_));
             }
         };
