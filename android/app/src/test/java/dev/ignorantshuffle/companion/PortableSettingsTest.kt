@@ -11,7 +11,7 @@ class PortableSettingsTest {
         assertTrue(value.balance); assertEquals(0.5, value.balanceStrength, 0.0)
         assertEquals(SmartWeightOptions(true, 2.0, 0.25, true, false, true, false), value.smart)
         assertEquals(value, PortableSettings.decode(value.encode()))
-        val saved=value.copy(smart=value.smart.copy(persist=true))
+        val saved=value.copy(rules=value.rules.copy(cooldownQualifiedOnly=true),smart=value.smart.copy(persist=true))
         assertEquals(saved,PortableSettings.decode(saved.encode()))
     }
     @Test fun invalidFilesDoNotProducePartialSettings() {

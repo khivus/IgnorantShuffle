@@ -156,6 +156,9 @@ class AimpController(private val context: Context) {
         }
         if (connected && !pending) { updatePreview("Listening totals changed"); scheduleTimer() }
     }
+    private val cooldownListening = ListeningStatistics { delta ->
+        if (delta.plays > 0) model.qualifiedListen(delta.session.key)
+    }.apply { collecting(true) }
     private val queueStore = context.getSharedPreferences("app-queue", Context.MODE_PRIVATE)
 
     private val statisticsPoll = Runnable { if (connected) guarded { read(rearm = false) } }
@@ -455,7 +458,7 @@ class AimpController(private val context: Context) {
         native = null; callback = null; connected = false; actions = 0
         // Disconnect cancels work, not the user's saved on/off choice.
         automatic = preferences.automatic
-        model.disconnect(); tracks = emptyList(); playback = Playback(); preview = Choice(null); canPrevious = false
+        cooldownListening.disconnect(); model.disconnect(); tracks = emptyList(); playback = Playback(); preview = Choice(null); canPrevious = false
         status = reason
         notifications.clear()
         notificationStatus = if (preferences.notifyRoll) "Waiting for a connected AIMP session" else "Next-roll notifications are off"
@@ -554,14 +557,14 @@ class AimpController(private val context: Context) {
             }
             when (val decision = reactive.observe(next, SystemClock.elapsedRealtime(), preferences.correctionDelayMs)) {
                 ReactiveDecision.Wait -> {
-                    statistics.engine.reject()
+                    statistics.engine.reject(); cooldownListening.reject()
                     handler.removeCallbacks(endTimer); scheduled = null
                     playback = next
                     scheduleReactivePoll(); sustainCpu()
                     return // Do not count the rejected fragment in history/cooldown/finite progress.
                 }
                 is ReactiveDecision.Correct -> {
-                    statistics.engine.reject()
+                    statistics.engine.reject(); cooldownListening.reject()
                     playback = next
                     log("REACTIVE roll=${decision.roll.sequence}; observed=${decision.rejected}; target=${decision.roll.choice.track?.key}; stable=${preferences.correctionDelayMs}ms")
                     if (decision.roll.choice.track == null) {
@@ -600,11 +603,13 @@ class AimpController(private val context: Context) {
             if (model.queue != appQueue) saveQueue(model.queue)
         }
         val observed = current ?: title.takeIf { it.isNotBlank() }?.let { Track(-1, mediaId, mediaUri, it, next.artist) }
-        if (operation?.correctivePause != true && (operation?.target == null || operation?.target == observed?.key))
+        if (operation?.correctivePause != true && (operation?.target == null || operation?.target == observed?.key)) {
+            cooldownListening.observe(next.copy(track = observed), SystemClock.elapsedRealtime(), System.currentTimeMillis(), restartedObservation)
             statistics.engine.observe(next.copy(track = observed?.copy(statisticsIdentity=folder.statisticsKey(observed))), SystemClock.elapsedRealtime(), System.currentTimeMillis(), restartedObservation,
                 userReplay = operation?.userReplay==true, automaticTransition = operation?.automaticSelection==true || operation?.fallback==true,
                 manualSwitch = operation?.let { it.target==observed?.key && !it.automaticSelection && !it.userReplay && !it.fallback && !it.reactiveCorrection }==true)
-        else statistics.engine.reject()
+        }
+        else { statistics.engine.reject(); cooldownListening.reject() }
         observeVolume(if (snapshot != null) snapshot.audioInfo else c.playbackInfo)
         handler.removeCallbacks(statisticsPoll)
         if (next.state == PlaybackState.STATE_PLAYING) handler.postDelayed(statisticsPoll, 1000)

@@ -8,10 +8,12 @@ int main(){try{
     check(s.default_weight==7.5 && s.minimum==.5 && s.cooldown==12 && s.finite);
     check(s.learning.balance && s.learning.balance_strength==.5 && s.learning.smart && s.learning.strength==2 && s.learning.limit==.25);
     check(s.learning.skips && !s.learning.completions && s.learning.replays && !s.learning.volume);
-    auto legacy=s.encode();legacy.erase("persist");check(legacy.entries()==v.entries());
-    auto saved=s;saved.learning.persist=true;
+    auto legacy=s.encode();legacy.erase("persist");legacy.erase("cooldownQualifiedOnly");check(legacy.entries()==v.entries());
+    check(!s.cooldown_qualified_only);
+    auto saved=s;saved.learning.persist=true;saved.cooldown_qualified_only=true;
+    check(ignorant::SharedSettings::decode(saved.encode()).cooldown_qualified_only);
     check(ignorant::SharedSettings::decode(saved.encode()).learning.persist);
-    for(const auto& bad:std::vector<std::pair<std::string,double>>{{"version",2},{"cooldown",1.5},{"cooldown",10001},{"minimum",0},{"finite",2},{"limit",.8},{"balanceStrength",2}}){
+    for(const auto& bad:std::vector<std::pair<std::string,double>>{{"version",2},{"cooldown",1.5},{"cooldown",10001},{"minimum",0},{"finite",2},{"cooldownQualifiedOnly",2},{"limit",.8},{"balanceStrength",2}}){
         auto broken=v;broken.set(bad.first,bad.second);bool rejected=false;try{ignorant::SharedSettings::decode(broken);}catch(...){rejected=true;}check(rejected);
     }
     auto missing=v;missing.erase("smart");bool rejected=false;try{ignorant::SharedSettings::decode(missing);}catch(...){rejected=true;}check(rejected);

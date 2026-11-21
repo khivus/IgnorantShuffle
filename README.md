@@ -69,3 +69,5 @@ Both x64 and x86 builds have automated coverage for shuffle behavior, storage, l
 This plugin was made using **AI**, with OpenAI Codex assisting with its implementation, documentation, and tests.
 
 IgnorantShuffle is open source under the [MIT License](LICENSE). The separately downloaded AIMP SDK retains its own license terms.
+
+Optional **Cooldown only after a qualified listen** uses the existing qualification rule (30 seconds of observed listening or half the track, whichever is shorter; 30 seconds when duration is unknown). Selecting, starting, or skipping before qualification does not start or advance cooldown. In this mode, the cooldown count measures other qualified listens. The option defaults off, persists locally, and is included in shared settings. Switching modes clears cooldown history; playback history and finite-pass progress remain separate. Statistics collection need not be enabled.

@@ -21,7 +21,7 @@ data class Track(val queueId: Long, val mediaId: String?, val uri: String?, val 
 }
 
 data class Settings(val defaultWeight: Double = 5.0, val cooldown: Int = 3, val finite: Boolean = false,
-    val minimumWeight: Double = 1.0) {
+    val minimumWeight: Double = 1.0, val cooldownQualifiedOnly: Boolean = false) {
     fun validate() {
         require(defaultWeight.isFinite() && defaultWeight >= 0) { "Default weight must be finite and nonnegative" }
         require(cooldown in 0..10000) { "Cooldown must be between 0 and 10000" }
@@ -118,6 +118,7 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
         val keep = preservePreview && settings == this.settings && preview?.track?.let { t ->
             (this.weights[t.key] ?: this.settings.defaultWeight) == (weights[t.key] ?: settings.defaultWeight)
         } == true
+        if (settings.cooldownQualifiedOnly != this.settings.cooldownQualifiedOnly) recent.clear()
         this.settings = settings
         this.weights = weights.toMap()
         if (changedMode) newPass()
@@ -151,9 +152,16 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
             }
         }
         currentKey = key
-        recent.add(key)
+        if (!settings.cooldownQualifiedOnly) recent.add(key)
         if (recent.size > 10001) recent.removeAt(0)
         if (settings.finite) played.add(key)
+        preview = null
+    }
+
+    fun qualifiedListen(key: String) {
+        if (!settings.cooldownQualifiedOnly) return
+        recent.add(key)
+        if (recent.size > 10001) recent.removeAt(0)
         preview = null
     }
 

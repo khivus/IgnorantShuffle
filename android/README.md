@@ -365,3 +365,5 @@ new APK has been tested on a phone.
     AIMP changes, no history, finite-pass completion, reconnection and restart.
     Verify both choices persist and old actions cannot run after disabling a
     button. Also test notification denial and a blocked channel.
+
+Optional **Cooldown only after a qualified listen** uses the existing qualification rule (30 seconds of observed listening or half the track, whichever is shorter; 30 seconds when duration is unknown). Selecting, starting, or skipping before qualification does not start or advance cooldown. In this mode, the cooldown count measures other qualified listens. The option defaults off, persists locally, and is included in shared settings. Switching modes clears cooldown history; playback history and finite-pass progress remain separate. Statistics collection need not be enabled.

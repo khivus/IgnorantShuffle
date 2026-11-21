@@ -349,6 +349,7 @@ private fun PlaylistPage(m: AimpController, edit: (Track) -> Unit) {
 private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, importWeights: () -> Unit, exportWeights: () -> Unit, group: String, batteryExempt: Boolean, batterySettings: () -> Unit) {
     var default by rememberSaveable(m.settings.defaultWeight) { mutableStateOf(m.settings.defaultWeight.toString()) }
     var minimum by rememberSaveable(m.settings.minimumWeight) { mutableStateOf(m.settings.minimumWeight.toString()) }
+    var cooldownQualifiedOnly by rememberSaveable(m.settings.cooldownQualifiedOnly) { mutableStateOf(m.settings.cooldownQualifiedOnly) }
     var cooldown by rememberSaveable(m.settings.cooldown) { mutableStateOf(m.settings.cooldown.toString()) }
     var finite by rememberSaveable(m.settings.finite) { mutableStateOf(m.settings.finite) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
@@ -525,13 +526,14 @@ private fun ShufflePage(m: AimpController, chooseMusicFolder: () -> Unit, import
                 OutlinedTextField(minimum, { minimum = it }, label = { Text("Minimum eligible weight") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Text("Default 1: weights 1 and above are eligible. The minimum must be greater than 0; fractions such as 0.1 are allowed. Weights below it are excluded. Play now stays available.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(cooldown, { cooldown = it }, label = { Text("Cooldown in track starts") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(cooldown, { cooldown = it }, label = { Text("Cooldown in tracks") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Text("0 turns cooldown off. Short lists fall back to choices at or above the minimum weight.", style = MaterialTheme.typography.bodySmall)
+                Toggle("Cooldown only after a qualified listen", "Early skips stay eligible. Cooldown advances with qualified listens: 30 seconds or half the track, whichever is shorter.", cooldownQualifiedOnly, onChange = { cooldownQualifiedOnly = it })
                 Toggle("Finite pass", "Play each eligible identity once, then complete the pass", finite, onChange = { finite = it })
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 ActionButton(onClick = {
                     val value = Settings(default.toDoubleOrNull() ?: Double.NaN, cooldown.toIntOrNull() ?: -1, finite,
-                        minimum.toDoubleOrNull() ?: Double.NaN)
+                        minimum.toDoubleOrNull() ?: Double.NaN, cooldownQualifiedOnly)
                     runCatching { value.validate() }.onSuccess { error = null; m.configure(value) }.onFailure { error = it.message }
                 }, enabled = !m.pending && m.storageError == null, modifier = Modifier.fillMaxWidth()) { Text("Apply shuffle settings") }
             }

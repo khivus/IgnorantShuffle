@@ -8,7 +8,7 @@ object SettingsJson {
         val json = JSONObject(text)
         require(json.getInt("version") in 1..2) { "Unsupported settings version" }
         val settings = Settings(json.getDouble("default"), json.getInt("cooldown"), json.getBoolean("finite"),
-            if (json.has("minimumWeight")) json.getDouble("minimumWeight") else Settings().minimumWeight)
+            if (json.has("minimumWeight")) json.getDouble("minimumWeight") else Settings().minimumWeight, json.optBoolean("cooldownQualifiedOnly", false))
         settings.validate()
         val values = json.optJSONObject("weights") ?: JSONObject()
         val weights = values.keys().asSequence().associateWith { values.getDouble(it) }
@@ -19,7 +19,7 @@ object SettingsJson {
     fun encodeSettings(settings: Settings): String {
         settings.validate()
         return JSONObject().put("version", 2).put("default", settings.defaultWeight)
-            .put("cooldown", settings.cooldown).put("finite", settings.finite)
+            .put("cooldownQualifiedOnly", settings.cooldownQualifiedOnly).put("cooldown", settings.cooldown).put("finite", settings.finite)
             .put("minimumWeight", settings.minimumWeight).toString(2)
     }
 

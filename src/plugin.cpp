@@ -193,6 +193,19 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     bool queue_refresh_pending_ = false;
     bool awaiting_stream_start_ = false;
     int cooldown_ = 3;
+    bool cooldown_qualified_only_ = false;
+    std::string cooldown_record_;
+    std::uint64_t cooldown_session_ = 0;
+    ignorant::ListeningObserver cooldown_observer_{[this](const ignorant::StatRecord& r) {
+        if (r.plays && cooldown_record_ != r.session+std::to_string(r.started)) {
+            cooldown_record_ = r.session+std::to_string(r.started);
+            if (cooldown_qualified_only_) {
+                recent_tracks_.push_back(r.key);
+                if (recent_tracks_.size()>10000) recent_tracks_.pop_front();
+                changed();
+            }
+        }
+    }};
     double minimum_weight_ = 1.0;
     std::deque<std::string> recent_tracks_;
     Ref<IAIMPPlaylistItem> prepared_track_;
@@ -215,7 +228,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         const bool exists=std::filesystem::exists(file);
         if(exists){
             const auto value=ignorant::SharedSettings::decode(values);
-            weights_.set_default(value.default_weight);minimum_weight_=value.minimum;cooldown_=value.cooldown;
+            weights_.set_default(value.default_weight);minimum_weight_=value.minimum;cooldown_=value.cooldown;if(cooldown_qualified_only_!=value.cooldown_qualified_only)recent_tracks_.clear();cooldown_qualified_only_=value.cooldown_qualified_only;
             const bool changed_finite=finite_!=value.finite;finite_=value.finite;
             statistics_.options=value.learning;statistics_.options_changed();
             if(changed_finite){reset_finite_progress();}
@@ -230,7 +243,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         const auto file=shared_root_/ignorant::shared_settings_filename;
         ignorant::Weights before;before.load(file);
         if(std::filesystem::exists(file)!=shared_exists_ || before.entries()!=shared_before_)throw std::runtime_error("Settings changed on another device. Reload before publishing");
-        ignorant::SharedSettings value;value.default_weight=weights_.fallback();value.minimum=minimum_weight_;value.cooldown=cooldown_;value.finite=finite_;value.learning=statistics_.options;
+        ignorant::SharedSettings value;value.default_weight=weights_.fallback();value.minimum=minimum_weight_;value.cooldown=cooldown_;value.cooldown_qualified_only=cooldown_qualified_only_;value.finite=finite_;value.learning=statistics_.options;
         auto values=before;const auto encoded=value.encode();for(const auto& entry:encoded.entries())values.set(entry.first,entry.second);
         if(!shared_exists_ || values.entries()!=before.entries()) {
             if(shared_exists_)std::filesystem::copy_file(file,file.wstring()+L".bak",std::filesystem::copy_options::overwrite_existing);
@@ -306,6 +319,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         success = (write_changed(L"Shuffle", L"DefaultWeight", weight_text(weights_.fallback()).c_str(), preferences_file_.c_str()) != FALSE) && success;
         success = (write_changed(L"Shuffle", L"MinimumWeight", weight_text(minimum_weight_).c_str(), preferences_file_.c_str()) != FALSE) && success;
         auto save=[&](const wchar_t* section,const wchar_t* key,const std::wstring& value) {success=(write_changed(section,key,value.c_str(),preferences_file_.c_str())!=FALSE)&&success;};
+        save(L"Monitor",L"CooldownQualifiedOnly",cooldown_qualified_only_?L"1":L"0");
         const auto& o=statistics_.options;
         save(L"Statistics",L"Device",from_utf8(statistics_origin_));save(L"Statistics",L"Collecting",statistics_.collecting?L"1":L"0");
         for(const auto& option:std::vector<std::pair<const wchar_t*,bool>>{{L"Persist",o.persist},{L"Balance",o.balance},{L"Smart",o.smart},{L"Skips",o.skips},{L"Completions",o.completions},{L"Replays",o.replays},{L"Volume",o.volume}})save(L"Learning",option.first,option.second?L"1":L"0");
@@ -352,6 +366,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         enabled_ = GetPrivateProfileIntW(L"Monitor", L"Enabled", 1, preferences_file_.c_str()) != 0;
         pinned_ = GetPrivateProfileIntW(L"Monitor", L"Pinned", 1, preferences_file_.c_str()) != 0;
         side_panel_ = GetPrivateProfileIntW(L"Monitor", L"Attached", 0, preferences_file_.c_str()) != 0;
+        cooldown_qualified_only_ = GetPrivateProfileIntW(L"Monitor", L"CooldownQualifiedOnly", 0, preferences_file_.c_str()) != 0;
         cooldown_ = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Monitor", L"CooldownTracks", 3, preferences_file_.c_str())), 0, 10000);
         finite_ = GetPrivateProfileIntW(L"Shuffle", L"FinitePlaylist", 0, preferences_file_.c_str()) != 0;
         wchar_t fallback[512]{};
@@ -469,6 +484,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     // queue requests project their pending predecessors without committing them.
     std::vector<std::string> projected_recent(const std::shared_ptr<Occurrence>& source) {
         std::vector<std::string> recent(recent_tracks_.begin(), recent_tracks_.end()), pending;
+        if(cooldown_qualified_only_) return recent;
         auto node = source;
         for (std::size_t depth = 0; node && node != audible_ && depth < 256; ++depth) {
             if (!node->item || !node->planned) break;
@@ -506,7 +522,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         if (pool->fallback) return L"Playlist too short: " + std::to_wstring(pool->distinct_positive) +
             L" eligible tracks; need " + std::to_wstring(cooldown_ + 1) + L". Using weighted shuffle without cooldown.";
         if (!pool->distinct_positive) return L"No tracks meet the minimum eligible weight.";
-        return L"Cooldown: " + std::to_wstring(cooldown_) + L" other tracks before a repeat. Cooling down: " + std::to_wstring(pool->blocked) + L".";
+        return L"Cooldown: " + std::to_wstring(cooldown_) + (cooldown_qualified_only_?L" other qualified listens before a repeat. Cooling down: ":L" other tracks before a repeat. Cooling down: ") + std::to_wstring(pool->blocked) + L".";
     }
     void set_enabled(bool enabled) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -830,7 +846,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         sample.playing=state==AIMP_PLAYER_STATE_PLAYING;sample.stopped=state==AIMP_PLAYER_STATE_STOPPED;
         auto current=current_track();std::string key=current?track_key(current.get()):"";
         double position=0,duration=0;float volume=0;
-        if(!sample.stopped && (FAILED(player_->GetPosition(&position)) || !std::isfinite(position) || position<0 || position>1e9)){statistics_.pause(!statistics_.collecting);return;}
+        if(!sample.stopped && (FAILED(player_->GetPosition(&position)) || !std::isfinite(position) || position<0 || position>1e9)){statistics_.pause(!statistics_.collecting);cooldown_observer_.gap();return;}
         sample.position=static_cast<std::int64_t>(position*1000);
         if(SUCCEEDED(player_->GetDuration(&duration)) && std::isfinite(duration) && duration>0 && duration<1e9)sample.duration=static_cast<std::int64_t>(duration*1000);
         if(SUCCEEDED(player_->GetVolume(&volume)) && std::isfinite(volume) && volume>=0 && volume<=1){sample.volume=static_cast<int>(volume*1000);sample.volume_max=1000;}
@@ -838,6 +854,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         sample.speed=static_cast<double>(speed)*tempo;
         Ref<IAIMPFileInfo> info;if(SUCCEEDED(player_->GetInfo(info.put())) && info){sample.title=utf8(wide(string_property(info.get(),AIMP_FILEINFO_PROPID_TITLE).get()));sample.artist=utf8(wide(string_property(info.get(),AIMP_FILEINFO_PROPID_ARTIST).get()));}
         if(sample.title.empty())sample.title=std::filesystem::u8path(key).stem().u8string();
+        if(restarted) ++cooldown_session_;
+        sample.key=key;sample.session=key+std::to_string(cooldown_session_);sample.restarted=restarted;cooldown_observer_.observe(sample,{},true);
         sample.manual_switch=restarted && !manual_backward_ && GetTickCount64()<=manual_switch_until_;
         sample.restarted=restarted;sample.replay=selected_replay_ || (restarted && manual_backward_);sample.automatic=selected_automatic_ && !sample.manual_switch;statistics_.observe(sample,key);
     }
@@ -1443,6 +1461,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         SetDlgItemTextW(window,IDC_DEFAULT_WEIGHT,weight_text(weights_.fallback()).c_str());
         SetDlgItemTextW(window,IDC_MINIMUM_WEIGHT,weight_text(minimum_weight_).c_str());
         SetDlgItemInt(window,IDC_COOLDOWN,cooldown_,FALSE);
+        CheckDlgButton(window,IDC_COOLDOWN_QUALIFIED,cooldown_qualified_only_?BST_CHECKED:BST_UNCHECKED);
         CheckDlgButton(window,IDC_FINITE_PLAYLIST,finite_?BST_CHECKED:BST_UNCHECKED);
         for(const auto id:{IDC_COOLDOWN,IDC_APPLY_COOLDOWN})EnableWindow(GetDlgItem(window,id),!finite_);
         storage_status(window);
@@ -1468,6 +1487,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
                 const auto id=LOWORD(wparam);
                 if(id==IDC_APPLY_DEFAULT_WEIGHT)self->apply_default_weight(window);
                 else if(id==IDC_APPLY_MINIMUM_WEIGHT)self->apply_minimum_weight(window);
+                else if(id==IDC_COOLDOWN_QUALIFIED){self->cooldown_qualified_only_=IsDlgButtonChecked(window,id)==BST_CHECKED;self->recent_tracks_.clear();self->save_preferences();self->changed();self->refresh_cooldown_preview();self->update_monitor();}
                 else if(id==IDC_APPLY_COOLDOWN){BOOL valid=FALSE;const auto value=GetDlgItemInt(window,IDC_COOLDOWN,&valid,FALSE);if(!valid || value>10000)throw std::runtime_error("Cooldown must be 0 to 10000");self->set_cooldown(value);}
                 else if(id==IDC_FINITE_PLAYLIST){self->set_finite(IsDlgButtonChecked(window,id)==BST_CHECKED);for(const auto control:{IDC_COOLDOWN,IDC_APPLY_COOLDOWN})EnableWindow(GetDlgItem(window,control),!self->finite_);}
                 else return FALSE;
@@ -1711,7 +1731,7 @@ public:
             // already playing, even though we missed its stream-start event.
             if (auto current = current_track()) {
                 const auto key = track_key(current.get());
-                if (!key.empty()) recent_tracks_.push_back(key);
+                if (!key.empty() && !cooldown_qualified_only_) recent_tracks_.push_back(key);
                 commit_finite_start(current);
             }
             if (storage_error_.empty()) refresh_cooldown_preview();
@@ -1778,7 +1798,7 @@ public:
                 if (started) {
                     const auto key = track_key(started.get());
                     if (!key.empty()) {
-                        recent_tracks_.push_back(key);
+                        if (!cooldown_qualified_only_) recent_tracks_.push_back(key);
                         if (recent_tracks_.size() > 10000) recent_tracks_.pop_front();
                         log_.write("cooldown.played", "history=" + std::to_string(recent_tracks_.size()) + " " + describe_item(started.get()));
                     }

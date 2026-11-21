@@ -906,6 +906,17 @@ struct PluginChecks {
         plugin.GetNext(&excluded, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &next);
         check(!same_object(next.item.get(), &first) && !same_object(next.item.get(), &excluded), "Toggling preserves confirmed listening history.");
         check(plugin.recent_tracks_.size() == played + 1, "Enabling the plugin and drawing a choice do not advance cooldown.");
+        plugin.cooldown_qualified_only_ = true;
+        plugin.recent_tracks_.clear();
+        check(plugin.projected_recent(plugin.playing_).empty(), "Qualified cooldown does not project unqualified starts.");
+        ignorant::ListeningSample sample;sample.key="cool-first.flac";sample.session="test";sample.day="2026-11-21";
+        sample.duration=60000;sample.playing=true;
+        for(int i=0;i<=31;++i) {
+            sample.elapsed=i*1000;sample.wall=100000+i*1000;sample.position=i*1000;
+            plugin.cooldown_observer_.observe(sample,{},true);
+            if(i<30)check(plugin.recent_tracks_.empty(), "Early listening does not trigger cooldown.");
+        }
+        check(plugin.recent_tracks_.size()==1, "Qualification triggers cooldown exactly once.");
         plugin.set_cooldown(0);
         check(plugin.monitor_state().cooldown_status.find(L"off") != std::wstring::npos, "Zero restores the default no-cooldown mode.");
         plugin.Finalize();

@@ -20,6 +20,22 @@ class ShuffleModelTest {
     }
     private fun model(p: FakePlanner = FakePlanner()) = ShuffleModel(p).also { it.catalog(listOf(a, b)) }
 
+    @Test fun cooldownWaitsForQualification() {
+        val planner = FakePlanner()
+        val m = model(planner)
+        m.configure(Settings(cooldownQualifiedOnly = true), emptyMap())
+        m.confirmPlaying(a)
+        m.confirmPlaying(b)
+        m.next()
+        assertTrue(planner.recent.isEmpty())
+        m.qualifiedListen(b.key)
+        m.next()
+        assertEquals(listOf(b.key), planner.recent)
+        m.confirmPlaying(a)
+        m.next()
+        assertEquals(listOf(b.key), planner.recent)
+    }
+
     @Test fun fastTrackIdentityPreservesExistingPersistedKeys() {
         for (id in listOf("a", "", "Музыка 🎵")) {
             val track = Track(7, id, null, "Song 🎵", "Артист")

@@ -1,4 +1,5 @@
 #pragma once
+#define IDC_COOLDOWN_QUALIFIED 1250
 #define IDD_SETTINGS 101
 #define IDC_TRACKS 1001
 #define IDC_WEIGHT 1002
