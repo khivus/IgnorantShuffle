@@ -730,6 +730,8 @@ struct PluginChecks {
         RECT old_field{0, 0, 0, 17}; MapDialogRect(panel, &old_field);
         check(!IsWindowVisible(GetDlgItem(panel,IDC_COOLDOWN)),
             "Cooldown editing lives in Settings rather than the compact player.");
+        check(!GetDlgItem(panel,IDC_COOLDOWN_QUALIFIED),
+            "Qualified-listen cooldown checkbox belongs only in Settings and cannot overlap compact controls.");
         plugin.monitor_.restore_position(70, 80);
         plugin.monitor_.restore_size(400, 320);
         SendMessageW(panel, WM_EXITSIZEMOVE, 0, 0);

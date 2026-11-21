@@ -64,7 +64,6 @@ BEGIN
     CONTROL "Weighted shuffle enabled", IDC_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 10, 10, 176, 14
     CONTROL "Always on top", IDC_PINNED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 210, 10, 90, 14
     CONTROL "Attach to AIMP", IDC_ATTACHED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 110, 27, 180, 14
-    CONTROL "Cooldown only after a qualified listen", IDC_COOLDOWN_QUALIFIED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 12, 195, 320, 16
     CONTROL "Play playlist once", IDC_FINITE_PLAYLIST, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 10, 43, 110, 12
     LTEXT "Waiting for AIMP...", IDC_MODE, 10, 31, 290, 24, SS_NOPREFIX
     GROUPBOX "Current track", IDC_CURRENT_GROUP, 10, 58, 290, 83
