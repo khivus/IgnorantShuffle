@@ -9,7 +9,7 @@
 
 namespace {
 enum {RANGE=2101,SEARCH,TABS,LIST,SUMMARY,CHART,COLLECT,SYNC,CSV,JSON,CLEAR,
-    BALANCE,BALANCE_STRENGTH,SMART,STRENGTH,LIMIT,SKIPS,FULL,REPLAYS,VOLUME,APPLY,HELP,LOG_FOLDER,PERSIST};
+    BALANCE,BALANCE_STRENGTH,SMART,STRENGTH,LIMIT,SKIPS,FULL,REPLAYS,VOLUME,APPLY,HELP,LOG_FOLDER,PERSIST,ROLL_SCOPE};
 std::wstring wide(const std::string& text) {
     if(text.empty())return {};
     const auto count=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,text.data(),static_cast<int>(text.size()),nullptr,0);
@@ -46,6 +46,8 @@ void StatisticsWindow::create_controls() {
     combo(window_,RANGE,{L"Today",L"7 days",L"30 days",L"All time"});SendDlgItemMessageW(window_,RANGE,CB_SETCURSEL,1,0);
     add(SEARCH,L"EDIT",L"",WS_TABSTOP|ES_AUTOHSCROLL,WS_EX_CLIENTEDGE);SendDlgItemMessageW(window_,SEARCH,EM_SETCUEBANNER,TRUE,reinterpret_cast<LPARAM>(L"Search tracks, artists, paths or logs"));
     add(COLLECT,L"BUTTON",L"Collect statistics",BS_AUTOCHECKBOX|WS_TABSTOP);
+    add(ROLL_SCOPE,L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_TABSTOP);
+    combo(window_,ROLL_SCOPE,{L"Next roll: All devices",L"Next roll: This device"});
     add(SYNC,L"BUTTON",L"Reload / sync",BS_PUSHBUTTON|WS_TABSTOP);add(CSV,L"BUTTON",L"Export CSV",BS_PUSHBUTTON|WS_TABSTOP);add(JSON,L"BUTTON",L"Export JSON",BS_PUSHBUTTON|WS_TABSTOP);add(CLEAR,L"BUTTON",L"Clear statistics...",BS_PUSHBUTTON|WS_TABSTOP);
     add(LOG_FOLDER,L"BUTTON",L"Open log folder",BS_PUSHBUTTON|WS_TABSTOP);
     add(TABS,WC_TABCONTROLW,L"",WS_TABSTOP);
@@ -74,12 +76,14 @@ void StatisticsWindow::layout() {
     place(RANGE,m,m,units(130),units(180));place(SEARCH,m+units(138),m,w-3*m-units(310),line);place(COLLECT,w-m-units(170),m,units(170),line);
     const int toolbar=m+line+gap;int x=m;
     for(const auto id:{SYNC,CSV,JSON,CLEAR}) {const int width=units(id==CLEAR?150:115);place(id,x,toolbar,width,line);x+=width+gap;}
-    const int tabs=toolbar+line+gap;place(TABS,m,tabs,w-2*m,units(30));
+    const int scope_top=toolbar+line+gap;
+    place(ROLL_SCOPE,m,scope_top,units(230),units(160));
+    const int tabs=scope_top+line+gap;place(TABS,m,tabs,w-2*m,units(30));
     ShowWindow(GetDlgItem(window_,TABS),page_override_>=0?SW_HIDE:SW_SHOW);
     const int page=(page_override_>=0?page_override_:TabCtrl_GetCurSel(GetDlgItem(window_,TABS)));
     const bool learning=page==5,overview=page==0;
     const int top=learning?m:tabs+(page_override_>=0?0:units(38));
-    for(const int id:{RANGE,SEARCH,COLLECT,SYNC,CSV,JSON,CLEAR})ShowWindow(GetDlgItem(window_,id),learning?SW_HIDE:SW_SHOW);
+    for(const int id:{RANGE,SEARCH,COLLECT,SYNC,CSV,JSON,CLEAR,ROLL_SCOPE})ShowWindow(GetDlgItem(window_,id),learning?SW_HIDE:SW_SHOW);
     ShowWindow(GetDlgItem(window_,LOG_FOLDER),page==6?SW_SHOW:SW_HIDE);place(LOG_FOLDER,x,toolbar,units(120),line);
     ShowWindow(GetDlgItem(window_,SUMMARY),learning?SW_HIDE:SW_SHOW);
     ShowWindow(GetDlgItem(window_,CHART),overview?SW_SHOW:SW_HIDE);
@@ -135,6 +139,7 @@ void StatisticsWindow::refresh() {
     if(!window_ || !on_data || updating_)return;
     updating_=true;struct Guard{bool& value;~Guard(){value=false;}}guard{updating_};
     data_=on_data();CheckDlgButton(window_,COLLECT,data_.collecting?BST_CHECKED:BST_UNCHECKED);
+    SendDlgItemMessageW(window_,ROLL_SCOPE,CB_SETCURSEL,data_.sum_device_rolls?0:1,0);
     const int period=static_cast<int>(SendDlgItemMessageW(window_,RANGE,CB_GETCURSEL,0,0));
     const std::string since=period==0?ignorant::statistics_day():period==1?ignorant::statistics_day(6):period==2?ignorant::statistics_day(29):"";
     summary_=ignorant::summarize(data_.records,since);
@@ -166,7 +171,7 @@ void StatisticsWindow::refresh() {
         }
     }
     if(page==4) {
-        columns={L"Shuffle metric",L"Count / progress"};for(const auto& c:summary_.counters)rows.push_back({c.first,{wide(c.first),std::to_wstring(c.second)}});
+        columns={L"Shuffle metric",L"Count / progress"};for(const auto& c:summary_.counters)rows.push_back({c.first,{c.first=="roll"?L"Rolls":wide(c.first),std::to_wstring(c.second)}});
         rows.push_back({"live-pass",{L"Current finite pass",data_.finite?std::to_wstring(data_.pass_heard)+L" heard; "+std::to_wstring(data_.pass_remaining)+L" eligible remaining":L"Off"}});
     }
     if(page==6) {columns={L"Diagnostic event (newest first; double-click for full text)"};std::istringstream input(data_.logs);std::string line;while(std::getline(input,line))if(!line.empty())rows.push_back({line,{wide(line)}});std::reverse(rows.begin(),rows.end());}
@@ -210,6 +215,10 @@ LRESULT CALLBACK StatisticsWindow::procedure(HWND window,UINT message,WPARAM wpa
             if(n->idFrom==LIST && n->code==NM_DBLCLK){const int index=ListView_GetNextItem(n->hwndFrom,-1,LVNI_SELECTED);if(index>=0 && static_cast<std::size_t>(index)<self->rows_.size()){std::wstring detail;for(const auto& c:self->rows_[index].cells)detail+=c+L"\r\n";SetWindowTextW(GetDlgItem(window,SUMMARY),detail.c_str());}return 0;}
         }
         if(message==WM_COMMAND){const int id=LOWORD(wparam),event=HIWORD(wparam);
+            if(id==ROLL_SCOPE && event==CBN_SELCHANGE){
+                if(self->on_roll_scope)self->on_roll_scope(SendDlgItemMessageW(window,ROLL_SCOPE,CB_GETCURSEL,0,0)==0);
+                self->refresh();return 0;
+            }
             if((id==RANGE && event==CBN_SELCHANGE) || (id==SEARCH && event==EN_CHANGE)){self->refresh();return 0;}
             if(event==BN_CLICKED){
                 if(id==APPLY)self->apply_learning();

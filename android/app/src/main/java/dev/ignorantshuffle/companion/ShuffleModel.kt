@@ -76,7 +76,11 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
     private var smart=SmartWeightOptions()
     private var smartScores: Map<String,Double> = emptyMap()
     private var preview: Choice? = null
+    private var savedFuture: Choice? = null
     var choiceSequence: Long = 0; private set
+    var rollCount: Long = 0; private set
+
+    private fun invalidatePreview() { preview = null; savedFuture = null }
 
     fun weight(track: Track) = weights[track.key] ?: settings.defaultWeight
     fun eligible(track: Track) = weight(track) >= settings.minimumWeight
@@ -88,12 +92,12 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
         balanceStrength=strength
         balanced = enabled; playCounts = counts.toMap(); balanceMean = ListeningBalance.mean(playCounts, tracks)
         // Newly learned totals affect the next roll; keep the currently published commitment.
-        if (changedMode) preview = null
+        if (changedMode) invalidatePreview()
     }
     fun smartWeights(options: SmartWeightOptions, scores: Map<String,Double>) {
         options.validate()
         require(scores.values.all { it.isFinite() })
-        if(smart!=options) preview=null
+        if(smart!=options) invalidatePreview()
         smart=options;smartScores=scores.toMap()
     }
     fun learningFactor(track: Track): Double = (if(balanced) ListeningBalance.factor(track.key,playCounts,balanceMean).pow(balanceStrength) else 1.0) * smart.factor(smartScores[track.key]?:0.0)
@@ -107,7 +111,7 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
 
     fun setQueue(entries: List<QueueEntry>) {
         if (entries == queue) return
-        queue = entries.toList(); preview = null
+        queue = entries.toList(); invalidatePreview()
     }
 
     fun configure(settings: Settings, weights: Map<String, Double>, preservePreview: Boolean = false) {
@@ -122,7 +126,7 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
         this.settings = settings
         this.weights = weights.toMap()
         if (changedMode) newPass()
-        if (!keep) preview = null
+        if (!keep) invalidatePreview()
     }
 
     fun catalog(value: List<Track>) {
@@ -131,15 +135,22 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
         balanceMean = ListeningBalance.mean(playCounts, tracks)
         // A published roll is a commitment, not a request to draw again on queue
         // reorder/addition. Removal of its target requires an explicit new roll.
-        if (changed && preview?.track?.let { chosen -> value.none { it.key == chosen.key } } != false) preview = null
+        if (changed && listOfNotNull(preview, savedFuture).any { choice ->
+            choice.track?.let { chosen -> value.none { it.key == chosen.key } } != false
+        }) invalidatePreview()
     }
 
     fun confirmPlaying(track: Track, restarted: Boolean = false) {
         val key = track.key
         if (key == currentKey && !restarted) return
         val target = navigation
-        if (target != null && timeline.getOrNull(target) == key) cursor = target
+        val fromHistory = target != null && timeline.getOrNull(target) == key
+        if (fromHistory) {
+            if (cursor == timeline.lastIndex) savedFuture = preview
+            cursor = requireNotNull(target)
+        }
         else {
+            savedFuture = null
             while (timeline.size > cursor + 1) timeline.removeAt(timeline.lastIndex)
             timeline.add(key)
             if (timeline.size > 10001) timeline.removeAt(0)
@@ -155,29 +166,32 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
         if (!settings.cooldownQualifiedOnly) recent.add(key)
         if (recent.size > 10001) recent.removeAt(0)
         if (settings.finite) played.add(key)
-        preview = null
+        preview = if (fromHistory && cursor == timeline.lastIndex) savedFuture else null
+        if (preview != null) choiceSequence++
+        if (cursor == timeline.lastIndex) savedFuture = null
     }
 
     fun qualifiedListen(key: String) {
         if (!settings.cooldownQualifiedOnly) return
         recent.add(key)
         if (recent.size > 10001) recent.removeAt(0)
-        preview = null
+        invalidatePreview()
     }
 
     fun newPass() {
         played.clear()
         currentKey?.let { if (settings.finite) played.add(it) }
-        preview = null
+        invalidatePreview()
     }
 
     fun disconnect() {
         tracks = emptyList(); currentKey = null; recent.clear(); played.clear(); timeline.clear()
-        cursor = -1; navigation = null; requestedQueue = null; preview = null
+        cursor = -1; navigation = null; requestedQueue = null; invalidatePreview()
     }
 
     fun next(reroll: Boolean = false): Choice {
         val old = preview
+        if (reroll) savedFuture = null
         if (!reroll && old != null) return old.copy(track = old.track?.let { t -> tracks.firstOrNull { it.key == t.key } })
         queue.firstNotNullOfOrNull { entry -> tracks.firstOrNull { it.key == entry.key && it.selectable && eligible(it) }?.let {
             Choice(it, remaining = tracks.filter(::eligible).count { t -> t.key !in played }, queueEntryId = entry.id)
@@ -190,7 +204,10 @@ class ShuffleModel(private val planner: Planner, private val nativeLearning: Boo
         // while preserving the actual stored weights and their relative chances.
         val selectionWeights = tracks.map(::selectionWeight).toDoubleArray()
         return planner.choose(tracks, selectionWeights, recent.toList(), played.toList(),
-            settings, if (reroll) old?.track?.key.orEmpty() else "").also { preview = it; choiceSequence++ }
+            settings, if (reroll) old?.track?.key.orEmpty() else "").also {
+                preview = it; choiceSequence++
+                if (it.track != null) rollCount++
+            }
     }
 
     fun previous(): Choice? {

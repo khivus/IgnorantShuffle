@@ -46,6 +46,13 @@ internal fun StatisticsPage(m: AimpController, export: (String) -> Unit) {
             Text("Library listening",style=MaterialTheme.typography.titleLarge)
             Text("Only observed playback. Statistics files are saved beside each music root's weights so your folder sync can share them with Windows. No upload service is used.",style=MaterialTheme.typography.bodySmall)
             Text(repository.sharedStatus,style=MaterialTheme.typography.bodySmall)
+            Text("Next roll counter", style=MaterialTheme.typography.titleSmall)
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                StateChip(!m.preferences.sumDeviceRolls,
+                    { m.changePreferences(m.preferences.copy(sumDeviceRolls=false)) }, label={ Text("This device") })
+                StateChip(m.preferences.sumDeviceRolls,
+                    { m.changePreferences(m.preferences.copy(sumDeviceRolls=true)) }, label={ Text("All devices") })
+            }
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                 Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
                     Switch(repository.collecting,{repository.pause(!it)},enabled=repository.ready && repository.error==null)
@@ -127,6 +134,7 @@ internal fun StatisticsPage(m: AimpController, export: (String) -> Unit) {
             }
         }
         if(view=="Shuffle") {
+            item { Metric("Rolls",(s.shuffle["roll"]?:0).toString()) }
             item { Metric("Rerolls",(s.shuffle["reroll"]?:0).toString()) }
             item { Metric("Cooldown fallbacks",(s.shuffle["cooldown_fallback"]?:0).toString()) }
             item { Metric("Finite passes started / completed","${s.shuffle["pass_started"]?:0} / ${s.shuffle["pass_completed"]?:0}") }

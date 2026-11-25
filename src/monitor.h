@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@ struct MonitorState {
     bool can_set_weight = false;
     int selected_weight = -1;
     bool can_reroll = false;
+    std::uint64_t roll_number = 0;
     int cooldown = 3;
     std::wstring cooldown_status;
     std::wstring mode, current_track, current_key, current_weight, next_track, decision, notice, update_status;

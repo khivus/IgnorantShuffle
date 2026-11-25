@@ -111,6 +111,7 @@ struct Occurrence {
     bool decision_ready = false;
     bool started = false;
     bool planned = false;
+    bool roll_counted = false;
     bool rerolled = false;
     bool incoming_fallback = false;
     std::shared_ptr<FinitePass> pass;
@@ -252,6 +253,8 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         settings_window_.feedback(L"Shared settings published. Sync the file with your music.");
     }
     ignorant::LibraryStatistics statistics_;
+    std::uint64_t session_rolls_ = 0;
+    bool sum_device_rolls_ = true;
     ignorant::WeightStorage adjustment_storage_;
     double learning_score_before_=0;
     std::wstring learning_notice_;
@@ -322,6 +325,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         save(L"Monitor",L"CooldownQualifiedOnly",cooldown_qualified_only_?L"1":L"0");
         const auto& o=statistics_.options;
         save(L"Statistics",L"Device",from_utf8(statistics_origin_));save(L"Statistics",L"Collecting",statistics_.collecting?L"1":L"0");
+        save(L"Statistics",L"SumDeviceRolls",sum_device_rolls_?L"1":L"0");
         for(const auto& option:std::vector<std::pair<const wchar_t*,bool>>{{L"Persist",o.persist},{L"Balance",o.balance},{L"Smart",o.smart},{L"Skips",o.skips},{L"Completions",o.completions},{L"Replays",o.replays},{L"Volume",o.volume}})save(L"Learning",option.first,option.second?L"1":L"0");
         save(L"Learning",L"BalanceStrength",weight_text(o.balance_strength));save(L"Learning",L"Strength",weight_text(o.strength));save(L"Learning",L"Limit",weight_text(o.limit));
         std::wstring roots;
@@ -345,6 +349,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         statistics_origin_=utf8(device);
         try {ignorant::statistics_shard(statistics_origin_);}catch(...) {statistics_origin_="windows-"+ignorant::statistics_guid();}
         statistics_.collecting=GetPrivateProfileIntW(L"Statistics",L"Collecting",1,preferences_file_.c_str())!=0;
+        sum_device_rolls_=GetPrivateProfileIntW(L"Statistics",L"SumDeviceRolls",1,preferences_file_.c_str())!=0;
         auto& learning=statistics_.options;
         auto flag=[&](const wchar_t* key,bool fallback){return GetPrivateProfileIntW(L"Learning",key,fallback?1:0,preferences_file_.c_str())!=0;};
         learning.persist=flag(L"Persist",false);learning.balance=flag(L"Balance",false);learning.smart=flag(L"Smart",false);learning.skips=flag(L"Skips",true);learning.completions=flag(L"Completions",true);learning.replays=flag(L"Replays",true);learning.volume=flag(L"Volume",true);
@@ -575,6 +580,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         // request sees this same choice instead of drawing a second one.
         changed(false, false);
         choose_next(source, playlist, previous_choice ? previous_choice->item : Ref<IAIMPPlaylistItem>{}, true);
+        count_next_roll(source);
         statistics_.counter("reroll",track_key(current.get()));
         if (queue_) queue_->NotifyChanged(static_cast<IAIMPExtensionPlaybackQueue*>(this));
         request_monitor_update();
@@ -586,6 +592,7 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
         state.pinned = pinned_;
         state.attached = side_panel_;
         state.finite = finite_;
+        state.roll_number = statistics_.collecting && !music_folders_.empty() ? statistics_.roll_total(sum_device_rolls_) : session_rolls_;
         state.cooldown = cooldown_;
         state.cooldown_status = cooldown_status(cooldown_preview_ready_ ? &cooldown_preview_ : nullptr);
         const auto shuffle = shuffle_enabled();
@@ -862,11 +869,13 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
     StatisticsWindowData statistics_data() {
         std::lock_guard<std::recursive_mutex> lock(mutex_);statistics_.poll();StatisticsWindowData data;
         data.records=statistics_.records();data.options=statistics_.options;data.collecting=statistics_.collecting;data.status=statistics_.status;data.logs=log_.tail();data.finite=finite_;
+        data.sum_device_rolls=sum_device_rolls_;
         auto playlist=playlist_for(current_track().get());
         if(playlist)for(int i=0;i<playlist->GetItemCount();++i){Ref<IAIMPPlaylistItem> item;if(SUCCEEDED(playlist->GetItem(i,IID_IAIMPPlaylistItem,item.out())) && item){const auto key=track_key(item.get());data.library.insert(statistics_.identity(key));if(selection_weight(effective_weight(key).weight)>0 && (!active_pass_ || !active_pass_->played.count(key)))++data.pass_remaining;}}
         if(active_pass_)data.pass_heard=active_pass_->played.size();return data;
     }
     void show_statistics(int page=0) {
+        statistics_window_.on_roll_scope=[this](bool sum){std::lock_guard<std::recursive_mutex> lock(mutex_);sum_device_rolls_=sum;save_preferences();update_monitor();};
         statistics_window_.on_feedback=[this](const std::wstring& message){settings_window_.feedback(message);};
         statistics_window_.on_log_folder=[this]{if(!log_file_.empty() && reinterpret_cast<INT_PTR>(ShellExecuteW(statistics_window_.handle(),L"open",log_file_.parent_path().c_str(),nullptr,nullptr,SW_SHOWNORMAL))<=32)throw std::runtime_error("Could not open log folder");};
         statistics_window_.on_data=[this]{return statistics_data();};
@@ -1180,6 +1189,16 @@ class Plugin final : public IAIMPPlugin, public IAIMPExtensionPlaybackQueue, pub
             << " cooldown_capacity=" << source->cooldown.distinct_positive << " cooldown_fallback=" << source->cooldown.fallback << ' ' << describe_item(next->item.get());
         log_.write("queue.next.draw", details.str());
         return next;
+    }
+    void count_next_roll(const std::shared_ptr<Occurrence>& source) {
+        // AIMP also requests the successor of its queued next track. Count that
+        // choice when its source starts, so prefetch cannot inflate a reroll.
+        if (!source || (source->planned && !source->started)) return;
+        auto next = source->next.lock();
+        if (!next || next->roll_counted) return;
+        next->roll_counted = true;
+        ++session_rolls_;
+        statistics_.counter("roll");
     }
     std::vector<int> selected_rows(HWND window) const {
         (void)window;
@@ -1807,6 +1826,7 @@ public:
                 audible_ = playing_ && started && same_object(playing_->item.get(), started.get()) ? playing_ : nullptr;
                 commit_finite_start(started);
                 awaiting_stream_start_ = false;
+                count_next_roll(audible_);
                 statistics_tick(true);
                 if(audible_ && audible_->incoming_fallback)statistics_.counter("cooldown_fallback",track_key(started.get()));
                 selected_replay_=selected_automatic_=false;manual_switch_until_=0;manual_backward_=false;
@@ -1848,7 +1868,9 @@ public:
             if (!playlist) { log_.write("queue.next.stop", "reason=source_playlist_unavailable"); return handled({}, output); }
             auto source = source_for(current, flags, playlist);
             if (flags == AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_CURSOR) cursor_source_ = source;
-            return handled(choose_next(source, playlist), output);
+            auto next = choose_next(source, playlist);
+            count_next_roll(source);
+            return handled(next, output);
         } catch (const std::exception& error) { log_.write("queue.next.error", error.what()); return handled({}, output); }
         catch (...) { log_.write("queue.next.error", "unknown exception"); return handled({}, output); }
     }

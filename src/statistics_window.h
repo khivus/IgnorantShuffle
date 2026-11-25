@@ -9,6 +9,7 @@ struct StatisticsWindowData {
     std::set<std::string> library;
     ignorant::LearningOptions options;
     bool collecting=true,finite=false;
+    bool sum_device_rolls=true;
     std::size_t pass_heard=0,pass_remaining=0;
     std::string status,logs;
 };
@@ -33,6 +34,7 @@ class StatisticsWindow {
 public:
     std::function<StatisticsWindowData()> on_data;
     std::function<void(const ignorant::LearningOptions&,bool)> on_settings;
+    std::function<void(bool)> on_roll_scope;
     std::function<void(const std::wstring&)> on_feedback;
     std::function<void()> on_clear,on_sync,on_log_folder;
     std::function<void(bool)> on_export;

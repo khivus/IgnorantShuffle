@@ -3,6 +3,11 @@
 Version history for the Windows AIMP plugin, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 
+## 0.20.0
+
+- Save Next roll totals across restarts and choose independent or combined device counts in Statistics.
+- Prevent queue prefetch from adding an extra count after rerolling.
+
 ## 0.18.0
 
 - Add saved, editable smart adjustments with per-track reset and smart/balance feedback in the main panel.

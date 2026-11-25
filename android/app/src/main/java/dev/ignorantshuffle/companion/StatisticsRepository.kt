@@ -56,6 +56,8 @@ class StatisticsRepository(context: Context, private val onLearningNotice: (Stri
     }
     var ready by mutableStateOf(false); private set
     var collecting by mutableStateOf(true); private set
+    var totalRolls by mutableStateOf(0L); private set
+    var deviceRolls by mutableStateOf(0L); private set
     var error by mutableStateOf<String?>(null); private set
     var snapshot by mutableStateOf(StatisticsSnapshot()); private set
     var exportStatus by mutableStateOf<String?>(null); private set
@@ -65,6 +67,9 @@ class StatisticsRepository(context: Context, private val onLearningNotice: (Stri
     private var generation = 0L
     private var lastLibraryFlush=0L
     private var counterEpoch=""
+    private var shuffleCollectionEnabled = false // Accessed only by the database worker.
+    private var submittedRolls = 0L // Main thread.
+    private var processedRolls = 0L // Database worker.
     @Volatile private var smartOptions=SmartWeightOptions()
     var smartScores by mutableStateOf(emptyMap<String,Double>()); private set
     val engine = ListeningStatistics(feedback=::learn, emit=::record).apply { skipLearning=false }
@@ -75,10 +80,12 @@ class StatisticsRepository(context: Context, private val onLearningNotice: (Stri
 
     init { execute {
         val enabled = helper.readableDatabase.rawQuery("SELECT value FROM options WHERE name='collecting'", null).use { !it.moveToFirst() || it.getInt(0) != 0 }
+        shuffleCollectionEnabled = enabled
         counterEpoch=helper.readableDatabase.rawQuery("SELECT value FROM options WHERE name='shuffle_epoch'",null).use {if(it.moveToFirst())it.getString(0) else java.util.UUID.randomUUID().toString()}
         helper.writableDatabase.execSQL("INSERT OR REPLACE INTO options VALUES('shuffle_epoch',?)",arrayOf<Any>(counterEpoch))
-        val counts = counts()
-        val scores=scores()
+        val records = allRecords()
+        val counts = listeningCounts(records)
+        val scores = PortableStatistics.scores(records, smartOptions.limit)
         main.post { collecting = enabled; engine.collecting(enabled); ready = true; smartScores=scores; onSmartScores(scores); onCounts(counts) }
     } }
 
@@ -134,13 +141,29 @@ class StatisticsRepository(context: Context, private val onLearningNotice: (Stri
     private fun allRecords(force: Boolean=false): List<PortableStat> {
         flushListening()
         val records=shared.sync(localRecords(),force)
+        val rolls=rollCount(records)
+        val localRolls=rollCount(records.filter { it.session.startsWith("counter:$origin:") })
+        publishRollCounts(rolls, localRolls)
         val status=shared.status;main.post {sharedStatus=status}
         return records
     }
-    private fun counts(): Map<String,Long> = allRecords().filter {it.kind=="L"}.groupBy {it.key}.mapValues {(_,rows)->rows.sumOf {it.plays}}
+    private fun publishRollCounts(total: Long, local: Long) {
+        val processed = processedRolls
+        main.post {
+            val pending = submittedRolls - processed
+            totalRolls = total + pending
+            deviceRolls = local + pending
+        }
+    }
+    private fun rollCount(records: List<PortableStat>): Long =
+        records.sumOf { if (it.kind == "C" && it.label == "roll") it.value.toLong() else 0L }
+
     private fun scores(): Map<String,Double> = PortableStatistics.scores(allRecords(),smartOptions.limit)
+    private fun listeningCounts(records: List<PortableStat>): Map<String, Long> =
+        records.filter {it.kind=="L"}.groupBy {it.key}.mapValues {(_,rows)->rows.sumOf {it.plays}}
+
     private fun publishLearning(records: List<PortableStat>) {
-        val counts=records.filter {it.kind=="L"}.groupBy {it.key}.mapValues {(_,rows)->rows.sumOf {it.plays}}
+        val counts=listeningCounts(records)
         val scores=PortableStatistics.scores(records,smartOptions.limit)
         main.post {smartScores=scores;onSmartScores(scores);onCounts(counts)}
     }
@@ -176,8 +199,12 @@ class StatisticsRepository(context: Context, private val onLearningNotice: (Stri
     fun pause(paused: Boolean) {
         if (!ready) return
         collecting = !paused; engine.collecting(!paused); completed(if(paused) "Statistics collection paused" else "Statistics collection resumed")
-        execute { helper.writableDatabase.execSQL("INSERT OR REPLACE INTO options VALUES('collecting',?)", arrayOf<Any>(if(paused)0 else 1)) }
+        execute {
+            helper.writableDatabase.execSQL("INSERT OR REPLACE INTO options VALUES('collecting',?)", arrayOf<Any>(if(paused)0 else 1))
+            shuffleCollectionEnabled = !paused
+        }
     }
+
     fun flushShared() = execute {publishLearning(allRecords(force=true))}
     fun clear() {
         generation++
@@ -190,14 +217,23 @@ class StatisticsRepository(context: Context, private val onLearningNotice: (Stri
             try { listOf("slices","sessions","shuffle","smart_weights","smart_feedback").forEach { db.delete(it,null,null) }
                 db.execSQL("INSERT OR REPLACE INTO options VALUES('shuffle_epoch',?)",arrayOf<Any>(counterEpoch));db.setTransactionSuccessful() }
             finally { db.endTransaction() }
-            main.post { completed("Statistics cleared"); snapshot=StatisticsSnapshot(); smartScores=emptyMap(); onSmartScores(emptyMap()); onCounts(emptyMap()) }
+            main.post { completed("Statistics cleared"); snapshot=StatisticsSnapshot(); totalRolls=0L; deviceRolls=0L; smartScores=emptyMap(); onSmartScores(emptyMap()); onCounts(emptyMap()) }
         }
     }
-    fun shuffle(kind: String) {
-        if (!ready || !collecting || error != null) return
+    fun shuffle(kind: String, count: Long = 1L) {
+        if (count <= 0 || !collecting || error != null) return
+        if (kind == "roll") {
+            submittedRolls += count
+            totalRolls += count
+            deviceRolls += count
+        }
         val day=ListeningStatistics.day(System.currentTimeMillis())
         execute {
-            allRecords()
+            if (!shuffleCollectionEnabled) {
+                if (kind == "roll") { processedRolls += count; allRecords() }
+                return@execute
+            }
+            val records = allRecords()
             val db=helper.writableDatabase;db.beginTransaction()
             try {
                 if(shared.cleared("$origin/$counterEpoch/c/$day/$kind")) {
@@ -206,9 +242,15 @@ class StatisticsRepository(context: Context, private val onLearningNotice: (Stri
                     db.delete("shuffle",null,null)
                 }
                 db.execSQL("INSERT OR IGNORE INTO shuffle VALUES(?,?,0)",arrayOf<Any>(day,kind))
-                db.execSQL("UPDATE shuffle SET count=count+1 WHERE day=? AND kind=?",arrayOf<Any>(day,kind))
+                db.execSQL("UPDATE shuffle SET count=count+? WHERE day=? AND kind=?",arrayOf<Any>(count,day,kind))
                 db.setTransactionSuccessful()
             } finally {db.endTransaction()}
+            if (kind == "roll") {
+                processedRolls += count
+                val rolls = rollCount(records) + count
+                val localRolls = rollCount(records.filter { it.session.startsWith("counter:$origin:") }) + count
+                publishRollCounts(rolls, localRolls)
+            }
         }
     }
     fun refresh(since: String) {

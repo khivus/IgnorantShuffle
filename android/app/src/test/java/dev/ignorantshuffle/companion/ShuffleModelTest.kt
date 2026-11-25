@@ -119,6 +119,26 @@ class ShuffleModelTest {
         model.requested(previous); model.confirmPlaying(a)
         assertEquals(b.key, model.next().track!!.key); assertNotNull(model.next().historyIndex)
     }
+    @Test fun historyRoundTripsKeepThePendingRollAndCount() {
+        val planner = FakePlanner()
+        val model = model(planner)
+        model.confirmPlaying(a); model.confirmPlaying(b)
+        val pending = model.next()
+        val rolls = model.rollCount
+        repeat(3) {
+            val previous = model.previous()!!
+            model.requested(previous); model.confirmPlaying(a)
+            val forward = model.next()
+            assertEquals(b, forward.track)
+            assertEquals(rolls, model.rollCount)
+            model.requested(forward); model.confirmPlaying(b)
+            assertEquals(pending, model.next())
+            assertEquals(rolls, model.rollCount)
+        }
+        assertEquals(1, planner.calls)
+        model.next(true)
+        assertEquals(rolls + 1, model.rollCount)
+    }
     @Test fun excludedHistoryEntryCannotBeSelectedBySmartPrevious() {
         val model = model(); model.confirmPlaying(a); model.confirmPlaying(b)
         model.configure(Settings(), mapOf(a.key to 0.0)); assertNull(model.previous())

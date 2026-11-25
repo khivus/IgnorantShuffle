@@ -201,10 +201,14 @@ public:
 class PlaybackQueue final : public FakeUnknown<IAIMPServicePlaybackQueue2> {
 public:
     int notifications = 0;
+    std::function<void(IAIMPExtensionPlaybackQueue*)> on_notify;
     PlaybackQueue() : FakeUnknown(IID_IAIMPServicePlaybackQueue2) {}
     STUB(GetNextTrack, (IAIMPPlaybackQueueItem**))
     STUB(GetPrevTrack, (IAIMPPlaybackQueueItem**))
-    void WINAPI NotifyChanged(IAIMPExtensionPlaybackQueue*) override { ++notifications; }
+    void WINAPI NotifyChanged(IAIMPExtensionPlaybackQueue* extension) override {
+        ++notifications;
+        if (on_notify) on_notify(extension);
+    }
 };
 class Player final : public FakeUnknown<IAIMPServicePlayer> {
 public:
@@ -989,6 +993,12 @@ struct PluginChecks {
         const auto original_next = next.item;
         const auto original_playing = plugin.playing_;
         const auto before_reroll = queue.notifications;
+        const auto rolls_before_reroll = plugin.monitor_state().roll_number;
+        queue.on_notify = [&](IAIMPExtensionPlaybackQueue* extension) {
+            QueueOutput refreshed, prefetched;
+            extension->GetNext(&first, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &refreshed);
+            if (refreshed.item) extension->GetNext(refreshed.item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &prefetched);
+        };
         check(IsWindowEnabled(GetDlgItem(window, IDC_REROLL_NEXT)), "Reroll is available during active weighted playback.");
         click(IDC_REROLL_NEXT);
         const auto rerolled = plugin.playing_->next.lock();
@@ -996,9 +1006,12 @@ struct PluginChecks {
         check(plugin.playing_ == original_playing && player.current == &first && queue.notifications == before_reroll + 1 && messages.shuffle == TRUE,
             "Reroll refreshes the host queue once without playing/skipping a track or toggling AIMP Shuffle.");
         check(plugin.monitor_state().next_track == Plugin::track_label(rerolled->item.get()) && plugin.monitor_state().decision.find(L"Reroll") != std::wstring::npos, "Panel shows the committed reroll immediately.");
+        check(plugin.monitor_state().roll_number == rolls_before_reroll + 1, "A fresh reroll advances the visible counter.");
         const auto after_reroll = plugin.random_;
         plugin.GetNext(&playlist, AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_CURSOR, &next);
         check(plugin.random_ == after_reroll && same_object(next.item.get(), rerolled->item.get()), "AIMP's refresh must reuse the rerolled choice, not draw a different one.");
+        check(plugin.monitor_state().roll_number == rolls_before_reroll + 1, "Reusing a cached queue choice does not advance the counter.");
+        queue.on_notify = {};
 
         // A later playing track must drive the selector, regardless of editor focus.
         SetFocus(GetDlgItem(window, IDC_QUICK_WEIGHT_10));
@@ -1091,6 +1104,8 @@ struct PluginChecks {
             check(shown_before.next_track == Plugin::track_label(item.get()) && shown_before.decision.find(L"Weight:") != std::wstring::npos,
                 "Every pre-transition display must match the cursor-based next track.");
             plugin.GetNext(item.get(), AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM, &lookahead);
+            check(plugin.monitor_state().roll_number == shown_before.roll_number,
+                "Prefetching beyond the next track does not advance the visible roll counter.");
             if (cooldown && !finite) {
                 auto future = query<IAIMPPlaylistItem>(lookahead.item.get(), IID_IAIMPPlaylistItem);
                 check(future && !same_object(future.get(), item.get()), "Lookahead must include the not-yet-started source in cooldown.");
@@ -1781,7 +1796,20 @@ struct PluginChecks {
         plugin.playlists_=query<IAIMPServicePlaylistManager>(&manager,IID_IAIMPServicePlaylistManager);plugin.messages_=query<IAIMPServiceMessageDispatcher>(&messages,IID_IAIMPServiceMessageDispatcher);plugin.player_=query<IAIMPServicePlayer>(&player,IID_IAIMPServicePlayer);plugin.queue_=query<IAIMPServicePlaybackQueue2>(&queue,IID_IAIMPServicePlaybackQueue2);
         plugin.set_storage({root});plugin.statistics_.options.smart=true;plugin.statistics_.options.balance=true;plugin.statistics_.options.balance_strength=.5;plugin.statistics_.options_changed();plugin.save_preferences();
         plugin.statistics_tick();plugin.statistics_tick();check(plugin.statistics_.records().empty(),"Duplicate playback callbacks cannot invent time");
-        QueueOutput output;plugin.GetNext(&first,AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM,&output);check(plugin.statistics_.records().empty(),"Queue previews cannot count listening");
+        QueueOutput output;plugin.GetNext(&first,AIMP_PLAYBACKQUEUE_FLAGS_START_FROM_ITEM,&output);
+        check(ignorant::summarize(plugin.statistics_.records()).plays==0, "Queue previews cannot count listening");
+        const auto saved_rolls = plugin.monitor_state().roll_number;
+        check(saved_rolls > 0, "A new weighted choice counts as a roll.");
+        plugin.statistics_.finish();
+        {
+            Plugin reopened;
+            reopened.preferences_file_ = plugin.preferences_file_;
+            reopened.load_preferences();
+            reopened.statistics_.configure(reopened.statistics_origin_, directory/L"statistics-cache", {root});
+            check(reopened.monitor_state().roll_number == saved_rolls, "Roll count survives reopening the plugin.");
+            reopened.statistics_.pause(true);
+            check(reopened.monitor_state().roll_number == 0, "Paused collection displays the new session's roll count.");
+        }
         const auto committed=plugin.playing_?plugin.playing_->next.lock():nullptr;
         ignorant::ListeningSample sample;sample.day=ignorant::statistics_day();sample.key="first.flac";sample.title="First";sample.playing=true;sample.duration=10000;
         for(int i=0;i<=10;++i){sample.elapsed=1000+i*1000;sample.wall=100000+i*1000;sample.position=i*1000;plugin.statistics_.observe(sample,track_key(&first));}
@@ -1809,9 +1837,26 @@ struct PluginChecks {
         SetWindowPos(window,nullptr,0,0,1100,900,SWP_NOMOVE|SWP_NOZORDER);RECT expanded{};GetWindowRect(GetDlgItem(window,2104),&expanded);check(expanded.bottom-expanded.top>list.bottom-list.top,"Statistics list grows with window");
         plugin.statistics_window_.on_settings(plugin.statistics_.options,false);check(!plugin.statistics_.collecting,"Collection can be paused from native settings");
         Plugin restored;restored.preferences_file_=plugin.preferences_file_;restored.load_preferences();check(!restored.statistics_.collecting && restored.statistics_.options.smart && restored.statistics_.options.balance && restored.statistics_.options.balance_strength==.5,"Windows learning and pause preferences survive restart");
+        plugin.statistics_.pause(false);
         ignorant::LibraryStatistics remote;remote.configure("other-device",directory/L"remote-cache",{root});remote.finish();check(ignorant::summarize(remote.records()).plays==1,"Another device imports Windows statistics sidecar");
+        check(remote.roll_total() == static_cast<std::int64_t>(saved_rolls), "Another device imports the Windows roll count.");
+        remote.counter("roll");
+        remote.finish();
+        plugin.statistics_.finish();
+        check(plugin.monitor_state().roll_number == saved_rolls + 1, "The panel includes rolls from another statistics shard.");
+        check(remote.roll_total(false)==1, "A device's count excludes imported rolls.");
+        const auto scope=GetDlgItem(window,2125);
+        check(scope!=nullptr,"Statistics offers the roll counter scope setting.");
+        SendMessageW(scope,CB_SETCURSEL,1,0);
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(2125,CBN_SELCHANGE),reinterpret_cast<LPARAM>(scope));
+        check(plugin.monitor_state().roll_number==saved_rolls,"This device scope excludes the remote roll.");
+        Plugin scope_restored;scope_restored.preferences_file_=plugin.preferences_file_;scope_restored.load_preferences();
+        check(!scope_restored.sum_device_rolls_,"Roll scope survives restart.");
+        SendMessageW(scope,CB_SETCURSEL,0,0);
+        SendMessageW(window,WM_COMMAND,MAKEWPARAM(2125,CBN_SELCHANGE),reinterpret_cast<LPARAM>(scope));
+        check(plugin.monitor_state().roll_number==saved_rolls+1,"All devices restores the combined total.");
         // Same-track stop/start and an observed wrap remain separate sessions even if a host stream message is absent.
-        plugin.statistics_.pause(false);auto replay_sample=sample;replay_sample.stopped=true;replay_sample.playing=false;replay_sample.elapsed+=1000;replay_sample.wall+=1000;plugin.statistics_.observe(replay_sample,track_key(&first));
+        auto replay_sample=sample;replay_sample.stopped=true;replay_sample.playing=false;replay_sample.elapsed+=1000;replay_sample.wall+=1000;plugin.statistics_.observe(replay_sample,track_key(&first));
         replay_sample.stopped=false;replay_sample.playing=true;
         for(int pass=0;pass<2;++pass)for(int i=0;i<=10;++i){replay_sample.elapsed+=1000;replay_sample.wall+=1000;replay_sample.position=i*1000;plugin.statistics_.observe(replay_sample,track_key(&first));}
         check(ignorant::summarize(plugin.statistics_.records()).plays==3,"Stopped/repeated same-track sessions do not overwrite earlier totals");

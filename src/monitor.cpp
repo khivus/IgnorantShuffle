@@ -126,6 +126,7 @@ void MonitorWindow::update(const MonitorState& state) {
     set_text(window_, IDC_MODE, state.mode);
     set_text(window_, IDC_CURRENT_TRACK, state.current_track);
     set_text(window_, IDC_CURRENT_WEIGHT, state.current_weight);
+    set_text(window_, IDC_NEXT_GROUP, L"Next roll #" + std::to_wstring(state.roll_number));
     set_text(window_, IDC_NEXT_TRACK, state.next_track);
     set_text(window_, IDC_DECISION, state.decision);
     set_text(window_, IDC_PANEL_NOTICE, state.notice);

@@ -251,7 +251,7 @@ private fun PlayerPage(m: AimpController, access: () -> Unit, openAimp: () -> Un
             }
         }
         item {
-            Section("NEXT ROLL #${m.rollSequence}", accent = true) {
+            Section("NEXT ROLL #${m.displayedRollNumber}", accent = true) {
                 val choice = m.preview
                 Text(choice.track?.title ?: "No eligible next track", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 choice.track?.artist?.takeIf(String::isNotBlank)?.let { Text(it) }

@@ -53,6 +53,66 @@ class StatisticsRepositoryDeviceTest : InstrumentationTestCase() {
         await { repository!!.snapshot.plays==2L }
         main { assertEquals(60_000L,repository!!.snapshot.listeningMs);assertEquals(2,repository!!.snapshot.history.size) }
     }
+    fun testSharedRollsSurviveRestartAndIgnorePausedRolls() {
+        main {
+            repository!!.shuffle("roll", 203)
+            assertEquals(203L, repository!!.totalRolls)
+            assertEquals(203L, repository!!.deviceRolls)
+        }
+        await { repository!!.totalRolls == 203L }
+        main {
+            repository!!.pause(true)
+            repository!!.shuffle("roll", 5)
+            repository!!.close()
+        }
+        open()
+        main {
+            assertFalse(repository!!.collecting)
+            assertEquals(203L, repository!!.totalRolls)
+            repository!!.pause(false)
+            repository!!.shuffle("roll")
+        }
+        await { repository!!.totalRolls == 204L }
+
+        val root = File(directory, "music").apply { mkdirs() }
+        val windows = PortableStatistics().apply {
+            put(PortableStat("windows/c/2026-11-10/roll", kind="C", key="@shuffle",
+                session="counter:windows", day="2026-11-10", value=7.0, label="roll"))
+        }
+        File(root, PortableStatistics.filename("windows")).writeText(windows.text())
+        main {
+            repository!!.configureRoots(listOf(StatisticsRoot("music", documents(root)))) { _, _, _ ->
+                FileMatch(null, "Shuffle counter")
+            }
+            repository!!.refresh("2026-11-11")
+        }
+        await { repository!!.totalRolls == 211L && repository!!.snapshot.shuffle["roll"] == 204L }
+        main { assertEquals(204L, repository!!.deviceRolls) }
+        val published = PortableStatistics().apply {
+            root.listFiles()!!.filter { PortableStatistics.shard(it.name) }.forEach {
+                merge(PortableStatistics.parse(it.readText()))
+            }
+        }
+        assertEquals(211L, published.active().filter { it.label == "roll" }.sumOf { it.value.toLong() })
+        main {
+            repeat(3) { repository!!.shuffle("roll") }
+            assertEquals(214L, repository!!.totalRolls)
+            assertEquals(207L, repository!!.deviceRolls)
+            repository!!.refresh("")
+        }
+        await { repository!!.snapshot.shuffle["roll"] == 214L }
+        main { assertEquals(214L, repository!!.totalRolls); assertEquals(207L, repository!!.deviceRolls) }
+    }
+
+    private fun documents(root: File) = object : WeightDocuments {
+        override fun names()=root.list()?.toList()?:emptyList()
+        override fun find(name: String)=name.takeIf {File(root,it).isFile}
+        override fun read(id: String)=File(root,id).readText()
+        override fun create(name: String): String {check(File(root,name).createNewFile());return name}
+        override fun write(id: String,text: String)=File(root,id).writeText(text)
+        override fun rename(id: String,name: String): String {check(File(root,id).renameTo(File(root,name)));return name}
+        override fun delete(id: String) {check(File(root,id).delete())}
+    }
     fun testPauseSurvivesRestartAndClearDoesNotTouchOtherFiles() {
         play("2026-11-10")
         val unrelated=File(directory,"weights-and-logs-sentinel").apply {writeText("preserved")}
@@ -158,15 +218,7 @@ class StatisticsRepositoryDeviceTest : InstrumentationTestCase() {
         }
         open()
         val root=File(directory,"music").apply {mkdirs()}
-        val documents=object : WeightDocuments {
-            override fun names()=root.list()?.toList()?:emptyList()
-            override fun find(name: String)=name.takeIf {File(root,it).isFile}
-            override fun read(id: String)=File(root,id).readText()
-            override fun create(name: String): String {check(File(root,name).createNewFile());return name}
-            override fun write(id: String,text: String)=File(root,id).writeText(text)
-            override fun rename(id: String,name: String): String {check(File(root,id).renameTo(File(root,name)));return name}
-            override fun delete(id: String) {check(File(root,id).delete())}
-        }
+        val documents=documents(root)
         val foreign=PortableStatistics().apply {put(PortableStat("windows/l/1970-01-01",kind="L",key="Artist/Legacy.flac",title="Legacy",artist="Artist",session="windows",day="1970-01-01",started=2000000,updated=2030000,ms=30000,plays=1))}
         File(root,PortableStatistics.filename("windows")).writeText(foreign.text())
         File(root,PortableWeights.FILENAME).writeText("weight sentinel")

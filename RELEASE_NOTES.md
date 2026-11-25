@@ -1,7 +1,13 @@
-# IgnorantShuffle Windows v0.19.1
+# IgnorantShuffle Windows v0.20.0
+
+## Added
+
+- Save the Next roll counter in shared statistics and retain it across restarts.
+- Choose This device or All devices in Statistics to display independent or combined roll totals.
+- Use the session counter while statistics collection is paused.
 
 ## Fixes
 
-- Keep the qualified-listen cooldown option in Settings only, fixing the checkbox overlapping the compact player buttons.
+- Prevent queue prefetch from adding an extra count when rerolling the next track.
 
-Windows version: **0.19.1**. Bundled core: **0.3.1**. Includes x64 and x86.
+Windows version **0.20.0**. Bundled core **0.3.1**. Includes x64 and x86.

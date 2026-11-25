@@ -1,10 +1,16 @@
-# IgnorantShuffle Android v0.15.0
+# IgnorantShuffle Android v0.16.0
 
 ## Added
 
-- Choose cooldown only after a qualified listen on Windows and Android. Tracks skipped early stay eligible to play again.
-- In this mode, cooldown advances with qualified listens: 30 seconds or half the track, whichever is shorter. The option defaults off and can sync through shared settings.
+- Save the Next roll counter in shared statistics and retain it across restarts.
+- Choose This device or All devices in Statistics to display independent or combined roll totals.
+- Use the session counter while statistics collection is paused.
 
-Android version: **0.15.0**, versionCode **20**. Bundled core: **0.3.1**.
-Requires Android 8.0+; retains the application ID and pinned update signing key.
+## Fixes
+
+- Update the roll counter immediately after rerolling while saving in the background.
+- Preserve the pending choice when moving back and forward through listening history and count only new weighted rolls.
+
+Android version **0.16.0**, versionCode **21**. Bundled core **0.3.1**.
+Requires Android 8.0+ and uses the existing application ID and pinned update signing key.
 The Android companion remains a preview build.

@@ -86,9 +86,15 @@ class AimpController(private val context: Context) {
     private var actions = 0L
     private var scheduled: ScheduledRoll? = null
     private var publishedSequence = -1L
+    private var publishedRollCount = 0L
+    private var sessionRollCount by mutableStateOf(0L)
     private var environmentRegistered = false
     var preferences by mutableStateOf(AppPreferences()); private set
     var rollSequence by mutableStateOf(0L); private set
+    val displayedRollNumber: Long
+        get() = if (statistics.ready && statistics.collecting) {
+            if (preferences.sumDeviceRolls) statistics.totalRolls else statistics.deviceRolls
+        } else sessionRollCount
     var rollReason by mutableStateOf("No roll yet"); private set
     var logError by mutableStateOf<String?>(null); private set
     var notificationStatus by mutableStateOf("Next-roll notifications are off"); private set
@@ -635,6 +641,10 @@ class AimpController(private val context: Context) {
         if (storageError != null || folder.blocked) return
         preview = model.next()
         canPrevious = model.previous() != null
+        val newRolls = model.rollCount - publishedRollCount
+        publishedRollCount = model.rollCount
+        sessionRollCount = model.rollCount
+        if (newRolls > 0) statistics.shuffle("roll", newRolls)
         if (publishedSequence != model.choiceSequence) {
             publishedSequence = model.choiceSequence; rollSequence = publishedSequence; rollReason = reason
             log("ROLL #$rollSequence reason=$reason; source=${playback.track}; choice=$preview; settings=$settings; targetWeight=${preview.track?.let(::weight)}")

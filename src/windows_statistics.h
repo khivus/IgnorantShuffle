@@ -2,6 +2,7 @@
 #include "statistics.h"
 #include <filesystem>
 #include <future>
+#include <optional>
 #include <set>
 
 namespace ignorant {
@@ -20,6 +21,8 @@ class LibraryStatistics {
     std::int64_t last_start_=-1,last_start_position_=-1;
     bool learning_dirty_=true;
     bool publishing_=false;
+    std::optional<std::int64_t> roll_total_;
+    std::optional<std::int64_t> device_roll_total_;
     std::map<std::string,std::int64_t> counts_;
     std::map<std::string,double> scores_;
     ListeningObserver observer_;
@@ -44,6 +47,7 @@ public:
     void clear();
     void counter(const std::string& label,const std::string& track="");
     std::vector<StatRecord> records() const;
+    std::int64_t roll_total(bool all_devices=true);
     std::int64_t plays(const std::string& absolute);
     double score(const std::string& absolute);
     double mean(const std::vector<std::string>& absolute);

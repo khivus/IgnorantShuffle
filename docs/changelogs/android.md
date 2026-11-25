@@ -4,6 +4,12 @@ Local preview build history for the Android companion, newest first. See the
 [component changelog index](../../CHANGELOG.md) and [versioning policy](../versioning.md).
 These entries do not imply published GitHub releases.
 
+## 0.16.0 (versionCode 21)
+
+- Save Next roll totals across restarts and choose independent or combined device counts in Statistics.
+- Update the counter immediately after rerolling.
+- Preserve the pending roll during history navigation and count only new weighted rolls.
+
 ## 0.14.0 (versionCode 19)
 
 - Add saved, editable smart adjustments with per-track reset and smart/balance feedback popups.

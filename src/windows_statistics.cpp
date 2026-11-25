@@ -48,7 +48,7 @@ void LibraryStatistics::configure(const std::string& origin,const std::filesyste
             roots_[path]=std::move(root);
         } else found->second.active=true;
     }
-    learning_dirty_=true;next_sync_=0;next_publish_=0;
+    learning_dirty_=true;roll_total_.reset();device_roll_total_.reset();next_sync_=0;next_publish_=0;
 }
 std::pair<std::filesystem::path,std::string> LibraryStatistics::location(const std::string& absolute) const {
     const auto file=std::filesystem::u8path(absolute).lexically_normal();
@@ -98,7 +98,7 @@ void LibraryStatistics::poll(bool force) {
             if(!result.error.empty())errors+=result.error+"; ";
         }
         if(publishing_ || !errors.empty())status=errors.empty()?"Statistics saved alongside weights. Sync IgnorantShuffle.statistics.*.tsv with the music roots.":"Statistics sync pending; cache retained: "+errors;
-        learning_dirty_=true;
+        learning_dirty_=true;roll_total_.reset();device_roll_total_.reset();
     }
     if(worker_.valid() || (!force && GetTickCount64()<next_sync_))return;
     next_sync_=GetTickCount64()+10000;
@@ -144,18 +144,22 @@ void LibraryStatistics::clear() {
         const auto directory=cache_root(pair.first);std::filesystem::create_directories(directory);
         sync_statistics(directory,"own",root.own);sync_statistics(directory,"merged",root.merged);
     }
-    observer_.reset();current_.clear();session_.clear();run_=statistics_guid();learning_dirty_=true;poll(true);
+    observer_.reset();current_.clear();session_.clear();run_=statistics_guid();learning_dirty_=true;roll_total_.reset();device_roll_total_.reset();poll(true);
 }
 void LibraryStatistics::counter(const std::string& label,const std::string& track) {
     if(!collecting)return;
     auto found=location(track);if(found.first.empty())for(const auto& pair:roots_)if(pair.second.active){found={pair.first,"@shuffle"};break;}
     if(found.first.empty())return;
-    auto& root=roots_.at(found.first);StatRecord r;r.id=run_+"/c/"+statistics_day()+"/"+label;r.kind="C";r.key="@shuffle";r.session="counter:"+run_;r.day=statistics_day();r.label=label;
+    const auto day=statistics_day();
+    const auto root_suffix=label=="roll"?"/"+cache_root(found.first).filename().string():"";
+    auto& root=roots_.at(found.first);StatRecord r;r.id=run_+root_suffix+"/c/"+day+"/"+label;r.kind="C";r.key="@shuffle";r.session="counter:"+run_;r.day=day;r.label=label;
     if(std::any_of(root.merged.records().begin(),root.merged.records().end(),[&](const auto& item){return item.second.kind=="X" && item.second.key==r.id;})) {
-        run_=statistics_guid();r.id=run_+"/c/"+statistics_day()+"/"+label;r.session="counter:"+run_;
+        run_=statistics_guid();r.id=run_+root_suffix+"/c/"+day+"/"+label;r.session="counter:"+run_;
     }
     const auto old=root.own.records().find(r.id);r.value=old==root.own.records().end()?1:old->second.value+1;
     root.own.put(r);root.merged.merge(root.own.records().at(r.id));
+    if(label=="roll" && roll_total_)++*roll_total_;
+    if(label=="roll" && device_roll_total_)++*device_roll_total_;
 }
 std::vector<StatRecord> LibraryStatistics::records() const {
     StatisticsLedger combined;std::map<std::string,std::filesystem::path> owner;
@@ -165,6 +169,22 @@ std::vector<StatRecord> LibraryStatistics::records() const {
         combined.merge(item.second);
     }
     auto records=combined.active();for(auto& r:records)r.key=(owner.at(r.id)/std::filesystem::u8path(r.key)).generic_u8string();return records;
+}
+std::int64_t LibraryStatistics::roll_total(bool all_devices) {
+    auto& cached=all_devices?roll_total_:device_roll_total_;
+    if(!cached) {
+        auto rows=records();
+        if(!all_devices) {
+            StatisticsLedger own;
+            for(const auto& root:roots_)own.merge(root.second.own);
+            rows.erase(std::remove_if(rows.begin(),rows.end(),[&](const auto& row){return !own.records().count(row.id);}),rows.end());
+        }
+        std::int64_t total=0;
+        for(const auto& record:rows)
+            if(record.kind=="C" && record.label=="roll")total+=static_cast<std::int64_t>(record.value);
+        cached=total;
+    }
+    return *cached;
 }
 void LibraryStatistics::learning() {
     if(!learning_dirty_)return;

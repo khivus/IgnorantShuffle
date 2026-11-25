@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PreferenceJsonTest {
+    @Test fun rollScopeDefaultsToCombinedAndPersistsBothChoices() {
+        assertTrue(PreferenceJson.decode("{}").sumDeviceRolls)
+        for (combined in listOf(false, true)) {
+            val preferences = AppPreferences(sumDeviceRolls = combined)
+            assertEquals(preferences, PreferenceJson.decode(PreferenceJson.encode(preferences)))
+        }
+    }
     @Test fun correctionDelayMigratesAndPersistsIndependentlyOfTrackEndLead() {
         val old = PreferenceJson.decode("""{"reactivePlayback":true,"leadMs":150}""")
         assertTrue(old.reactivePlayback)
